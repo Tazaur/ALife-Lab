@@ -167,6 +167,7 @@ const SENSOR_DEFS = [
   ['hungerDrive','Hunger',0,a=>a.drv.hunger],
   ['thirst','Thirst',0,a=>a.drv.thirst],
   ['grief','Grief',0,a=>a.drv.grief],
+  ['urge','Urge to reproduce',0,a=>a.drv.urge],
   ['inWater','Swimming',0,a=>a.inWater?1:0],
   ['waterX','Water direction X',0,a=>{ const v=waterVec(a.x,a.y,_wv); return v.d>1?v.dx/v.d:0; }],
   ['waterY','Water direction Y',0,a=>{ const v=waterVec(a.x,a.y,_wv); return v.d>1?v.dy/v.d:0; }],
@@ -312,7 +313,7 @@ function forward(a){
 // Lifetime learning: policy gradient with eligibility traces. Each tick the gradient of the chosen action's
 // log-probability is added to a fading trace (lambda); every reward then updates the weights along that trace,
 // so relief that arrives later (eating) also credits the steps that led to it (walking to food, harvesting).
-const LAMBDA=.93;
+const LEARN_EVERY=3, LAMBDA=Math.pow(.93,LEARN_EVERY);   // learn every 3rd tick; the trace fades by three ticks' worth each time
 function learn(a, reward, temp){
   const adv=clamp(reward-a.baseline,-4,4); a.baseline=.985*a.baseline+.015*reward;
   const b=a.brain, acts=a.acts, step=a.traits.lr*adv, L=b.w.length; let grad=gradA, back=gradB;
@@ -341,7 +342,7 @@ function learn(a, reward, temp){
 // Wellbeing = -sum(weight * urgency^2) and reward = change in wellbeing. Squaring makes relief worth the most when
 // the need is greatest and almost nothing once satisfied (sitting by a fire pays less every tick), while a slowly
 // growing need builds the desire back up. It is a potential over the yip's own state, so no loop can farm it.
-const DRIVES = ['hunger','thirst','cold','injury','fatigue','lonely','insecure','grief'];
+const DRIVES = ['hunger','thirst','cold','injury','fatigue','lonely','insecure','grief','urge'];
 function updateDrives(a,lt,moved,exertion,restBoost){
   const ph=a.ph, d=a.drv;
   d.hunger=clamp(1-a.energy/(ph.maxE*.7),0,1);
@@ -351,12 +352,15 @@ function updateDrives(a,lt,moved,exertion,restBoost){
   d.injury=clamp((1-a.health/ph.maxH)*.8+a.pain*.4,0,1);
   d.fatigue=clamp(d.fatigue+.0002+(moved?.00025:0)+exertion-restBoost,0,1);
   d.insecure=clamp(1-(a.inv.food+.4*a.inv.wood+.4*a.inv.stone+.8*a.stash+3*(ownVal.get(a.id)||0))/6,0,1);
-  d.grief=Math.max(0,d.grief-.0015);   // grief fades slowly; witnessing a death raises it (see onDeath)
+  d.grief=Math.max(0,d.grief-.0015);
+  // the urge to reproduce grows in adults, much faster when no other yip is within sensing range,
+  // and slowly eases in a crowd; a birth satisfies it
+  if (a.age>150){ const alone=!env.other.obj||env.other.dist>=a._r, crowd=a.crowdN||0; d.urge=clamp(d.urge+(alone?.0025:.0005)-(crowd>5?.0004*(crowd-5):0),0,1); }   // grief fades slowly; witnessing a death raises it (see onDeath)
   // loneliness is updated where yips meet (socialTick) and relieved by thanks
 }
 function wellbeing(a){
   const d=a.drv, t=a.traits;
-  return -(d.hunger*d.hunger + d.thirst*d.thirst + d.cold*d.cold + t.caution*d.injury*d.injury + .6*d.fatigue*d.fatigue + 1.6*t.social*d.lonely*d.lonely + (.5+t.greed)*d.insecure*d.insecure + d.grief*d.grief);
+  return -(d.hunger*d.hunger + d.thirst*d.thirst + d.cold*d.cold + t.caution*d.injury*d.injury + .6*d.fatigue*d.fatigue + 1.6*t.social*d.lonely*d.lonely + (.5+t.greed)*d.insecure*d.insecure + d.grief*d.grief + .8*d.urge*d.urge);
 }
 const MATV={wood:.12,stone:.15}; let ownVal=new Map();
 const buildValue=b=>{ const s=SPECS[b.type]; return (s.wood*MATV.wood+s.stone*MATV.stone)*Math.max(0,b.hp/b.max); };
@@ -479,7 +483,7 @@ function makeAgent(x,y,brain=freshBrain(),gen=0,parent=null,traits=freshTraits()
     inv:{food:0,wood:0,stone:0},tool:0,memory:0,memA:0,memB:0,signal:0,pain:0,trust:new Map(),lastChoice:O-1,probs:new Float32Array(O),
     builds:0,success:0,kids:0,shared:0,stolen:0,attacks:0,kills:0,hunts:0,beastKills:0,crafts:0,deposits:0,
     actionCounts:new Uint32Array(O),okCounts:new Uint32Array(O),stash:0,shareHeat:0,phi:0,baseline:0,
-    drv:{grief:0,hunger:0,thirst:.2,cold:0,injury:0,fatigue:.1,lonely:.2,insecure:.8},owed:new Map(),inWater:false,thanked:new Map(),thanksGot:0,lovesGot:0,coparent:null,partners:0,sheltered:false,harm:'hunger',fx:0,_t:20};
+    drv:{urge:0,grief:0,hunger:0,thirst:.2,cold:0,injury:0,fatigue:.1,lonely:.2,insecure:.8},owed:new Map(),inWater:false,thanked:new Map(),thanksGot:0,lovesGot:0,coparent:null,partners:0,sheltered:false,harm:'hunger',fx:0,_t:20};
   for (const k of [...PHYS,...MENT]) if (a.traits[k]==null) a.traits[k]=freshTraits()[k];
   a.perks=perks.filter(id=>PERK[id]); derive(a); updateDrives(a,20,false,0,0); a.phi=wellbeing(a);
   compileBrain(a); if (gen>maxGen) maxGen=gen; return a;
@@ -493,21 +497,31 @@ function bestFriend(a,r,q){
 }
 function socialTick(a){
   // loneliness eases near yips it trusts and grows when alone among strangers or enemies
-  let friends=0; const r=40;
+  let friends=0, crowd=0; const r=40;
   forBins(gAgent,a.x,a.y,r,o=>{
     if (o===a||o.dead||wdist(a,o)>=r) return;
     const t=a.trust.get(o.id)||0;
     if (t>-.1) gainTrust(a,o.id,.025);        // familiarity: time spent near a yip that hasn't hurt you builds a little trust on its own
     if (t>.25||kinship(a,o)>.4) friends++;
+    crowd++;
   });
+  a.crowdN=crowd;
   const d=a.drv; d.lonely=clamp(d.lonely+(friends?-.015*Math.min(3,friends):.01*a.traits.social),0,1);
 }
-function findMate(a,need){
-  let best=null, bt=need;
-  forBins(gAgent,a.x,a.y,50,o=>{
-    if (o===a||o.dead||o.energy<60||o.age<150||ticks-o.lastBirth<=200||wdist(a,o)>50||kinship(a,o)>=1) return;
-    const m=Math.min(a.trust.get(o.id)||0,o.trust.get(a.id)||0); if (m>bt){ bt=m; best=o; }
+// Each partner's own standard falls as its urge rises: a yip that has met no one for a long time will pair
+// with a stranger, and one that is crowded stays choosy. Both must accept the other.
+const standard = y => .15-.3*y.drv.urge;
+function findMate(a,bonus){
+  // a yip with a strong urge also notices partners farther away (it follows their scent to them)
+  let best=null, bt=-1e9, crowd=0; const reach=50+80*a.drv.urge;
+  forBins(gAgent,a.x,a.y,reach,o=>{
+    if (o===a||o.dead) return; const d=wdist(a,o); if (d>reach) return; if (d<40) crowd++;
+    if (o.energy<60||o.age<150||ticks-o.lastBirth<=200||kinship(a,o)>=1) return;
+    const ta=a.trust.get(o.id)||0, to=o.trust.get(a.id)||0;
+    if (ta<standard(a)-bonus||to<standard(o)) return;
+    const m=Math.min(ta,to); if (m>bt){ bt=m; best=o; }
   });
+  a.crowdN=crowd;
   return best;
 }
 function blendTraits(x,y){ const t={}; for (const k in x){ if (k==='hue'){ let d=((y.hue-x.hue+540)%360)-180; t.hue=(x.hue+d*Math.random()+360)%360; continue; } const w=Math.random(); t[k]=y[k]==null?x[k]:x[k]*w+y[k]*(1-w); } return t; }
@@ -560,8 +574,8 @@ function thank(g,b){
     b.lovesGot++; tally.loves++; g.fx|=256;
     // a loving thank-you between two yips ready to breed can lead to a child
     const ready=y=>y.energy>60&&y.age>150&&ticks-y.lastBirth>200;
-    if (ready(g)&&ready(b)&&kinship(g,b)<1&&(b.trust.get(g.id)||0)>.1&&Math.random()<.25&&agents.length+pendingBirths.length<settings.popCap){
-      g.energy-=30; b.energy-=30; g.lastBirth=b.lastBirth=ticks; pendingBirths.push(child(g,b)); births++; tally.loveBirths++;
+    if (ready(g)&&ready(b)&&kinship(g,b)<1&&(b.trust.get(g.id)||0)>standard(b)&&Math.random()<.25&&agents.length+pendingBirths.length<settings.popCap){
+      g.energy-=30; b.energy-=30; g.lastBirth=b.lastBirth=ticks; g.drv.urge=0; b.drv.urge=0; pendingBirths.push(child(g,b)); births++; tally.loveBirths++;
     }
   } else { b.thanksGot++; tally.thanks++; g.fx|=128; }
 }
@@ -696,7 +710,7 @@ function sense(a){
   if (m&Q.PRED) nearestList(beasts,a,r*a.ph.predMul,env.pred);
   if (m&Q.CROWD) crowdAt(a,40,env.crowd);
   if (m&Q.WALL) env.wall=nearestWall(a,30);
-  if (m&Q.FRIEND) bestFriend(a,r,env.friend);
+  if (m&Q.FRIEND){ if (!a._fr||(a.id+ticks)%4===0) a._fr=bestFriend(a,r,a._fr||{}); env.friend=a._fr; }   // refreshed every 4 ticks
   nearestIn(gAgent,a,r,env.other,a);
   const inp=a.acts[0], codes=a.codes;
   for (let i=0;i<codes.length;i++) inp[i]=SFN[codes[i]](a,env);
@@ -869,8 +883,7 @@ function tick(){
   for (const a of agents){
     if (a.dead) continue;
     a.age++; a.pain*=.9;
-    a._t=tempAt(a);
-    sense(a);
+    sense(a);   // uses a._t from the end of the previous tick
     const temp=forward(a);
     const preDrv=a.drv.cold, choice=a.lastChoice, bonus=act(a,choice,env);
     const sheltered=inside(a), storm=stormAt(a), lt=tempAt(a), ph=a.ph, cold=Math.max(0,ph.coldT-lt), hot=Math.max(0,lt-ph.hotT), thermal=(cold+hot)/(16*a.traits.thermal); a._t=lt;
@@ -897,13 +910,15 @@ function tick(){
     if (resting&&sheltered&&sheltered.owner&&sheltered.owner!==a.id&&a.drv.fatigue>.3&&Math.random()<.05) hostGrace(a,sheltered,.4+a.drv.fatigue);
     if ((a.id+ticks)%6===0) socialTick(a);
     const phi=wellbeing(a), reward=(phi-a.phi+bonus)*REWARD_SCALE; a.phi=phi; a.lastReward=.9*(a.lastReward||0)+.1*reward; a.lastBonus=bonus;
-    if (settings.learning) learn(a,reward,temp);
-    if (a.energy>60&&a.age>150&&ticks-a.lastBirth>200) mateSc[cellIdx(a.x,a.y)]+=1;   // ready to breed: gives off mating scent
+    a.racc=(a.racc||0)+reward;
+    if (settings.learning&&(a.id+ticks)%LEARN_EVERY===0){ learn(a,a.racc,temp); a.racc=0; }
+    if (a.energy>60&&a.age>150&&ticks-a.lastBirth>200) mateSc[cellIdx(a.x,a.y)]+=.4+a.drv.urge;   // ready to breed: gives off mating scent, stronger with urge
     // birth takes two: well-fed, unrelated yips close together who trust each other. Popular yips find it easier.
     const pop=Math.min(1.5,Math.max(0,repOf(a.id))/4);
-    if (a.energy>75-15*pop&&a.age>150&&ticks-a.lastBirth>200&&Math.random()<.04*(1+pop)&&agents.length+newborn.length<cap&&(a.id+ticks)%2===0){
-      const mate=findMate(a,.12-.05*pop);
+    if (a.energy>75-15*pop&&a.age>150&&ticks-a.lastBirth>200&&agents.length+newborn.length<cap&&(a.id+ticks)%2===0&&Math.random()<.04*(1+pop)*(1+a.drv.urge)/(1+Math.max(0,(a.crowdN||0)-5)*.35)){
+      const mate=findMate(a,.05*pop);
       if (mate){
+      a.drv.urge=0; mate.drv.urge=0;
       a.energy-=30; mate.energy-=30; a.lastBirth=mate.lastBirth=ticks;
       const c=child(a,mate); newborn.push(c); births++;
       updateDrives(a,lt,false,0,0); a.phi=wellbeing(a);

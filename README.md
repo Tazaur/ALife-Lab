@@ -16,6 +16,8 @@ An evolution sandbox. A colony of yips, each driven by its own neural network, f
 
 Lifetime learning is a policy gradient with **eligibility traces**: every tick the gradient of the chosen action is added to a fading trace, and each reward updates the weights along it, so relief that comes later (eating) also credits the steps that led to it (walking to food, harvesting). Action preferences are linear outputs so a brain can become decisive. The first (sensory) layer is left to evolution; learning adjusts the deeper layers.
 
+Adults feel an **urge to reproduce** that grows slowly, much faster when no other yip is in sensing range, and eases in a crowd. Each yip's standard for a partner drops as its urge rises (a lonely yip will pair with a stranger), a strong urge lets it find partners farther away, and crowding slows breeding. Learning runs every third tick on the reward gathered since, to save time.
+
 Pairing is helped along by a **mating scent** that yips ready to breed give off automatically (it spreads and fades, and yips can sense its gradient), a stronger need for company, and **loving thank-yous**, which sometimes produce a child. Fights hurt both sides.
 
 ## How yips learn (1.3)
