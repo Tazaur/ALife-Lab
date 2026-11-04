@@ -12,8 +12,8 @@ const clamp = (x,a,b) => x < a ? a : x > b ? b : x;
 const pick = a => a[Math.floor(Math.random()*a.length)];
 
 // ---------- actions ----------
-const ACTIONS = ['Move north','Move east','Move south','Move west','Harvest','Eat','Deposit in store','Withdraw from store','Build house','Build storehouse','Build wall','Build fire','Repair','Share food','Attack agent','Fight beast','Craft tool','Rest'];
-const SHORT   = ['N','E','S','W','Harvest','Eat','Deposit','Withdraw','House','Store','Wall','Fire','Repair','Share','Attack','Hunt','Craft','Rest'];
+const ACTIONS = ['Move north','Move east','Move south','Move west','Harvest','Eat','Deposit in store','Withdraw from store','Build yip','Build storehouse','Build wall','Build fire','Repair','Share food','Attack agent','Fight beast','Craft tool','Rest'];
+const SHORT   = ['N','E','S','W','Harvest','Eat','Deposit','Withdraw','Yip','Store','Wall','Fire','Repair','Share','Attack','Hunt','Craft','Rest'];
 const O = ACTIONS.length;            // discrete, softmax-sampled
 const CONT = ['Voice','Memory A','Memory B'];   // continuous tanh outputs
 const NOUT = O + CONT.length;
@@ -114,7 +114,7 @@ function nearestWall(a,r){ let d=r; for (const b of walls) if (b.hp>0&&Math.abs(
 // ---------- senses ----------
 // [key, label, query mask, fn(a,e)]
 const dir = (a,q,ax) => q.obj ? (q.obj[ax]-a[ax])/Math.max(1,q.dist) : 0;
-const pro = (a,q) => q.obj ? 1-q.dist/a.traits.sense : 0;
+const pro = (a,q) => q.obj ? 1-q.dist/a._r : 0;
 function kinship(a,o){
   if (!o) return 0;
   if (o.parent===a.id||a.parent===o.id) return 1;
@@ -132,6 +132,8 @@ const SENSOR_DEFS = [
   ['pain','Recently hurt',0,a=>a.pain],
   ['temp','Local temperature',0,a=>clamp((a._t-20)/30,-1,1)],
   ['comfort','Thermal comfort',0,a=>clamp(1-Math.abs(a._t-20)/(12*a.traits.thermal),-1,1)],
+  ['sheltered','Inside a yip or store',0,a=>a.sheltered?1:0],
+  ['night','Night',0,()=>dayS<-.15?1:0],
   ['strength','Strength',0,a=>a.traits.strength/3],
   ['speed','Speed',0,a=>a.traits.speed/3],
   ['load','Carried weight',0,a=>load(a)/capacity(a)],
@@ -269,27 +271,116 @@ function learn(a, reward, temp){
 }
 
 // ---------- agents ----------
-function freshTraits(){ return {budget:rnd(5,8),strength:rnd(.8,1.5),speed:rnd(.8,1.6),thermal:rnd(.6,1.4),sense:rnd(60,130),social:rnd(.3,1.4),lr:rnd(.001,.03),explore:rnd(.12,1.2),aggression:rnd(.2,1),hue:rnd(0,360)}; }
-const traitCost = t => t.strength*1.7+t.speed*1.5+t.thermal*.8+t.sense/95+t.social*.35;
-const traitMetab = t => .7+.12*t.budget+.13*Math.max(0,traitCost(t)-t.budget)+.025*traitCost(t);
-const TB = {lr:[.0001,.15],explore:[.02,2.8],sense:[30,210],budget:[2,15],speed:[.2,3],strength:[.2,3],aggression:[.05,3]};
-function mutateTraits(src){ const t={}, s=.18*Math.sqrt(settings.mutation); for (const k in src){ const v=src[k]; if (k==='hue') t[k]=(v+rnd(-20,20)+360)%360; else { const [lo,hi]=TB[k]||[.2,2.5]; t[k]=clamp(v*Math.exp(rnd(-s,s)),lo,hi); } } if (t.aggression==null) t.aggression=rnd(.2,1); return t; }
-function makeAgent(x,y,brain=freshBrain(),gen=0,parent=null,traits=freshTraits(),energy=90,lineage=[]){
+// ---------- genetics ----------
+// Physical traits change slowly between generations and draw heavily on the body budget.
+// Mental traits (temperament and motivations) mutate fast and cost almost nothing.
+const PHYS = ['budget','strength','speed','thermal','sense','rest','regen'];
+const MENT = ['lr','explore','aggression','social','altruism','greed','caution'];
+const TRAIT_INFO = {
+  budget:['Body budget','Room for costly traits before metabolism suffers; larger bodies burn more at rest'],
+  strength:['Strength','Damage, carrying capacity and winning food fights'],
+  speed:['Speed','Movement per step'],
+  thermal:['Thermal tolerance','How slowly cold and heat drain energy'],
+  sense:['Sensing range','How far it can perceive food, agents, beasts and shelter'],
+  rest:['Rest efficiency','Energy regained while resting, most of all inside a yip'],
+  regen:['Regeneration','Health recovered over time while fed'],
+  lr:['Learning rate','How fast experience reshapes its brain during life'],
+  explore:['Exploration','Randomness in its choices'],
+  aggression:['Aggression','Combat damage, and how rewarding a fight feels'],
+  social:['Sociability','How quickly trust builds when it receives help'],
+  altruism:['Altruism','How rewarding sharing feels, especially with kin'],
+  greed:['Greed','How rewarding stockpiling in a store feels'],
+  caution:['Caution','How strongly pain teaches it to avoid danger'],
+};
+const TB = {budget:[2,15],strength:[.2,3],speed:[.2,3],thermal:[.2,2.5],sense:[30,210],rest:[.2,3],regen:[.2,3],
+  lr:[.0001,.15],explore:[.02,2.8],aggression:[.05,3],social:[.2,2.5],altruism:[0,2.5],greed:[0,2.5],caution:[0,3]};
+function freshTraits(){ return {budget:rnd(5,8),strength:rnd(.8,1.5),speed:rnd(.8,1.6),thermal:rnd(.6,1.4),sense:rnd(60,130),rest:rnd(.7,1.3),regen:rnd(.7,1.3),
+  lr:rnd(.001,.03),explore:rnd(.12,1.2),aggression:rnd(.2,1),social:rnd(.3,1.4),altruism:rnd(0,.6),greed:rnd(0,.6),caution:rnd(.5,1.5),hue:rnd(0,360)}; }
+
+// Physical upgrade trees. Each perk has a benefit and a drawback; some are physically incompatible.
+const PERKS = [
+  {id:'muscle',tree:'Might',req:null,cost:1,name:'Dense muscle',good:'+25% attack and hunt damage',bad:'+6% metabolism'},
+  {id:'hide',tree:'Might',req:'muscle',cost:1.2,name:'Thick hide',good:'Takes 30% less damage',bad:'−10% speed'},
+  {id:'jugg',tree:'Might',req:'hide',cost:1.5,name:'Juggernaut',good:'+3 carry capacity; beast bites halved',bad:'−15% speed, +8% metabolism'},
+  {id:'legs',tree:'Swift',req:null,cost:1,name:'Long legs',good:'+15% speed',bad:'−1 carry capacity'},
+  {id:'sprint',tree:'Swift',req:'legs',cost:1.2,name:'Sprinter',good:'+20% speed while energy is above 60',bad:'+6% metabolism'},
+  {id:'lean',tree:'Swift',req:'legs',cost:.8,name:'Lean frame',good:'−12% metabolism',bad:'Max health 80'},
+  {id:'sleeper',tree:'Endurance',req:null,cost:.8,name:'Deep sleeper',good:'Resting restores 60% more energy',bad:'−10% sensing range'},
+  {id:'healer',tree:'Endurance',req:'sleeper',cost:1.2,name:'Fast healer',good:'Heals steadily even while hungry',bad:'+5% metabolism'},
+  {id:'hibernate',tree:'Endurance',req:'sleeper',cost:1,name:'Hibernator',good:'−30% metabolism below 10°C',bad:'−10% speed'},
+  {id:'eyes',tree:'Senses',req:null,cost:1,name:'Keen eyes',good:'+30 sensing range',bad:'+4% metabolism'},
+  {id:'night',tree:'Senses',req:'eyes',cost:1,name:'Night vision',good:'Full sensing range at night',bad:'Overheats 4°C sooner'},
+  {id:'tremor',tree:'Senses',req:'eyes',cost:1,name:'Tremor sense',good:'Detects beasts from 1.6× as far',bad:'−5% speed'},
+  {id:'fur',tree:'Climate',req:null,cost:1,name:'Fur coat',good:'Comfortable down to 5°C',bad:'Overheats above 26°C'},
+  {id:'sweat',tree:'Climate',req:null,cost:1,name:'Sweat glands',good:'Comfortable up to 39°C',bad:'Chills below 18°C'},
+  {id:'gut',tree:'Gut',req:null,cost:1,name:'Efficient gut',good:'Food gives 25% more energy',bad:'Max energy 175'},
+  {id:'fat',tree:'Gut',req:'gut',cost:1.2,name:'Fat reserves',good:'Max energy 260',bad:'−8% speed'},
+];
+const PERK = Object.fromEntries(PERKS.map(p=>[p.id,p]));
+const CLASH = [['jugg','sprint'],['hide','lean'],['fur','sweat'],['fat','lean'],['hibernate','sprint']];
+const clashes = (perks,id) => CLASH.some(([x,y])=>(x===id&&perks.includes(y))||(y===id&&perks.includes(x)));
+function perkAvailable(perks,p){ return !perks.includes(p.id)&&(!p.req||perks.includes(p.req))&&!clashes(perks,p.id); }
+function mutatePerks(src){
+  const perks=[...src], mu=settings.mutation;
+  if (Math.random()<.07*mu){ const opts=PERKS.filter(p=>perkAvailable(perks,p)); if (opts.length) perks.push(pick(opts).id); }
+  if (Math.random()<.035*mu&&perks.length){ const leaves=perks.filter(id=>!perks.some(o=>PERK[o].req===id)); if (leaves.length) perks.splice(perks.indexOf(pick(leaves)),1); }
+  return perks;
+}
+const perkCost = perks => perks.reduce((s,id)=>s+(PERK[id]?PERK[id].cost:0),0);
+const traitCost = (t,perks=[]) => t.strength*1.7+t.speed*1.5+t.thermal*.8+t.sense/95+t.rest*.6+t.regen*.7+perkCost(perks)+(t.social+t.aggression)*.12;
+const traitMetab = (t,perks=[]) => { const c=traitCost(t,perks); return .7+.12*t.budget+.13*Math.max(0,c-t.budget)+.025*c; };
+// derived physiology: what the traits and perks add up to, cached on the agent
+function derive(a){
+  const t=a.traits, has=id=>a.perks.includes(id);
+  const ph={speed:1,dmg:1,armor:1,beastArmor:1,carry:0,metab:1,senseAdd:0,senseMul:1,coldT:15,hotT:31,food:1,maxE:200,maxH:100,rest:t.rest,regen:.004*t.regen,predMul:1,night:false,hib:false,sprint:false};
+  if (has('muscle')){ ph.dmg*=1.25; ph.metab*=1.06; }
+  if (has('hide')){ ph.armor*=.7; ph.speed*=.9; }
+  if (has('jugg')){ ph.carry+=3; ph.beastArmor*=.5; ph.speed*=.85; ph.metab*=1.08; }
+  if (has('legs')){ ph.speed*=1.15; ph.carry-=1; }
+  if (has('sprint')){ ph.sprint=true; ph.metab*=1.06; }
+  if (has('lean')){ ph.metab*=.88; ph.maxH=80; }
+  if (has('sleeper')){ ph.rest*=1.6; ph.senseMul*=.9; }
+  if (has('healer')){ ph.regen+=.025; ph.metab*=1.05; }
+  if (has('hibernate')){ ph.hib=true; ph.speed*=.9; }
+  if (has('eyes')){ ph.senseAdd+=30; ph.metab*=1.04; }
+  if (has('night')){ ph.night=true; ph.hotT-=4; }
+  if (has('tremor')){ ph.predMul=1.6; ph.speed*=.95; }
+  if (has('fur')){ ph.coldT=5; ph.hotT=Math.min(ph.hotT,26); }
+  if (has('sweat')){ ph.hotT+=8; ph.coldT=18; }
+  if (has('gut')){ ph.food=1.25; ph.maxE=175; }
+  if (has('fat')){ ph.maxE=260; ph.speed*=.92; }
+  ph.sense=(t.sense+ph.senseAdd)*ph.senseMul;
+  ph.baseMetab=traitMetab(t,a.perks);
+  a.ph=ph; a.health=Math.min(a.health,ph.maxH);
+}
+function mutateTraits(src){
+  const t={}, mu=Math.sqrt(settings.mutation), sP=.07*mu, sM=.2*mu;
+  for (const k in src){
+    const v=src[k];
+    if (k==='hue'){ t[k]=(v+rnd(-20,20)+360)%360; continue; }
+    const [lo,hi]=TB[k]||[.2,2.5], phys=PHYS.includes(k);
+    t[k]=phys&&Math.random()>.4 ? v : clamp(v*Math.exp(rnd(-1,1)*(phys?sP:sM))+(k==='altruism'||k==='greed'?rnd(-.03,.03):0),lo,hi);
+  }
+  for (const k of [...PHYS,...MENT]) if (t[k]==null) t[k]=freshTraits()[k];
+  return t;
+}
+function makeAgent(x,y,brain=freshBrain(),gen=0,parent=null,traits=freshTraits(),energy=90,lineage=[],perks=[]){
   const a={id:nextId++,x,y,vx:0,vy:0,hd:rnd(0,6.283),brain,gen,parent,lineage,traits,energy,health:100,prevHealth:100,age:0,lifespan:rnd(3600,5100),
     inv:{food:0,wood:0,stone:0},tool:0,memory:0,memA:0,memB:0,signal:0,pain:0,trust:new Map(),lastChoice:O-1,probs:new Float32Array(O),
     builds:0,success:0,kids:0,shared:0,stolen:0,attacks:0,kills:0,hunts:0,beastKills:0,crafts:0,deposits:0,
     actionCounts:new Uint32Array(O),baseline:0,sheltered:false,harm:'hunger',fx:0,_t:20};
-  if (a.traits.aggression==null) a.traits.aggression=rnd(.2,1);
+  for (const k of [...PHYS,...MENT]) if (a.traits[k]==null) a.traits[k]=freshTraits()[k];
+  a.perks=perks.filter(id=>PERK[id]); derive(a);
   compileBrain(a); if (gen>maxGen) maxGen=gen; return a;
 }
 function child(a){
   const lineage=[{id:a.id,gen:a.gen,hue:a.traits.hue},...a.lineage].slice(0,12);
-  const c=makeAgent(clamp(a.x+rnd(-13,13),8,W-8),clamp(a.y+rnd(-13,13),8,H-8),mutateBrain(a.brain),a.gen+1,a.id,mutateTraits(a.traits),60,lineage);
+  const c=makeAgent(clamp(a.x+rnd(-13,13),8,W-8),clamp(a.y+rnd(-13,13),8,H-8),mutateBrain(a.brain),a.gen+1,a.id,mutateTraits(a.traits),60,lineage,mutatePerks(a.perks));
   c.trust.set(a.id,.5); a.trust.set(c.id,.5);
   a.kids++; return c;
 }
 const load = a => a.inv.food+a.inv.wood*1.4+a.inv.stone*2;
-const capacity = a => 2+a.traits.strength*4;
+const capacity = a => Math.max(1,2+a.traits.strength*4+a.ph.carry);
 function setTrust(a,id,v){ a.trust.set(id,clamp(v,-1,1)); if (a.trust.size>48){ const keep=[...a.trust].sort((x,y)=>Math.abs(y[1])-Math.abs(x[1])).slice(0,32); a.trust=new Map(keep); } }
 
 function addItem(type,x,y){
@@ -356,7 +447,7 @@ function tickBeasts(){
     if (wallBlocks(nx,ny,4.5)){ z.vx*=-.5; z.vy*=-.5; z.wander+=Math.PI/2; } else { z.x=nx; z.y=ny; }
     if (nx<=3||nx>=W-3||ny<=3||ny>=H-3) z.wander+=Math.PI;
     if (z.vx*z.vx+z.vy*z.vy>.01) z.hd=Math.atan2(z.vy,z.vx);
-    if (tgt&&z.cd<=0&&Math.hypot(tgt.x-z.x,tgt.y-z.y)<7){ const dmg=10*pw*(.6+.4*Math.random()); tgt.health-=dmg; tgt.pain=1; tgt.harm='beast'; tgt.fx|=32; z.cd=18; z.energy=Math.min(140,z.energy+8); }
+    if (tgt&&z.cd<=0&&Math.hypot(tgt.x-z.x,tgt.y-z.y)<7){ const dmg=10*pw*(.6+.4*Math.random()); tgt.health-=dmg*tgt.ph.armor*tgt.ph.beastArmor; tgt.pain=1; tgt.harm='beast'; tgt.fx|=32; z.cd=18; z.energy=Math.min(140,z.energy+8); }
   }
   for (let i=beasts.length-1;i>=0;i--){ const z=beasts[i]; if (z.hp<=0||z.energy<=0||z.age>12000){ if (z.hp<=0) for (let k=0;k<4;k++) addItem('food',z.x+rnd(-8,8),z.y+rnd(-8,8)); beasts.splice(i,1); } }
 }
@@ -368,17 +459,21 @@ function inside(a){
   for (const b of shelters){ if (b.hp<=0) continue; const dx=a.x-b.x, dy=a.y-b.y; if (dx*dx+dy*dy<(b.r-1)*(b.r-1) && (!b.owner||b.owner===a.id||(a.trust.get(b.owner)||0)>-.25)) return b; }
   return null;
 }
-function tempAt(a){ let t=baseTemp; for (const b of fires) if (b.hp>0){ const dx=a.x-b.x, dy=a.y-b.y; if (dx*dx+dy*dy<4225) t+=22*(1-Math.sqrt(dx*dx+dy*dy)/65); } return t; }
+function tempAt(a){
+  let t=baseTemp; for (const b of fires) if (b.hp>0){ const dx=a.x-b.x, dy=a.y-b.y; if (dx*dx+dy*dy<4225) t+=22*(1-Math.sqrt(dx*dx+dy*dy)/65); }
+  const s=inside(a); if (s) t=20+(t-20)*(s.type==='house'?.2:.55);   // yips insulate: interiors stay near 20°C
+  return t;
+}
 const env = {food:{},tree:{},stone:{},shelter:{},fire:{},storm:{},other:{},pred:{},crowd:{n:0,sig:0},wall:30};
 function sense(a){
-  const r=a.traits.sense, m=a.qmask;
+  const r=a.ph.sense*(dayS<-.15&&!a.ph.night?.75:1), m=a.qmask; a._r=r;
   if (m&Q.FOOD) nearestIn(gFood,a,r,env.food);
   if (m&Q.TREE) nearestIn(gTree,a,r,env.tree);
   if (m&Q.STONE) nearestIn(gStone,a,r,env.stone);
   if (m&Q.SHELTER) nearestList(shelters,a,r,env.shelter,isShelter);
   if (m&Q.FIRE) nearestList(fires,a,r,env.fire);
   if (m&Q.STORM) nearestList(storms,a,r,env.storm);
-  if (m&Q.PRED) nearestList(beasts,a,r,env.pred);
+  if (m&Q.PRED) nearestList(beasts,a,r*a.ph.predMul,env.pred);
   if (m&Q.CROWD) crowdAt(a,40,env.crowd);
   if (m&Q.WALL) env.wall=nearestWall(a,30);
   nearestIn(gAgent,a,r,env.other,a);
@@ -391,7 +486,7 @@ function act(a,choice,e){
   const o=e.other.obj, od=e.other.dist;
   switch (choice){
     case 0: case 1: case 2: case 3: {
-      const sp=(.7+a.traits.speed*1.7)/(1+load(a)/(capacity(a)*1.2));
+      const sp=(.7+a.traits.speed*1.7)*a.ph.speed*(a.ph.sprint&&a.energy>60?1.2:1)/(1+load(a)/(capacity(a)*1.2));
       a.vx=a.vx*.35+DX[choice]*sp*.65; a.vy=a.vy*.35+DY[choice]*sp*.65; a.energy-=.008*sp; reward+=.008; moved=true; break;
     }
     case A_.HARVEST: {
@@ -404,11 +499,11 @@ function act(a,choice,e){
       break;
     }
     case A_.EAT:
-      if (a.inv.food>0&&a.energy<170){ a.inv.food--; a.energy+=30; reward+=1.2; }
-      else if (insideNow&&insideNow.stock.food>0&&a.energy<170){ insideNow.stock.food--; a.energy+=30; reward+=1.1; }
+      if (a.inv.food>0&&a.energy<a.ph.maxE-30){ a.inv.food--; a.energy+=30*a.ph.food; reward+=1.2; }
+      else if (insideNow&&insideNow.stock.food>0&&a.energy<a.ph.maxE-30){ insideNow.stock.food--; a.energy+=30*a.ph.food; reward+=1.1; }
       break;
     case A_.DEPOSIT:
-      if (insideNow){ let n=0; for (const k of ['food','wood','stone']) if (a.inv[k]>0){ insideNow.stock[k]+=a.inv[k]; n+=a.inv[k]; a.inv[k]=0; } if (n){ reward+=Math.min(.4,n*.09); a.deposits+=n; tally.deposits+=n; a.fx|=64; } }
+      if (insideNow){ let n=0; for (const k of ['food','wood','stone']) if (a.inv[k]>0){ insideNow.stock[k]+=a.inv[k]; n+=a.inv[k]; a.inv[k]=0; } if (n){ reward+=Math.min(.4,n*.09)+a.traits.greed*.12*Math.min(n,4); a.deposits+=n; tally.deposits+=n; a.fx|=64; } }
       break;
     case A_.WITHDRAW:
       if (insideNow){ let n=0; for (const k of ['wood','stone','food']) while (insideNow.stock[k]>0&&load(a)+(k==='stone'?2:k==='wood'?1.4:1)<=capacity(a)&&n<4){ insideNow.stock[k]--; a.inv[k]++; n++; } if (n){ reward+=.08; tally.withdraws+=n; if (insideNow.owner&&insideNow.owner!==a.id){ const ow=agents.find(x=>x.id===insideNow.owner); if (ow) setTrust(ow,a.id,(ow.trust.get(a.id)||0)-.15); } } }
@@ -422,25 +517,25 @@ function act(a,choice,e){
     }
     case A_.SHARE:
       if (o&&od<16&&a.inv.food>0&&load(o)+1<=capacity(o)){
-        a.inv.food--; o.inv.food++; setTrust(o,a.id,(o.trust.get(a.id)||0)+.25); setTrust(a,o.id,(a.trust.get(o.id)||0)+.05);
-        reward+=.1; a.shared++; tally.shares++; a.fx|=1;
+        a.inv.food--; o.inv.food++; setTrust(o,a.id,(o.trust.get(a.id)||0)+.25*o.traits.social); setTrust(a,o.id,(a.trust.get(o.id)||0)+.05);
+        reward+=.1+a.traits.altruism*(.15+.35*kinship(a,o)); a.shared++; tally.shares++; a.fx|=1;
       }
       break;
     case A_.ATTACK:
       if (o&&od<14){
-        const dmg=5*a.traits.strength*(a.tool>0?2.2:1)*(o.sheltered?.3:1)*(.6+.4*a.traits.aggression);
+        const dmg=5*a.traits.strength*a.ph.dmg*o.ph.armor*(a.tool>0?2.2:1)*(o.sheltered?.3:1)*(.6+.4*a.traits.aggression);
         o.health-=dmg; o.pain=1; o.harm='attack'; a.energy-=1.2; a.attacks++; tally.attacks++; a.fx|=2; o.fx|=32;
         if (a.tool>0) a.tool--;
         setTrust(o,a.id,(o.trust.get(a.id)||0)-.6); setTrust(a,o.id,(a.trust.get(o.id)||0)-.2);
         if (o.inv.food>0&&a.traits.strength>o.traits.strength*.8&&load(a)+1<=capacity(a)){ o.inv.food--; a.inv.food++; a.stolen++; tally.thefts++; reward+=.35; }
-        else reward+=.05;
+        else reward+=.02+.06*a.traits.aggression;
         if (o.health<=0) a.kills++;
       }
       break;
     case A_.HUNT: {
       const z=nearestList(beasts,a,16,_z).obj;
       if (z){
-        const dmg=5*a.traits.strength*(a.tool>0?2.2:1)*(.7+.3*a.traits.aggression);
+        const dmg=5*a.traits.strength*a.ph.dmg*(a.tool>0?2.2:1)*(.7+.3*a.traits.aggression);
         z.hp-=dmg; z.target=a; a.energy-=1; a.hunts++; tally.hunts++; a.fx|=4; if (a.tool>0) a.tool--;
         reward+=.3;
         if (z.hp<=0){ a.beastKills++; tally.beastKills++; reward+=1.5; log(`Agent #${a.id} slew a beast`,'beast'); }
@@ -451,8 +546,8 @@ function act(a,choice,e){
       if (a.tool<=0&&a.inv.wood>=1&&a.inv.stone>=1){ a.inv.wood--; a.inv.stone--; a.tool=40; a.crafts++; tally.crafts++; reward+=.4; a.fx|=8; }
       break;
     default:
-      if (insideNow){ a.energy+=.16; a.health=Math.min(100,a.health+.08); reward+=.08; }
-      else if (nearestList(fires,a,18,_f2).obj) a.energy+=.04;
+      if (insideNow){ const yip=insideNow.type==='house'; a.energy+=(yip?.24:.12)*a.ph.rest; a.health=Math.min(a.ph.maxH,a.health+(yip?.12:.05)*a.traits.regen); reward+=.08; }
+      else { a.energy+=(nearestList(fires,a,18,_f2).obj?.05:.02)*a.ph.rest; }
   }
   if (!moved){ a.vx*=.5; a.vy*=.5; }
   if (a.vx*a.vx+a.vy*a.vy>.0004){
@@ -467,7 +562,7 @@ function sendStorm(){ storms.push({x:-120,y:rnd(50,H-50),w:rnd(90,170),h:rnd(140
 function archive(a){
   const score=a.age+a.kids*350+a.builds*60+a.success*2+a.beastKills*200+a.shared*20;
   if (elite.length<24||score>elite[elite.length-1].score){
-    elite.push({score,gen:a.gen,id:a.id,traits:{...a.traits},brain:copyBrain(a.brain)});
+    elite.push({score,gen:a.gen,id:a.id,traits:{...a.traits},perks:[...a.perks],brain:copyBrain(a.brain)});
     elite.sort((x,y)=>y.score-x.score); if (elite.length>24) elite.length=24;
   }
 }
@@ -475,7 +570,7 @@ function reseed(){
   const n=40;
   for (let i=0;i<n;i++){
     const src=elite.length?pick(elite):null, [x,y]=spawnPoint(fert,1);
-    agents.push(src?makeAgent(x,y,mutateBrain(src.brain),src.gen+1,null,mutateTraits(src.traits),90,[{id:src.id,gen:src.gen,hue:src.traits.hue}]):makeAgent(x,y));
+    agents.push(src?makeAgent(x,y,mutateBrain(src.brain),src.gen+1,null,mutateTraits(src.traits),90,[{id:src.id,gen:src.gen,hue:src.traits.hue}],mutatePerks(src.perks||[])):makeAgent(x,y));
   }
   log(`Extinction. ${n} colonists reseeded from ${elite.length?elite.length+' archived genomes':'scratch'}`,'death');
   toast('Extinction: colony reseeded from the archive','death');
@@ -515,18 +610,19 @@ function tick(){
     sense(a);
     const temp=forward(a);
     let reward=act(a,a.lastChoice,env);
-    const sheltered=inside(a), storm=stormAt(a), lt=a._t, cold=Math.max(0,15-lt), hot=Math.max(0,lt-31), thermal=(cold+hot)/(16*a.traits.thermal);
+    const sheltered=inside(a), storm=stormAt(a), lt=tempAt(a), ph=a.ph, cold=Math.max(0,ph.coldT-lt), hot=Math.max(0,lt-ph.hotT), thermal=(cold+hot)/(16*a.traits.thermal); a._t=lt;
     a.sheltered=!!sheltered;
-    a.energy-=drainK*traitMetab(a.traits)+a.brainCost+thermal*(sheltered?.009:.045);
+    a.energy-=drainK*ph.baseMetab*ph.metab*(ph.hib&&lt<10?.7:1)+a.brainCost+thermal*(sheltered?.006:.045);
+    if (a.energy>40||ph.regen>.02) a.health=Math.min(ph.maxH,a.health+ph.regen);
     if (storm&&!sheltered){ const wb=nearestWall(a,12)<12?.4:1; a.health-=.15*settings.storm*wb; a.energy-=.12*settings.storm*wb; a.harm='storm'; }
     for (const b of fires){ const dx=a.x-b.x, dy=a.y-b.y; if (dx*dx+dy*dy<(b.r+2)*(b.r+2)){ a.health-=.9; a.energy-=.1; a.harm='fire'; } }
     if (a.energy<0){ a.health+=a.energy*.08; a.energy=0; a.harm='hunger'; }
-    if (a.energy>200) a.energy=200;
-    if (a.energy<45&&a.inv.food>0){ a.inv.food--; a.energy=Math.min(200,a.energy+28); reward+=.7; }
+    if (a.energy>ph.maxE) a.energy=ph.maxE;
+    if (a.energy<45&&a.inv.food>0){ a.inv.food--; a.energy=Math.min(ph.maxE,a.energy+28*ph.food); reward+=.7; }
     if (a.inv.food&&Math.random()<.0012*a.inv.food) a.inv.food--;   // carried food spoils; stores keep it better
     a.memory=clamp(.96*a.memory+.04*(a.energy/100-1),-1,1);
     const hurt=Math.max(0,a.prevHealth-a.health); a.prevHealth=a.health;
-    reward+=clamp((a.energy-80)/200,-.1,.1)-hurt*.04;
+    reward+=clamp((a.energy-80)/200,-.1,.1)-hurt*.04*a.traits.caution;
     if (settings.learning) learn(a,reward,temp);
     if (a.energy>135&&a.age>100&&Math.random()<.012&&agents.length+newborn.length<cap){
       a.energy-=60; const c=child(a); newborn.push(c); births++;
@@ -569,7 +665,7 @@ function reset(newShape){
 // ---------- serialization ----------
 const r4 = v => Math.round(v*1e4)/1e4, r2 = v => Math.round(v*100)/100;
 const serBrain = b => ({inputs:b.inputs,sizes:b.sizes,w:b.w.map(f=>Array.from(f,r4))});
-const AGENT_KEYS=['gen','parent','lineage','traits','age','lifespan','inv','tool','builds','success','kids','shared','stolen','attacks','kills','hunts','beastKills','crafts','deposits'];
+const AGENT_KEYS=['gen','parent','lineage','traits','perks','age','lifespan','inv','tool','builds','success','kids','shared','stolen','attacks','kills','hunts','beastKills','crafts','deposits'];
 function serialize(){
   return {version:11,shape,seed,ticks,nextId,nextBid,births,deaths,deathsBy,tally,maxGen,peakPop,selected,settings:{...settings},
     agents:agents.map(a=>{ const o={id:a.id,x:r2(a.x),y:r2(a.y),hd:r2(a.hd),energy:r2(a.energy),health:r2(a.health),memory:r4(a.memory),memA:r4(a.memA),memB:r4(a.memB),baseline:r4(a.baseline),
@@ -594,13 +690,14 @@ function deserialize(s){
   seed=s.seed||12345; makeFields(seed);
   const A=s.agents.map(o=>{
     const brain=deBrain(o.brain);
-    const a=makeAgent(o.x*sx,o.y*sy,brain,o.gen||0,o.parent??null,{...freshTraits(),...o.traits},o.energy);
+    const a=makeAgent(o.x*sx,o.y*sy,brain,o.gen||0,o.parent??null,{...freshTraits(),...o.traits},o.energy,[],o.perks||[]);
     a.id=o.id;
     for (const k of AGENT_KEYS) if (o[k]!==undefined&&k!=='traits'&&k!=='gen'&&k!=='parent') a[k]=o[k];
     Object.assign(a,{health:o.health,prevHealth:o.health,memory:o.memory||0,memA:o.memA||0,memB:o.memB||0,baseline:o.baseline||0,hd:o.hd||0,lifespan:o.lifespan||rnd(3600,5100),inv:o.inv||{food:0,wood:0,stone:0}});
     a.trust=new Map(Array.isArray(o.trust)?o.trust:Object.entries(o.trust||{}).map(([k,v])=>[+k,v]));
     if (o.actionCounts&&o.actionCounts.length===O) a.actionCounts=Uint32Array.from(o.actionCounts);
     if (o.learned&&!legacy){ a.learned=o.learned.map(x=>Float32Array.from(x)); }
+    derive(a);
     if (!o.lineage){ const ch=[]; let id=o.parent; for (let i=0;i<12&&id&&reg[id];i++){ ch.push({id,gen:reg[id].gen,hue:0}); id=reg[id].parent; } a.lineage=ch; }
     return a;
   });
@@ -621,11 +718,11 @@ function deserialize(s){
 
 // ---------- reporting ----------
 let started=false, running=true, speed=3, maxMode=false, last=performance.now(), acc=0, stepsWin=0, tps=0, lastMetrics=last, lastFrame=0, lastStats=0, lastInspect=0, inspecting=false;
-function postMeta(){ self.postMessage({type:'meta',senses:SENSES,actions:ACTIONS,short:SHORT,cont:CONT,W,H,FW,FH,FC,shape,settings,fert,forest,rock,seed}); }
+function postMeta(){ self.postMessage({type:'meta',perks:PERKS,clash:CLASH,phys:PHYS,ment:MENT,traitInfo:TRAIT_INFO,senses:SENSES,actions:ACTIONS,short:SHORT,cont:CONT,W,H,FW,FH,FC,shape,settings,fert,forest,rock,seed}); }
 function postFrame(){
   const na=agents.length, A=new Float32Array(na*10);
   for (let i=0,o=0;i<na;i++,o+=10){ const a=agents[i]; A[o]=a.id; A[o+1]=a.x; A[o+2]=a.y; A[o+3]=a.traits.hue; A[o+4]=a.hd; A[o+5]=a.energy/200; A[o+6]=a.health/100;
-    A[o+7]=(a.sheltered?1:0)|(a.inv.food+a.inv.wood+a.inv.stone>0?2:0)|(a.tool>0?4:0); A[o+8]=a.traits.sense; A[o+9]=a.fx; }
+    A[o+7]=(a.sheltered?1:0)|(a.inv.food+a.inv.wood+a.inv.stone>0?2:0)|(a.tool>0?4:0); A[o+8]=a._r||a.ph.sense; A[o+9]=a.fx; }
   let ni=0; for (const it of items) if (!it.dead) ni++;
   const I=new Float32Array(ni*4); let o=0;
   for (const it of items){ if (it.dead) continue; I[o]=it.t; I[o+1]=it.x; I[o+2]=it.y; I[o+3]=it.life/it.max; o+=4; }
@@ -645,7 +742,7 @@ function postStats(withHistory){
   const counts=[0,0,0]; for (const it of items) if (!it.dead) counts[it.t]++;
   const t=k=>avg(a=>a.traits[k]);
   self.postMessage({type:'stats',ticks,pop:agents.length,peakPop,births,deaths,deathsBy,tally,maxGen,avgGen:avg(a=>a.gen),byType,counts,temp:baseTemp,beasts:beasts.length,tools,stocked,
-    traits:{strength:t('strength'),speed:t('speed'),thermal:t('thermal'),sense:t('sense'),social:t('social'),explore:t('explore'),lr:t('lr'),budget:t('budget'),aggression:t('aggression')},
+    traits:Object.fromEntries([...PHYS,...MENT].map(k=>[k,t(k)])),perkUse:PERKS.map(p=>[p.id,agents.filter(a=>a.perks.includes(p.id)).length/n]),
     brain:{layers:layers/n,neurons:neurons/n,inputs:inputs/n},sensUse:Object.entries(sensUse).sort((a,b)=>b[1]-a[1]).map(([k,v])=>[k,v/n]),
     actMix:Array.from(act,v=>v/n),events,eliteTop:elite.slice(0,6).map(e=>({id:e.id,gen:e.gen,score:e.score|0,hue:e.traits.hue})),history:withHistory?history:null,settings});
 }
@@ -658,7 +755,7 @@ function postInspect(){
   self.postMessage({type:'inspect',id:a.id,gen:a.gen,age:a.age,lifespan:a.lifespan,energy:a.energy,health:a.health,x:a.x,y:a.y,traits:a.traits,inv:a.inv,tool:a.tool,load:load(a),cap:capacity(a),
     builds:a.builds,success:a.success,kids:a.kids,livingKids:kids,sheltered:a.sheltered,temp:a._t,lastChoice:a.lastChoice,probs:Array.from(a.probs),inputs:b.inputs,sizes:b.sizes,ws,
     acts:a.acts.map(x=>Array.from(x)),trust:[...a.trust].sort((x,y)=>Math.abs(y[1])-Math.abs(x[1])).slice(0,10).map(([id,v])=>({id,v,alive:alive.has(id)})),
-    lineage:a.lineage.map(l=>({...l,alive:alive.has(l.id)})),parent:a.parent,cost:traitCost(a.traits),metab:traitMetab(a.traits),brainCost:a.brainCost,
+    lineage:a.lineage.map(l=>({...l,alive:alive.has(l.id)})),parent:a.parent,cost:traitCost(a.traits,a.perks),metab:a.ph.baseMetab*a.ph.metab,perks:a.perks,ph:{maxE:a.ph.maxE,maxH:a.ph.maxH,speed:a.ph.speed,dmg:a.ph.dmg,armor:a.ph.armor,coldT:a.ph.coldT,hotT:a.ph.hotT,sense:a.ph.sense},brainCost:a.brainCost,
     deeds:{shared:a.shared,stolen:a.stolen,attacks:a.attacks,kills:a.kills,hunts:a.hunts,beastKills:a.beastKills,crafts:a.crafts,deposits:a.deposits,builds:a.builds},
     actionCounts:Array.from(a.actionCounts),memory:a.memory,memA:a.memA,memB:a.memB,signal:a.signal,pain:a.pain});
 }
