@@ -244,6 +244,30 @@ button.chip:hover{border-color:var(--line-hi);background:rgba(255,255,255,.05)}
 .empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;padding:40px 20px;color:var(--muted);flex:1}
 .empty b{color:var(--fg);font:600 15px var(--f-display)}
 
+.trees{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.tree{display:flex;flex-direction:column;gap:4px;padding:8px;border:1px solid var(--line);border-radius:var(--r-sm);min-width:0}
+.tree>b{font:600 10px/1 var(--f-body);letter-spacing:.12em;text-transform:uppercase;color:var(--dim);margin-bottom:2px}
+.perk{display:flex;align-items:center;gap:6px;font-size:11px;text-align:left;padding:4px 5px;border-radius:6px;border:1px dashed var(--line-hi);color:var(--muted);min-width:0}
+.perk i{width:8px;height:8px;border-radius:50%;border:1.5px solid currentColor;flex-shrink:0}
+.perk span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.perk.t2{margin-left:8px}.perk.t3{margin-left:16px}
+.perk.own{border-style:solid;border-color:rgba(243,201,107,.6);color:var(--fg);background:rgba(243,201,107,.08)}
+.perk.own i{background:var(--accent);border-color:var(--accent)}
+.perk.lock{opacity:.45}
+.perk.clash{opacity:.45;text-decoration:line-through}
+.perk.sel{box-shadow:0 0 0 1.5px var(--fg)}
+.perkinfo{font-size:11.5px;color:var(--muted);padding:8px 10px;border-radius:var(--r-sm);background:rgba(255,255,255,.03);line-height:1.45}
+.perkinfo b{color:var(--fg)}
+.perkinfo .g{color:var(--good)}.perkinfo .x{color:var(--bad)}
+.budget{display:flex;flex-direction:column;gap:5px;font-size:11px;color:var(--muted)}
+.budget .row2{display:flex;justify-content:space-between}
+.budget .row2 b{font:500 11px var(--f-mono);color:var(--fg)}
+.budget .bb{position:relative;height:8px;border-radius:4px;background:rgba(255,255,255,.06);overflow:hidden}
+.budget .bb i{position:absolute;top:0;bottom:0;left:0;border-radius:4px}
+.budget .bb u{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--fg);text-decoration:none}
+.trait span[title]{cursor:help}
+@media (max-width:420px){ .trees{grid-template-columns:repeat(2,minmax(0,1fr))} }
+
 /* ---------- overlays ---------- */
 .legend{position:absolute;right:var(--gut);top:72px;display:flex;gap:10px;padding:7px 11px;font-size:11px;color:var(--muted);z-index:4;pointer-events:none;transition:opacity .2s}
 .legend span{display:flex;align-items:center;gap:5px;white-space:nowrap}

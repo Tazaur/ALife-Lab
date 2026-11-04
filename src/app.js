@@ -466,13 +466,13 @@ $('bMax').onclick = () => { if (maxMode) { maxMode = false; applySpeed(); } else
 
 /* tools + context bar */
 const TOOLS = {
-  select: ['Select & pan', 'Tap an agent to inspect it. Drag to pan; pinch or scroll to zoom.'],
+  select: ['Select & pan', 'Tap a yip to inspect it. Drag to pan; pinch or scroll to zoom.'],
   food: ['Food brush', 'Drag across the map to paint food.'],
-  tree: ['Tree brush', 'Drag to plant trees. Agents harvest them for wood.'],
+  tree: ['Tree brush', 'Drag to plant trees. Yips harvest them for wood.'],
   stone: ['Stone brush', 'Drag to drop stone for building and tools.'],
-  wall: ['Wall brush', 'Drag to draw a wall line. Walls block agents and beasts and break storm winds.'],
+  wall: ['Wall brush', 'Drag to draw a wall line. Walls block yips and beasts and break storm winds.'],
   fire: ['Fire', 'Tap to light a fire. It warms and scares beasts off, but burns anyone standing in it.'],
-  beast: ['Beast', 'Tap to release a beast. Beasts hunt exposed agents; walls, fire and houses protect them.'],
+  beast: ['Beast', 'Tap to release a beast. Beasts hunt exposed yips; walls, fire and houses protect them.'],
   erase: ['Eraser', 'Drag to clear resources, structures and beasts.'],
 };
 function setTool(t) {
@@ -694,7 +694,7 @@ const SLIDERS = [
 const SLIDERS2 = [
   ['beasts', 'Beasts roaming', 0, 20, 1, v => +v ? `${v}` : 'None'],
   ['beastPower', 'Beast ferocity', .3, 3, .1, v => `${(+v).toFixed(1)}×`],
-  ['popCap', 'Population cap', 40, 400, 10, v => `${v} agents`],
+  ['popCap', 'Population cap', 40, 400, 10, v => `${v} yips`],
   ['mutation', 'Mutation rate', 0, 4, .1, v => `${(+v).toFixed(1)}×`],
 ];
 const ALLS = [...SLIDERS, ...SLIDERS2];
@@ -798,7 +798,7 @@ const smooth = (a, k = 4) => a.map((_, i) => { let s = 0, n = 0; for (let j = Ma
 
 /* ================= stats drawer ================= */
 const DEATHC = { age: C.muted, hunger: C.warn, storm: C.storm, fire: C.fire, beast: C.beast, attack: '#b04a8a' };
-const DEATHL = { age: 'Old age', hunger: 'Starvation', storm: 'Storms', fire: 'Burns', beast: 'Beasts', attack: 'Killed by agents' };
+const DEATHL = { age: 'Old age', hunger: 'Starvation', storm: 'Storms', fire: 'Burns', beast: 'Beasts', attack: 'Killed by yips' };
 function renderStats() {
   if (!stats) return;
   updateHud();
@@ -819,20 +819,48 @@ function renderStats() {
     .map(([k, v]) => `<div class="fig"><b>${typeof v === 'number' ? fmt(v) : v}</b><small>${k}</small></div>`).join('');
   lineChart($('cGen'), [{ values: h.map(x => x.gen), color: C.accent }]);
   lineChart($('cBody'), [{ values: h.map(x => x.str), color: C.bad, area: false }, { values: h.map(x => x.spd), color: C.store }, { values: h.map(x => x.sense / 100), color: C.wall }, { values: h.map(x => x.agg || 0), color: C.beast }, { values: h.map(x => (x.neurons || 0) / 50), color: C.accent }], { decimals: 1 });
+  if (s.perkUse) $('perkBars').innerHTML = s.perkUse.slice().sort((x, y) => y[1] - x[1]).map(([id, v]) => { const p = meta.perks.find(q => q.id === id); return `<div class="bar"><div class="bt"><i style="width:${v * 100}%"></i><span>${esc(p.name)} · ${p.tree}</span></div><b>${Math.round(v * 100)}%</b></div>`; }).join('');
+  $('mentAvg').innerHTML = traitRows(meta.ment, s.traits, null);
   const tot = Object.values(s.deathsBy).reduce((a, b) => a + b, 0) || 1;
   $('deathStack').innerHTML = Object.entries(s.deathsBy).map(([k, v]) => `<i style="width:${v / tot * 100}%;background:${DEATHC[k] || C.dim}"></i>`).join('');
   $('deathKey').innerHTML = Object.entries(s.deathsBy).map(([k, v]) => `<span><i style="background:${DEATHC[k] || C.dim}"></i>${DEATHL[k] || k} <b class="num">${Math.round(v / tot * 100)}%</b></span>`).join('');
   $('sensBars').innerHTML = s.sensUse.filter(([k]) => k !== 'bias').slice(0, 12).map(([k, v]) => `<div class="bar"><div class="bt"><i style="width:${v * 100}%"></i><span>${esc(meta.senses[k] || k)}</span></div><b>${Math.round(v * 100)}%</b></div>`).join('');
   const mxA = Math.max(...s.actMix, 1e-9);
   $('actBars').innerHTML = s.actMix.map((v, i) => [v, i]).sort((a, b) => b[0] - a[0]).map(([v, i]) => `<div class="bar${v === mxA ? ' hl' : ''}"><div class="bt"><i style="width:${v / mxA * 100}%"></i><span>${meta.actions[i]}</span></div><b>${(v * 100).toFixed(1)}%</b></div>`).join('');
-  $('elite').innerHTML = s.eliteTop.length ? s.eliteTop.map(e => `<span class="chip dead" title="Score ${e.score}"><i style="background:hsl(${e.hue | 0} 72% 66%)"></i>#${e.id} · gen ${e.gen}</span>`).join('') : '<span class="note">Filled as agents die.</span>';
+  $('elite').innerHTML = s.eliteTop.length ? s.eliteTop.map(e => `<span class="chip dead" title="Score ${e.score}"><i style="background:hsl(${e.hue | 0} 72% 66%)"></i>#${e.id} · gen ${e.gen}</span>`).join('') : '<span class="note">Filled as yips die.</span>';
   $('log').innerHTML = s.events.slice(0, 30).map(e => `<div><time>${fmt(e.t)}</time><i style="background:${KCOL[e.kind] || C.muted}"></i><span>${esc(e.s)}</span></div>`).join('');
 }
 
 /* ================= inspector ================= */
 let pane = 'pMind';
 document.querySelectorAll('[data-pane]').forEach(b => b.onclick = () => { pane = b.dataset.pane; document.querySelectorAll('[data-pane]').forEach(x => x.classList.toggle('on', x === b)); document.querySelectorAll('.pane').forEach(p => p.hidden = p.id !== pane); renderInspector(); });
-const TRAITS = [['strength', 'Strength', .2, 3, 2], ['speed', 'Speed', .2, 3, 2], ['aggression', 'Aggression', .05, 3, 2], ['thermal', 'Thermal tol.', .2, 2.5, 2], ['sense', 'Sensing range', 30, 210, 0], ['social', 'Sociability', .2, 2.5, 2], ['budget', 'Body budget', 2, 15, 1], ['explore', 'Exploration', .02, 2.8, 2], ['lr', 'Learning rate', .0001, .15, 4]];
+const DIGITS = { lr: 4, sense: 0, budget: 1 };
+function traitRows(keys, vals, avg) {
+  return keys.map(k => {
+    const [label, info] = meta.traitInfo[k], [lo, hi] = meta.bounds[k], v = vals[k] ?? 0, d = DIGITS[k] ?? 2;
+    const f = clamp((v - lo) / (hi - lo), 0, 1), a = avg && avg[k] != null ? clamp((avg[k] - lo) / (hi - lo), 0, 1) : null;
+    return `<div class="trait"><span title="${esc(info)}">${label}</span><div class="tr"><i style="width:${f * 100}%"></i>${a != null ? `<u style="left:${a * 100}%"></u>` : ''}</div><b>${v.toFixed(d)}</b></div>`;
+  }).join('');
+}
+let perkSel = null;
+function perkState(perks, p) {
+  if (perks.includes(p.id)) return 'own';
+  if (meta.clash.some(([x, y]) => (x === p.id && perks.includes(y)) || (y === p.id && perks.includes(x)))) return 'clash';
+  if (p.req && !perks.includes(p.req)) return 'lock';
+  return 'open';
+}
+function perkDepth(p) { let d = 1, q = p; while (q.req) { d++; q = meta.perks.find(x => x.id === q.req); } return d; }
+function renderTrees(perks) {
+  const trees = [...new Set(meta.perks.map(p => p.tree))];
+  $('perkTrees').innerHTML = trees.map(t => `<div class="tree"><b>${t}</b>${meta.perks.filter(p => p.tree === t).map(p => { const st = perkState(perks, p); return `<button class="perk t${perkDepth(p)} ${st}${perkSel === p.id ? ' sel' : ''}" data-perk="${p.id}"><i></i><span>${esc(p.name)}</span></button>`; }).join('')}</div>`).join('');
+  if (perkSel) {
+    const p = meta.perks.find(x => x.id === perkSel), st = perkState(perks, p);
+    const clash = meta.clash.filter(c => c.includes(p.id)).map(c => meta.perks.find(x => x.id === (c[0] === p.id ? c[1] : c[0])).name);
+    const req = p.req ? meta.perks.find(x => x.id === p.req).name : null;
+    $('perkInfo').innerHTML = `<b>${esc(p.name)}</b> · ${{ own: 'carried by this yip', open: 'can evolve next', lock: `needs ${esc(req)} first`, clash: 'blocked by a clash' }[st]}<br><span class="g">+ ${esc(p.good)}</span><br><span class="x">− ${esc(p.bad)}</span><br>Budget cost ${p.cost}${clash.length ? ` · incompatible with ${clash.map(esc).join(', ')}` : ''}`;
+  }
+}
+$('perkTrees').addEventListener('click', e => { const b = e.target.closest('[data-perk]'); if (!b) return; perkSel = perkSel === b.dataset.perk ? null : b.dataset.perk; if (insp && !insp.none) renderTrees(insp.perks); });
 function renderInspector() {
   const m = insp; if (!m || !$('dInspect').classList.contains('open')) return;
   const dead = m.none && m.id === selected;
@@ -841,7 +869,7 @@ function renderInspector() {
   if (m.none || m.id !== selected) return;
   const hue = m.traits.hue | 0;
   $('iSwatch').style.background = hueFill[hue]; $('iSwatch').style.setProperty('--hue', `hsl(${hue} 72% 66% / .5)`);
-  $('iTitle').textContent = `Agent #${m.id}`;
+  $('iTitle').textContent = `Yip #${m.id}`;
   $('iSub').textContent = `Generation ${m.gen} · age ${fmt(m.age)} · ${m.kids} offspring`;
   const badges = [];
   badges.push(m.sheltered ? ['Sheltered', 'good'] : ['Exposed', '']);
@@ -851,7 +879,7 @@ function renderInspector() {
   if (m.pain > .3) badges.push(['Under attack', 'bad']);
   if (m.temp < 10) badges.push([`Cold ${m.temp.toFixed(0)}°`, 'warn']); else if (m.temp > 31) badges.push([`Hot ${m.temp.toFixed(0)}°`, 'warn']);
   $('iBadges').innerHTML = badges.map(([t, c]) => `<span class="badge ${c}">${t}</span>`).join('');
-  meter('E', m.energy, 200, m.energy.toFixed(0)); meter('H', m.health, 100, m.health.toFixed(0));
+  meter('E', m.energy, (m.ph && m.ph.maxE) || 200, m.energy.toFixed(0)); meter('H', m.health, (m.ph && m.ph.maxH) || 100, m.health.toFixed(0));
   meter('A', m.age, m.lifespan, Math.round(m.age / m.lifespan * 100) + '%'); meter('L', m.load, m.cap, `${m.load.toFixed(1)}/${m.cap.toFixed(1)}`);
   if (pane === 'pMind') { drawBrain(m); probBars(m); }
   else if (pane === 'pBody') bodyPane(m);
@@ -866,15 +894,17 @@ function probBars(m) {
   $('contKV').innerHTML = [['Voice', m.signal], ['Memory A', m.memA], ['Memory B', m.memB]].map(([k, v]) => `<div><span>${k}</span><b>${v >= 0 ? '+' : ''}${v.toFixed(2)}</b></div>`).join('');
 }
 function bodyPane(m) {
-  const avg = stats ? stats.traits : {};
-  $('traitList').innerHTML = TRAITS.map(([k, label, lo, hi, d]) => {
-    const v = m.traits[k] ?? 0, f = clamp((v - lo) / (hi - lo), 0, 1), a = avg[k] != null ? clamp((avg[k] - lo) / (hi - lo), 0, 1) : null;
-    return `<div class="trait"><span>${label}</span><div class="tr"><i style="width:${f * 100}%"></i>${a != null ? `<u style="left:${a * 100}%"></u>` : ''}</div><b>${v.toFixed(d)}</b></div>`;
-  }).join('');
+  const avg = stats ? stats.traits : null;
+  $('physList').innerHTML = traitRows(meta.phys, m.traits, avg);
+  $('mentList').innerHTML = traitRows(meta.ment, m.traits, avg);
+  const budget = m.traits.budget, cost = m.cost, over = cost > budget, pct = v => clamp(v / Math.max(budget, cost) * 100, 0, 100);
+  $('budgetBar').innerHTML = `<div class="row2"><span>Body budget used</span><b>${cost.toFixed(1)} / ${budget.toFixed(1)}${over ? ' · over budget' : ''}</b></div><div class="bb"><i style="width:${pct(cost)}%;background:${over ? 'var(--bad)' : 'var(--good)'};opacity:.7"></i><u style="left:${pct(budget)}%"></u></div><span>Going over the budget raises metabolism. Upgrades and strong physical traits use it up.</span>`;
+  renderTrees(m.perks || []);
   const d = m.deeds;
-  $('deedKV').innerHTML = [['Food shared', d.shared], ['Food stolen', d.stolen], ['Attacks', d.attacks], ['Agents killed', d.kills], ['Beast hits', d.hunts], ['Beasts slain', d.beastKills], ['Tools made', d.crafts], ['Items stored', d.deposits], ['Built', d.builds], ['Harvested', m.success]]
+  $('deedKV').innerHTML = [['Food shared', d.shared], ['Food stolen', d.stolen], ['Attacks', d.attacks], ['Yips killed', d.kills], ['Beast hits', d.hunts], ['Beasts slain', d.beastKills], ['Tools made', d.crafts], ['Items stored', d.deposits], ['Built', d.builds], ['Harvested', m.success]]
     .map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join('');
-  const kv = [['Food carried', m.inv.food], ['Wood carried', m.inv.wood], ['Stone carried', m.inv.stone], ['Tool uses left', m.tool], ['Trait cost', m.cost.toFixed(2)], ['Metabolism', m.metab.toFixed(2) + '×'], ['Brain upkeep', m.brainCost.toFixed(3)], ['Felt temp.', m.temp.toFixed(1) + '°C'], ['Lifespan', fmt(m.lifespan)], ['Last act', meta.short[m.lastChoice]], ['Position', `${m.x | 0}, ${m.y | 0}`], ['Energy trend', m.memory.toFixed(2)]];
+  const ph = m.ph || {};
+  const kv = [['Wellbeing', m.wellbeing.toFixed(2)], ['Avg reward', (m.rewardAvg >= 0 ? '+' : '') + m.rewardAvg.toFixed(3)], ['Food carried', m.inv.food], ['Wood / stone', `${m.inv.wood} / ${m.inv.stone}`], ['Tool uses left', m.tool], ['Metabolism', m.metab.toFixed(2) + '×'], ['Brain upkeep', m.brainCost.toFixed(3)], ['Comfort range', `${ph.coldT}–${ph.hotT}°C`], ['Felt temp.', m.temp.toFixed(1) + '°C'], ['Max energy / health', `${ph.maxE} / ${ph.maxH}`], ['Lifespan', fmt(m.lifespan)], ['Last act', meta.short[m.lastChoice]]];
   $('bodyKV').innerHTML = kv.map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join('');
 }
 function socialPane(m) {
@@ -885,7 +915,7 @@ function socialPane(m) {
   $('kidChips').innerHTML = m.livingKids.length ? m.livingKids.map(k => `<button class="chip" data-goto="${k.id}"><i style="background:${hueFill[k.hue | 0]}"></i>#${k.id}</button>`).join('') : '<p class="note">None alive right now.</p>';
 }
 function linePane(m) {
-  const rows = [`<div><i class="nd" style="background:${hueFill[m.traits.hue | 0]};box-shadow:0 0 0 2px var(--accent)"></i><span>#${m.id} <b>this agent</b></span><small>gen ${m.gen}</small></div>`]
+  const rows = [`<div><i class="nd" style="background:${hueFill[m.traits.hue | 0]};box-shadow:0 0 0 2px var(--accent)"></i><span>#${m.id} <b>this yip</b></span><small>gen ${m.gen}</small></div>`]
     .concat(m.lineage.map(l => l.alive ? `<button data-goto="${l.id}"><i class="nd" style="background:${hueFill[(l.hue | 0) % 360]}"></i><span>#${l.id} · alive</span><small>gen ${l.gen}</small></button>` : `<div><i class="nd" style="background:${l.hue ? hueFill[(l.hue | 0) % 360] : C.dim};opacity:.4"></i><span style="color:var(--muted)">#${l.id}</span><small>gen ${l.gen}</small></div>`));
   if (!m.lineage.length) rows.push('<p class="note">A founder: no recorded ancestors.</p>');
   $('chain').innerHTML = rows.join('');
@@ -976,7 +1006,7 @@ setInterval(() => { if (ui.auto && running && F && F.ticks > 200) send('save', {
 applyUi();
 
 /* coach mark & resume prompt */
-if (isTouch) $('coachText').innerHTML = '<b>Tap an agent</b> to read its mind · <b>pinch</b> to zoom · <b>drag</b> to pan · <b>double-tap</b> to zoom in';
+if (isTouch) $('coachText').innerHTML = '<b>Tap a yip</b> to read its mind · <b>pinch</b> to zoom · <b>drag</b> to pan · <b>double-tap</b> to zoom in';
 if (!store.get('alife.coached11', false)) $('coach').hidden = false;
 $('coachOk').onclick = () => { $('coach').hidden = true; store.set('alife.coached11', true); };
 (() => {

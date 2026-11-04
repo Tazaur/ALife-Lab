@@ -45,6 +45,8 @@
       </section>
       <section class="sec"><h3>Average generation</h3><canvas class="chart" id="cGen"></canvas></section>
       <section class="sec"><h3>Body &amp; temperament drift</h3><canvas class="chart" id="cBody"></canvas><div class="key"><span><i style="background:#f2836f"></i>Strength</span><span><i style="background:#7fd8ea"></i>Speed</span><span><i style="background:#c9b3e6"></i>Sense ÷ 100</span><span><i style="background:#e26d5a"></i>Aggression</span><span><i style="background:#f3c96b"></i>Brain size ÷ 50</span></div></section>
+      <section class="sec"><h3>Physical upgrades <span>share of yips carrying each</span></h3><div class="bars" id="perkBars"></div></section>
+      <section class="sec"><h3>Temperament <span>population average</span></h3><div class="sec" id="mentAvg" style="gap:7px"></div></section>
       <section class="sec"><h3>How they died</h3><div class="stack" id="deathStack"></div><div class="key" id="deathKey"></div></section>
       <section class="sec"><h3>What they sense <span>share of brains wired to it</span></h3><div class="bars" id="sensBars"></div></section>
       <section class="sec"><h3>What they do <span>average action mix</span></h3><div class="bars" id="actBars"></div></section>
@@ -82,8 +84,8 @@
         <div>
           <label class="toggle"><span>Day and night lighting<small>Darkens the map at night; fires glow</small></span><span class="sw"><input type="checkbox" id="oNight" checked><i></i></span></label>
           <label class="toggle"><span>Action effects<small>Flashes for sharing, attacks, hunts and crafting</small></span><span class="sw"><input type="checkbox" id="oFx" checked><i></i></span></label>
-          <label class="toggle"><span>Sensing radius<small>Ring around the selected agent</small></span><span class="sw"><input type="checkbox" id="oSense" checked><i></i></span></label>
-          <label class="toggle"><span>Movement trail<small>Recent path of the selected agent</small></span><span class="sw"><input type="checkbox" id="oTrail" checked><i></i></span></label>
+          <label class="toggle"><span>Sensing radius<small>Ring around the selected yip</small></span><span class="sw"><input type="checkbox" id="oSense" checked><i></i></span></label>
+          <label class="toggle"><span>Movement trail<small>Recent path of the selected yip</small></span><span class="sw"><input type="checkbox" id="oTrail" checked><i></i></span></label>
           <label class="toggle"><span>Map legend</span><span class="sw"><input type="checkbox" id="oLegend" checked><i></i></span></label>
           <label class="toggle"><span>Performance readout</span><span class="sw"><input type="checkbox" id="oPerf" checked><i></i></span></label>
         </div>
@@ -94,7 +96,7 @@
         <label class="toggle"><span>Keep screen awake<small>Stops a phone from dimming while the colony runs</small></span><span class="sw"><input type="checkbox" id="oWake" checked><i></i></span></label>
       </section>
       <section class="sec"><h3>Saves</h3>
-        <p class="note">Browser saves stay on this device. Files include every agent, brain, resource and setting, and also load 0.6–1.0 snapshots.</p>
+        <p class="note">Browser saves stay on this device. Files include every yip, brain, resource and setting, and also load 0.6–1.0 snapshots.</p>
         <div class="row">
           <button class="btn" id="sSave">Save in browser</button>
           <button class="btn" id="sLoad">Load browser save</button>
@@ -115,7 +117,7 @@
           <kbd>M</kbd><span>Toggle hyperspeed</span>
           <kbd>1–8</kbd><span>Select, food, tree, stone, wall, fire, beast, erase</span>
           <kbd>[ / ]</kbd><span>Smaller / larger brush</span>
-          <kbd>F</kbd><span>Follow selected agent</span>
+          <kbd>F</kbd><span>Follow selected yip</span>
           <kbd>0</kbd><span>Fit the map to the screen</span>
           <kbd>S / C</kbd><span>Stats / world</span>
           <kbd>Esc</kbd><span>Close panels, clear selection</span>
@@ -126,11 +128,11 @@
   </aside>
 
   <!-- Inspector -->
-  <aside class="drawer right glass" id="dInspect" aria-label="Agent inspector">
+  <aside class="drawer right glass" id="dInspect" aria-label="Yip inspector">
     <div class="dh">
       <div class="spec" style="flex:1;min-width:0">
         <div class="swatch" id="iSwatch"></div>
-        <h2><span id="iTitle">Agent</span><small id="iSub"></small><div class="badges" id="iBadges"></div></h2>
+        <h2><span id="iTitle">Yip</span><small id="iSub"></small><div class="badges" id="iBadges"></div></h2>
       </div>
       <button class="ib" id="iFollow" data-tip="Follow with the camera" data-key="F"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg><span class="lbl">Follow</span></button>
       <button class="ib" data-close="dInspect" aria-label="Close"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
@@ -168,8 +170,14 @@
         <div class="kv" id="contKV"></div>
       </div>
       <div class="pane sec" id="pBody" hidden>
-        <h3>Traits <span>marker = population average</span></h3>
-        <div class="sec" id="traitList" style="gap:7px"></div>
+        <h3>Physical <span>slow to evolve · heavy on the body budget</span></h3>
+        <div class="sec" id="physList" style="gap:7px"></div>
+        <div class="budget" id="budgetBar"></div>
+        <h3>Upgrade trees <span>tap a node for details</span></h3>
+        <div class="trees" id="perkTrees"></div>
+        <div class="perkinfo" id="perkInfo">Owned upgrades are filled. Outlined ones can still evolve; struck-through ones clash with something this yip already has.</div>
+        <h3>Mental <span>fast to evolve · nearly free</span></h3>
+        <div class="sec" id="mentList" style="gap:7px"></div>
         <h3>Lifetime deeds</h3>
         <div class="kv" id="deedKV"></div>
         <h3>State</h3>
@@ -186,7 +194,7 @@
         <div class="chain" id="chain"></div>
       </div>
     </div>
-    <div class="empty" id="iEmpty" hidden><b>This agent has died</b><span>Pick another to keep watching the colony.</span><button class="btn pri" data-pick="random">Pick a random agent</button></div>
+    <div class="empty" id="iEmpty" hidden><b>This yip has died</b><span>Pick another to keep watching the colony.</span><button class="btn pri" data-pick="random">Pick a random yip</button></div>
   </aside>
 
   <div class="legend glass" id="legend">
@@ -200,7 +208,7 @@
     <span><i style="background:var(--beast)"></i>Beast</span>
   </div>
   <div class="perf" id="perf">Starting…</div>
-  <div class="coach glass" id="coach" hidden><span id="coachText"><b>Tap an agent</b> to read its mind · <b>scroll</b> to zoom · <b>drag</b> to pan · pick a brush to paint</span><div class="row"><button class="btn sm pri" id="coachResume" hidden>Resume</button><button class="btn sm" id="coachOk">Got it</button></div></div>
+  <div class="coach glass" id="coach" hidden><span id="coachText"><b>Tap a yip</b> to read its mind · <b>scroll</b> to zoom · <b>drag</b> to pan · pick a brush to paint</span><div class="row"><button class="btn sm pri" id="coachResume" hidden>Resume</button><button class="btn sm" id="coachOk">Got it</button></div></div>
 
   <div class="bottom" id="bottom">
     <div class="ctx glass" id="ctx">
@@ -221,7 +229,7 @@
       </div>
       <div class="dsep"></div>
       <div class="dg" id="tools">
-        <button class="tool on" data-tool="select" data-tip="Select agents and pan the map" data-key="1"><svg class="i" viewBox="0 0 24 24"><path d="M5 3l13 8-6 1.5L9 19z"/></svg><span>Select</span></button>
+        <button class="tool on" data-tool="select" data-tip="Select yips and pan the map" data-key="1"><svg class="i" viewBox="0 0 24 24"><path d="M5 3l13 8-6 1.5L9 19z"/></svg><span>Select</span></button>
         <button class="tool" data-tool="food" data-tip="Paint food" data-key="2"><svg class="i" viewBox="0 0 24 24"><path d="M12 20c-5-3-7-7-5-10 1.5-2 3.5-2 5-.5 1.5-1.5 3.5-1.5 5 .5 2 3 0 7-5 10z"/><path d="M12 9.5C12 6 13.5 4 16 3.5"/></svg><span>Food</span><i class="dot" style="background:var(--food)"></i></button>
         <button class="tool" data-tool="tree" data-tip="Plant trees (wood)" data-key="3"><svg class="i" viewBox="0 0 24 24"><path d="M12 3 6 12h3l-4 6h14l-4-6h3z"/><path d="M12 18v3"/></svg><span>Tree</span><i class="dot" style="background:var(--tree)"></i></button>
         <button class="tool" data-tool="stone" data-tip="Drop stone" data-key="4"><svg class="i" viewBox="0 0 24 24"><path d="M4 16 7.5 8l8-2.5L20 15l-6 5z"/></svg><span>Stone</span><i class="dot" style="background:var(--stone)"></i></button>

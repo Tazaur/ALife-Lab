@@ -1,6 +1,22 @@
 # ALife Lab
 
-An evolution sandbox. A colony of agents, each driven by its own neural network, forages, hoards, builds, shares, steals, fights, hunts beasts, crafts tools and breeds. Brains mutate between generations (senses, layers and neurons are added and removed) and also learn within a lifetime through a policy-gradient update. Nothing social is scripted: sharing, theft, kin loyalty and group hunting only happen if evolution finds them worth it.
+An evolution sandbox. A colony of yips, each driven by its own neural network, forages, hoards, builds, shares, steals, fights, hunts beasts, crafts tools and breeds. Brains mutate between generations (senses, layers and neurons are added and removed) and also learn within a lifetime through a policy-gradient update. Nothing social is scripted: sharing, theft, kin loyalty and group hunting only happen if evolution finds them worth it.
+
+## How yips learn (1.2)
+
+There are no hand-tuned rewards for actions. A yip's learning signal is the change in its own **wellbeing**: energy, health (weighted by its caution), what it carries, food it has stored in its own store (weighted by greed), and the standing value of structures it built. Because reward is "wellbeing now minus wellbeing before", any loop that ends where it started earns exactly zero, so nothing can be farmed. Two bounded extras sit on top:
+
+- **Curiosity** pays for succeeding at actions few yips perform. Each repeat pays less (inverse-square), so a yip's lifetime total per action is capped.
+- **Altruism** pays for giving food to a needier kin or ally, scaled by how much needier they are, and fading with repeated gifts.
+
+Evolution itself has no reward at all: yips that survive and breed pass on their brains, traits and upgrades.
+
+## Genetics
+
+- **Physical traits** (body budget, strength, speed, thermal tolerance, sensing, rest efficiency, regeneration) mutate rarely and in small steps, and draw heavily on the body budget. Going over budget raises metabolism.
+- **Mental traits** (learning rate, impulsiveness, curiosity, aggression, sociability, altruism, greed, caution) mutate quickly and cost almost nothing.
+- **Upgrade trees**: 16 physical upgrades in six trees (Might, Swift, Endurance, Senses, Climate, Gut). Each has a benefit and a drawback and a budget cost, some require an earlier one, and physically opposed pairs can't coexist (Juggernaut vs Sprinter, Thick hide vs Lean frame, Fur coat vs Sweat glands, Fat reserves vs Lean frame, Hibernator vs Sprinter).
+- **Houses insulate**: inside, temperature is pulled most of the way to 20°C, and resting restores energy and health fastest there.
 
 ## The world (1.1)
 

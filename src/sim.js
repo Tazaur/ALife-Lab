@@ -12,15 +12,15 @@ const clamp = (x,a,b) => x < a ? a : x > b ? b : x;
 const pick = a => a[Math.floor(Math.random()*a.length)];
 
 // ---------- actions ----------
-const ACTIONS = ['Move north','Move east','Move south','Move west','Harvest','Eat','Deposit in store','Withdraw from store','Build yip','Build storehouse','Build wall','Build fire','Repair','Share food','Attack agent','Fight beast','Craft tool','Rest'];
-const SHORT   = ['N','E','S','W','Harvest','Eat','Deposit','Withdraw','Yip','Store','Wall','Fire','Repair','Share','Attack','Hunt','Craft','Rest'];
+const ACTIONS = ['Move north','Move east','Move south','Move west','Harvest','Eat','Deposit in store','Withdraw from store','Build house','Build storehouse','Build wall','Build fire','Repair','Share food','Attack yip','Fight beast','Craft tool','Rest'];
+const SHORT   = ['N','E','S','W','Harvest','Eat','Deposit','Withdraw','House','Store','Wall','Fire','Repair','Share','Attack','Hunt','Craft','Rest'];
 const O = ACTIONS.length;            // discrete, softmax-sampled
 const CONT = ['Voice','Memory A','Memory B'];   // continuous tanh outputs
 const NOUT = O + CONT.length;
 const A_ = Object.fromEntries(['N','E','S','W','HARVEST','EAT','DEPOSIT','WITHDRAW','HOUSE','STORE','WALL','FIRE','REPAIR','SHARE','ATTACK','HUNT','CRAFT','REST'].map((k,i)=>[k,i]));
 const ITYPES = ['food','tree','stone'];
 const BTYPES = ['house','store','wall','fire'];
-const SPECS = {house:{wood:3,stone:1,hp:450,r:16},store:{wood:5,stone:4,hp:720,r:23},wall:{wood:1,stone:1,hp:420,r:15},fire:{wood:2,stone:0,hp:180,r:12}};
+const SPECS = {house:{wood:3,stone:1,hp:450,r:16},store:{wood:5,stone:4,hp:720,r:23},wall:{wood:2,stone:1,hp:420,r:15},fire:{wood:2,stone:0,hp:180,r:12}};
 const LIMITS = {layers:6, neurons:24, inputs:32};
 const DX = [0,1,0,-1], DY = [-1,0,1,0];
 const settings = {food:3,trees:.12,stone:.08,drain:1,decay:1,storm:1,temperature:19,day:500,season:2600,beasts:3,beastPower:1,popCap:260,mutation:1,learning:true,autoReseed:true};
@@ -132,7 +132,7 @@ const SENSOR_DEFS = [
   ['pain','Recently hurt',0,a=>a.pain],
   ['temp','Local temperature',0,a=>clamp((a._t-20)/30,-1,1)],
   ['comfort','Thermal comfort',0,a=>clamp(1-Math.abs(a._t-20)/(12*a.traits.thermal),-1,1)],
-  ['sheltered','Inside a yip or store',0,a=>a.sheltered?1:0],
+  ['sheltered','Inside a house or store',0,a=>a.sheltered?1:0],
   ['night','Night',0,()=>dayS<-.15?1:0],
   ['strength','Strength',0,a=>a.traits.strength/3],
   ['speed','Speed',0,a=>a.traits.speed/3],
@@ -162,17 +162,17 @@ const SENSOR_DEFS = [
   ['predX','Beast direction X',Q.PRED,(a,e)=>dir(a,e.pred,'x')],
   ['predY','Beast direction Y',Q.PRED,(a,e)=>dir(a,e.pred,'y')],
   ['predNear','Beast proximity',Q.PRED,(a,e)=>pro(a,e.pred)],
-  ['agentX','Nearest agent direction X',Q.OTHER,(a,e)=>dir(a,e.other,'x')],
-  ['agentY','Nearest agent direction Y',Q.OTHER,(a,e)=>dir(a,e.other,'y')],
-  ['agentNear','Nearest agent proximity',Q.OTHER,(a,e)=>pro(a,e.other)],
-  ['kin','Kinship with nearest agent',Q.OTHER,(a,e)=>kinship(a,e.other.obj)],
-  ['trust','Trust toward nearest agent',Q.OTHER,(a,e)=>e.other.obj?(a.trust.get(e.other.obj.id)||0):0],
-  ['agentEnergy','Nearest agent energy',Q.OTHER,(a,e)=>e.other.obj?e.other.obj.energy/100-1:0],
-  ['agentFood','Nearest agent carries food',Q.OTHER,(a,e)=>e.other.obj?Math.min(1,e.other.obj.inv.food/3):0],
-  ['agentTool','Nearest agent holds a tool',Q.OTHER,(a,e)=>e.other.obj&&e.other.obj.tool>0?1:0],
-  ['agentStrength','Nearest agent strength vs mine',Q.OTHER,(a,e)=>e.other.obj?clamp(e.other.obj.traits.strength-a.traits.strength,-1,1):0],
-  ['agentHue','Nearest agent color',Q.OTHER,(a,e)=>e.other.obj?Math.cos(e.other.obj.traits.hue*Math.PI/180):0],
-  ['signal','Nearest agent\'s voice',Q.OTHER,(a,e)=>e.other.obj?e.other.obj.signal:0],
+  ['agentX','Nearest yip direction X',Q.OTHER,(a,e)=>dir(a,e.other,'x')],
+  ['agentY','Nearest yip direction Y',Q.OTHER,(a,e)=>dir(a,e.other,'y')],
+  ['agentNear','Nearest yip proximity',Q.OTHER,(a,e)=>pro(a,e.other)],
+  ['kin','Kinship with nearest yip',Q.OTHER,(a,e)=>kinship(a,e.other.obj)],
+  ['trust','Trust toward nearest yip',Q.OTHER,(a,e)=>e.other.obj?(a.trust.get(e.other.obj.id)||0):0],
+  ['agentEnergy','Nearest yip energy',Q.OTHER,(a,e)=>e.other.obj?e.other.obj.energy/100-1:0],
+  ['agentFood','Nearest yip carries food',Q.OTHER,(a,e)=>e.other.obj?Math.min(1,e.other.obj.inv.food/3):0],
+  ['agentTool','Nearest yip holds a tool',Q.OTHER,(a,e)=>e.other.obj&&e.other.obj.tool>0?1:0],
+  ['agentStrength','Nearest yip strength vs mine',Q.OTHER,(a,e)=>e.other.obj?clamp(e.other.obj.traits.strength-a.traits.strength,-1,1):0],
+  ['agentHue','Nearest yip color',Q.OTHER,(a,e)=>e.other.obj?Math.cos(e.other.obj.traits.hue*Math.PI/180):0],
+  ['signal','Nearest yip\'s voice',Q.OTHER,(a,e)=>e.other.obj?e.other.obj.signal:0],
   ['chorus','Average voice nearby',Q.CROWD,(a,e)=>e.crowd.sig],
   ['crowd','Crowding',Q.CROWD,(a,e)=>Math.min(1,e.crowd.n/8)],
   ['ownHue','Own color',0,a=>Math.cos(a.traits.hue*Math.PI/180)],
@@ -270,32 +270,49 @@ function learn(a, reward, temp){
   }
 }
 
+// ---------- reward ----------
+// A yip's learning signal is the change in its own wellbeing, a potential over its state.
+// Because reward = phi(now) - phi(before), any loop that ends where it started earns exactly zero,
+// so nothing can be farmed. Temperament traits set the weights; they never add free reward.
+function wellbeing(a){
+  const t=a.traits, inv=a.inv;
+  return a.energy/100 + t.caution*a.health/100 + .3*inv.food*a.ph.food + .12*inv.wood + .15*inv.stone + .006*a.tool + t.greed*.3*a.stash + (ownVal.get(a.id)||0);
+}
+// structures keep their material value for the builder while they stand, so building is neither a loss nor a prize;
+// the value wears away as they decay, and only real use (warmth, rest, safety) makes them pay off
+const MATV={wood:.12,stone:.15}; let ownVal=new Map();
+const buildValue=b=>{ const s=SPECS[b.type]; return (s.wood*MATV.wood+s.stone*MATV.stone)*Math.max(0,b.hp/b.max); };
+const REWARD_SCALE=3;   // one wellbeing unit = one energy-100; scaled so learning moves at a useful pace
+const actFreq=new Float64Array(O).fill(1/O), okTick=new Float64Array(O);
+function updateActFreq(){ let s=0; for (let i=0;i<O;i++) s+=okTick[i]; if (s>0) for (let i=0;i<O;i++){ actFreq[i]=.995*actFreq[i]+.005*okTick[i]/s; okTick[i]=0; } }
+
 // ---------- agents ----------
 // ---------- genetics ----------
 // Physical traits change slowly between generations and draw heavily on the body budget.
 // Mental traits (temperament and motivations) mutate fast and cost almost nothing.
 const PHYS = ['budget','strength','speed','thermal','sense','rest','regen'];
-const MENT = ['lr','explore','aggression','social','altruism','greed','caution'];
+const MENT = ['lr','explore','curiosity','aggression','social','altruism','greed','caution'];
 const TRAIT_INFO = {
   budget:['Body budget','Room for costly traits before metabolism suffers; larger bodies burn more at rest'],
   strength:['Strength','Damage, carrying capacity and winning food fights'],
   speed:['Speed','Movement per step'],
   thermal:['Thermal tolerance','How slowly cold and heat drain energy'],
-  sense:['Sensing range','How far it can perceive food, agents, beasts and shelter'],
-  rest:['Rest efficiency','Energy regained while resting, most of all inside a yip'],
+  sense:['Sensing range','How far it can perceive food, other yips, beasts and shelter'],
+  rest:['Rest efficiency','Energy regained while resting, most of all inside a house'],
   regen:['Regeneration','Health recovered over time while fed'],
   lr:['Learning rate','How fast experience reshapes its brain during life'],
-  explore:['Exploration','Randomness in its choices'],
-  aggression:['Aggression','Combat damage, and how rewarding a fight feels'],
+  explore:['Impulsiveness','Randomness in its choices'],
+  curiosity:['Curiosity','Reward for succeeding at things few yips do; fades with repetition'],
+  aggression:['Aggression','Harder hits, at a higher energy cost'],
   social:['Sociability','How quickly trust builds when it receives help'],
-  altruism:['Altruism','How rewarding sharing feels, especially with kin'],
-  greed:['Greed','How rewarding stockpiling in a store feels'],
-  caution:['Caution','How strongly pain teaches it to avoid danger'],
+  altruism:['Altruism','How much helping a needier kin or ally feels like a gain'],
+  greed:['Greed','How much food in its own store counts as wealth'],
+  caution:['Caution','How much its own health counts toward wellbeing'],
 };
 const TB = {budget:[2,15],strength:[.2,3],speed:[.2,3],thermal:[.2,2.5],sense:[30,210],rest:[.2,3],regen:[.2,3],
-  lr:[.0001,.15],explore:[.02,2.8],aggression:[.05,3],social:[.2,2.5],altruism:[0,2.5],greed:[0,2.5],caution:[0,3]};
-function freshTraits(){ return {budget:rnd(5,8),strength:rnd(.8,1.5),speed:rnd(.8,1.6),thermal:rnd(.6,1.4),sense:rnd(60,130),rest:rnd(.7,1.3),regen:rnd(.7,1.3),
-  lr:rnd(.001,.03),explore:rnd(.12,1.2),aggression:rnd(.2,1),social:rnd(.3,1.4),altruism:rnd(0,.6),greed:rnd(0,.6),caution:rnd(.5,1.5),hue:rnd(0,360)}; }
+  lr:[.0001,.15],explore:[.02,2.8],curiosity:[0,3],aggression:[.05,3],social:[.2,2.5],altruism:[0,2],greed:[0,1.5],caution:[.1,3]};
+function freshTraits(){ return {budget:rnd(6.5,9),strength:rnd(.8,1.5),speed:rnd(.8,1.6),thermal:rnd(.6,1.4),sense:rnd(60,130),rest:rnd(.7,1.3),regen:rnd(.7,1.3),
+  lr:rnd(.001,.03),explore:rnd(.12,1.2),curiosity:rnd(.2,1.2),aggression:rnd(.2,1),social:rnd(.3,1.4),altruism:rnd(0,.6),greed:rnd(0,.6),caution:rnd(.5,1.5),hue:rnd(0,360)}; }
 
 // Physical upgrade trees. Each perk has a benefit and a drawback; some are physically incompatible.
 const PERKS = [
@@ -368,9 +385,9 @@ function makeAgent(x,y,brain=freshBrain(),gen=0,parent=null,traits=freshTraits()
   const a={id:nextId++,x,y,vx:0,vy:0,hd:rnd(0,6.283),brain,gen,parent,lineage,traits,energy,health:100,prevHealth:100,age:0,lifespan:rnd(3600,5100),
     inv:{food:0,wood:0,stone:0},tool:0,memory:0,memA:0,memB:0,signal:0,pain:0,trust:new Map(),lastChoice:O-1,probs:new Float32Array(O),
     builds:0,success:0,kids:0,shared:0,stolen:0,attacks:0,kills:0,hunts:0,beastKills:0,crafts:0,deposits:0,
-    actionCounts:new Uint32Array(O),baseline:0,sheltered:false,harm:'hunger',fx:0,_t:20};
+    actionCounts:new Uint32Array(O),okCounts:new Uint32Array(O),stash:0,shareHeat:0,phi:0,baseline:0,sheltered:false,harm:'hunger',fx:0,_t:20};
   for (const k of [...PHYS,...MENT]) if (a.traits[k]==null) a.traits[k]=freshTraits()[k];
-  a.perks=perks.filter(id=>PERK[id]); derive(a);
+  a.perks=perks.filter(id=>PERK[id]); derive(a); a.phi=wellbeing(a);
   compileBrain(a); if (gen>maxGen) maxGen=gen; return a;
 }
 function child(a){
@@ -461,7 +478,7 @@ function inside(a){
 }
 function tempAt(a){
   let t=baseTemp; for (const b of fires) if (b.hp>0){ const dx=a.x-b.x, dy=a.y-b.y; if (dx*dx+dy*dy<4225) t+=22*(1-Math.sqrt(dx*dx+dy*dy)/65); }
-  const s=inside(a); if (s) t=20+(t-20)*(s.type==='house'?.2:.55);   // yips insulate: interiors stay near 20°C
+  const s=inside(a); if (s) t=20+(t-20)*(s.type==='house'?.2:.55);   // houses insulate: interiors stay near 20°C
   return t;
 }
 const env = {food:{},tree:{},stone:{},shelter:{},fire:{},storm:{},other:{},pred:{},crowd:{n:0,sig:0},wall:30};
@@ -482,53 +499,55 @@ function sense(a){
 }
 const _h={}, _r={}, _z={}, _f2={};
 function act(a,choice,e){
-  let reward=-.012, moved=false; const insideNow=inside(a); a.actionCounts[choice]++;
+  let bonus=0, ok=false, moved=false; const insideNow=inside(a); a.actionCounts[choice]++;
   const o=e.other.obj, od=e.other.dist;
   switch (choice){
     case 0: case 1: case 2: case 3: {
       const sp=(.7+a.traits.speed*1.7)*a.ph.speed*(a.ph.sprint&&a.energy>60?1.2:1)/(1+load(a)/(capacity(a)*1.2));
-      a.vx=a.vx*.35+DX[choice]*sp*.65; a.vy=a.vy*.35+DY[choice]*sp*.65; a.energy-=.008*sp; reward+=.008; moved=true; break;
+      a.vx=a.vx*.35+DX[choice]*sp*.65; a.vy=a.vy*.35+DY[choice]*sp*.65; a.energy-=.008*sp; moved=true; break;
     }
     case A_.HARVEST: {
       let best=null, bd=11;
       for (let t=0;t<3;t++){ const q=nearestIn(GRIDS[t],a,11,_h); if (q.obj&&q.dist<bd){ bd=q.dist; best=q.obj; } }
       if (best && load(a)+1<=capacity(a)){
         const k=best.t===1?'wood':best.type; a.inv[k]++; if (best.t>0&&a.tool>0&&load(a)+1.5<=capacity(a)){ a.inv[k]++; a.tool--; }
-        best.dead=true; reward+=best.t===0?.65:.3; a.success++;
+        best.dead=true; ok=true; a.success++;
       }
       break;
     }
     case A_.EAT:
-      if (a.inv.food>0&&a.energy<a.ph.maxE-30){ a.inv.food--; a.energy+=30*a.ph.food; reward+=1.2; }
-      else if (insideNow&&insideNow.stock.food>0&&a.energy<a.ph.maxE-30){ insideNow.stock.food--; a.energy+=30*a.ph.food; reward+=1.1; }
+      if (a.inv.food>0&&a.energy<a.ph.maxE-30){ a.inv.food--; a.energy+=30*a.ph.food; ok=true; }
+      else if (insideNow&&insideNow.stock.food>0&&a.energy<a.ph.maxE-30){ insideNow.stock.food--; if (insideNow.owner===a.id) a.stash=Math.max(0,a.stash-1); a.energy+=30*a.ph.food; ok=true; }
       break;
     case A_.DEPOSIT:
-      if (insideNow){ let n=0; for (const k of ['food','wood','stone']) if (a.inv[k]>0){ insideNow.stock[k]+=a.inv[k]; n+=a.inv[k]; a.inv[k]=0; } if (n){ reward+=Math.min(.4,n*.09)+a.traits.greed*.12*Math.min(n,4); a.deposits+=n; tally.deposits+=n; a.fx|=64; } }
+      if (insideNow){ let n=0; for (const k of ['food','wood','stone']) if (a.inv[k]>0){ insideNow.stock[k]+=a.inv[k]; n+=a.inv[k]; a.inv[k]=0; } if (n){ ok=true; a.stash+=insideNow.owner===a.id?n:0; a.deposits+=n; tally.deposits+=n; a.fx|=64; } }
       break;
     case A_.WITHDRAW:
-      if (insideNow){ let n=0; for (const k of ['wood','stone','food']) while (insideNow.stock[k]>0&&load(a)+(k==='stone'?2:k==='wood'?1.4:1)<=capacity(a)&&n<4){ insideNow.stock[k]--; a.inv[k]++; n++; } if (n){ reward+=.08; tally.withdraws+=n; if (insideNow.owner&&insideNow.owner!==a.id){ const ow=agents.find(x=>x.id===insideNow.owner); if (ow) setTrust(ow,a.id,(ow.trust.get(a.id)||0)-.15); } } }
+      if (insideNow){ let n=0; for (const k of ['wood','stone','food']) while (insideNow.stock[k]>0&&load(a)+(k==='stone'?2:k==='wood'?1.4:1)<=capacity(a)&&n<4){ insideNow.stock[k]--; a.inv[k]++; n++; } if (n){ ok=true; if (insideNow.owner===a.id) a.stash=Math.max(0,a.stash-n); tally.withdraws+=n; if (insideNow.owner&&insideNow.owner!==a.id){ const ow=agents.find(x=>x.id===insideNow.owner); if (ow) setTrust(ow,a.id,(ow.trust.get(a.id)||0)-.15); } } }
       break;
     case A_.HOUSE: case A_.STORE: case A_.WALL: case A_.FIRE:
-      if (build(BTYPES[choice-A_.HOUSE],a)) reward+=.45; else reward-=.08; break;
+      ok=build(BTYPES[choice-A_.HOUSE],a); break;
     case A_.REPAIR: {
       const b=nearestList(buildings,a,17,_r,isDamaged).obj;
-      if (b&&a.inv.wood>=1&&(b.type==='fire'||a.inv.stone>=1)){ a.inv.wood--; if (b.type!=='fire') a.inv.stone--; b.hp=Math.min(b.max,b.hp+110); reward+=.65; }
+      if (b&&a.inv.wood>=1&&(b.type==='fire'||a.inv.stone>=1)){ a.inv.wood--; if (b.type!=='fire') a.inv.stone--; b.hp=Math.min(b.max,b.hp+110); ok=true; }
       break;
     }
     case A_.SHARE:
       if (o&&od<16&&a.inv.food>0&&load(o)+1<=capacity(o)){
+        const need=clamp((a.energy-o.energy)/60,0,1), bond=Math.max(kinship(a,o),clamp(a.trust.get(o.id)||0,0,1)*.6,.15);
+        bonus+=a.traits.altruism*.3*need*bond/(1+a.shareHeat); a.shareHeat+=1;
         a.inv.food--; o.inv.food++; setTrust(o,a.id,(o.trust.get(a.id)||0)+.25*o.traits.social); setTrust(a,o.id,(a.trust.get(o.id)||0)+.05);
-        reward+=.1+a.traits.altruism*(.15+.35*kinship(a,o)); a.shared++; tally.shares++; a.fx|=1;
+        ok=true; a.shared++; tally.shares++; a.fx|=1;
       }
       break;
     case A_.ATTACK:
       if (o&&od<14){
         const dmg=5*a.traits.strength*a.ph.dmg*o.ph.armor*(a.tool>0?2.2:1)*(o.sheltered?.3:1)*(.6+.4*a.traits.aggression);
-        o.health-=dmg; o.pain=1; o.harm='attack'; a.energy-=1.2; a.attacks++; tally.attacks++; a.fx|=2; o.fx|=32;
+        o.health-=dmg; o.pain=1; o.harm='attack'; a.energy-=.8+.5*a.traits.aggression; a.attacks++; tally.attacks++; a.fx|=2; o.fx|=32;
         if (a.tool>0) a.tool--;
         setTrust(o,a.id,(o.trust.get(a.id)||0)-.6); setTrust(a,o.id,(a.trust.get(o.id)||0)-.2);
-        if (o.inv.food>0&&a.traits.strength>o.traits.strength*.8&&load(a)+1<=capacity(a)){ o.inv.food--; a.inv.food++; a.stolen++; tally.thefts++; reward+=.35; }
-        else reward+=.02+.06*a.traits.aggression;
+        if (o.inv.food>0&&a.traits.strength>o.traits.strength*.8&&load(a)+1<=capacity(a)){ o.inv.food--; a.inv.food++; a.stolen++; tally.thefts++; }
+        ok=true;
         if (o.health<=0) a.kills++;
       }
       break;
@@ -537,25 +556,31 @@ function act(a,choice,e){
       if (z){
         const dmg=5*a.traits.strength*a.ph.dmg*(a.tool>0?2.2:1)*(.7+.3*a.traits.aggression);
         z.hp-=dmg; z.target=a; a.energy-=1; a.hunts++; tally.hunts++; a.fx|=4; if (a.tool>0) a.tool--;
-        reward+=.3;
-        if (z.hp<=0){ a.beastKills++; tally.beastKills++; reward+=1.5; log(`Agent #${a.id} slew a beast`,'beast'); }
+        ok=true;
+        if (z.hp<=0){ a.beastKills++; tally.beastKills++; log(`Yip #${a.id} slew a beast`,'beast'); }
       }
       break;
     }
     case A_.CRAFT:
-      if (a.tool<=0&&a.inv.wood>=1&&a.inv.stone>=1){ a.inv.wood--; a.inv.stone--; a.tool=40; a.crafts++; tally.crafts++; reward+=.4; a.fx|=8; }
+      if (a.tool<=0&&a.inv.wood>=1&&a.inv.stone>=1){ a.inv.wood--; a.inv.stone--; a.tool=40; a.crafts++; tally.crafts++; ok=true; a.fx|=8; }
       break;
     default:
-      if (insideNow){ const yip=insideNow.type==='house'; a.energy+=(yip?.24:.12)*a.ph.rest; a.health=Math.min(a.ph.maxH,a.health+(yip?.12:.05)*a.traits.regen); reward+=.08; }
+      if (insideNow){ const yip=insideNow.type==='house'; a.energy+=(yip?.24:.12)*a.ph.rest; a.health=Math.min(a.ph.maxH,a.health+(yip?.12:.05)*a.traits.regen); ok=yip; }
       else { a.energy+=(nearestList(fires,a,18,_f2).obj?.05:.02)*a.ph.rest; }
   }
   if (!moved){ a.vx*=.5; a.vy*=.5; }
   if (a.vx*a.vx+a.vy*a.vy>.0004){
     const nx=clamp(a.x+a.vx,4,W-4), ny=clamp(a.y+a.vy,4,H-4);
-    if (wallBlocks(nx,ny,3.5)){ a.vx=a.vy=0; if (moved) reward-=.06; } else { a.x=nx; a.y=ny; }
+    if (wallBlocks(nx,ny,3.5)){ a.vx=a.vy=0; } else { a.x=nx; a.y=ny; }
     if (moved) a.hd=Math.atan2(a.vy,a.vx);
   }
-  return reward;
+  // curiosity: a successful action that few yips perform earns a bonus that fades the more this yip repeats it
+  if (ok&&choice>3){
+    const rare=(1/O)/(actFreq[choice]+1/O), n=a.okCounts[choice]++;
+    bonus+=a.traits.curiosity*.12*rare/((1+n/6)*(1+n/6));
+    okTick[choice]++;
+  }
+  return bonus;
 }
 
 function sendStorm(){ storms.push({x:-120,y:rnd(50,H-50),w:rnd(90,170),h:rnd(140,300),vx:rnd(1.1,2.5),vy:rnd(-.1,.1),life:750,max:750}); log('Storm front moving in from the west','storm'); toast('Storm front incoming','storm'); }
@@ -587,7 +612,7 @@ function tick(){
   let w=0; for (let i=0;i<items.length;i++){ const it=items[i]; if (it.dead) continue; it.life-=settings.decay; if (it.life<=0) continue; items[w++]=it; } items.length=w;
   for (let i=buildings.length-1;i>=0;i--){
     const b=buildings[i], prot=b.type==='store'?4:b.type==='house'?2:1;
-    b.hp-=settings.decay*(b.type==='fire'?.6:.045); b.life-=settings.decay;
+    b.hp-=settings.decay*(b.type==='fire'?.6:b.type==='wall'?.09:.045); b.life-=settings.decay;
     if (b.stock.food&&Math.random()<.0004*b.stock.food*settings.decay/prot) b.stock.food--;
     if (b.hp<=0||b.life<=0){ buildings.splice(i,1); if (b.type==='store'&&b.stock.food+b.stock.wood+b.stock.stone>0) for (const k of ['food','wood','stone']) for (let n=0;n<Math.min(6,b.stock[k]);n++) addItem(k==='wood'?'tree':k,b.x+rnd(-10,10),b.y+rnd(-10,10)); }
   }
@@ -599,6 +624,7 @@ function tick(){
   for (const a of agents) gAgent[cellOf(a.x,a.y)].push(a);
   fires=[]; shelters=[]; walls=[];
   for (const b of buildings){ if (b.type==='fire') fires.push(b); else if (b.type==='wall') walls.push(b); else shelters.push(b); }
+  ownVal=new Map(); for (const b of buildings) if (b.owner) ownVal.set(b.owner,(ownVal.get(b.owner)||0)+buildValue(b));
   for (const a of agents) a.fx=0;
   tickBeasts();
 
@@ -609,7 +635,7 @@ function tick(){
     a._t=tempAt(a);
     sense(a);
     const temp=forward(a);
-    let reward=act(a,a.lastChoice,env);
+    const bonus=act(a,a.lastChoice,env);
     const sheltered=inside(a), storm=stormAt(a), lt=tempAt(a), ph=a.ph, cold=Math.max(0,ph.coldT-lt), hot=Math.max(0,lt-ph.hotT), thermal=(cold+hot)/(16*a.traits.thermal); a._t=lt;
     a.sheltered=!!sheltered;
     a.energy-=drainK*ph.baseMetab*ph.metab*(ph.hib&&lt<10?.7:1)+a.brainCost+thermal*(sheltered?.006:.045);
@@ -618,18 +644,19 @@ function tick(){
     for (const b of fires){ const dx=a.x-b.x, dy=a.y-b.y; if (dx*dx+dy*dy<(b.r+2)*(b.r+2)){ a.health-=.9; a.energy-=.1; a.harm='fire'; } }
     if (a.energy<0){ a.health+=a.energy*.08; a.energy=0; a.harm='hunger'; }
     if (a.energy>ph.maxE) a.energy=ph.maxE;
-    if (a.energy<45&&a.inv.food>0){ a.inv.food--; a.energy=Math.min(ph.maxE,a.energy+28*ph.food); reward+=.7; }
+    if (a.energy<45&&a.inv.food>0){ a.inv.food--; a.energy=Math.min(ph.maxE,a.energy+28*ph.food); }
     if (a.inv.food&&Math.random()<.0012*a.inv.food) a.inv.food--;   // carried food spoils; stores keep it better
     a.memory=clamp(.96*a.memory+.04*(a.energy/100-1),-1,1);
-    const hurt=Math.max(0,a.prevHealth-a.health); a.prevHealth=a.health;
-    reward+=clamp((a.energy-80)/200,-.1,.1)-hurt*.04*a.traits.caution;
+    a.prevHealth=a.health; a.shareHeat*=.99;
+    const phi=wellbeing(a), reward=(phi-a.phi+bonus)*REWARD_SCALE; a.phi=phi; a.lastReward=.9*(a.lastReward||0)+.1*reward; a.lastBonus=bonus;
     if (settings.learning) learn(a,reward,temp);
     if (a.energy>135&&a.age>100&&Math.random()<.012&&agents.length+newborn.length<cap){
-      a.energy-=60; const c=child(a); newborn.push(c); births++;
+      a.energy-=60; a.phi-=.6; const c=child(a); newborn.push(c); births++;
       if (c.gen>=lastMilestone+10){ lastMilestone=c.gen-c.gen%10; toast(`Generation ${lastMilestone} reached`,'birth'); log(`Generation ${lastMilestone} reached`,'birth'); }
     }
     if (a.health<=0||a.age>a.lifespan){ a.dead=true; dead++; deaths++; deathsBy[a.age>a.lifespan?'age':a.harm]=(deathsBy[a.age>a.lifespan?'age':a.harm]||0)+1; dropInventory(a); archive(a); }
   }
+  updateActFreq();
   if (dead) agents=agents.filter(a=>!a.dead);
   for (const c of newborn) agents.push(c);
   if (agents.length>peakPop) peakPop=agents.length;
@@ -665,7 +692,7 @@ function reset(newShape){
 // ---------- serialization ----------
 const r4 = v => Math.round(v*1e4)/1e4, r2 = v => Math.round(v*100)/100;
 const serBrain = b => ({inputs:b.inputs,sizes:b.sizes,w:b.w.map(f=>Array.from(f,r4))});
-const AGENT_KEYS=['gen','parent','lineage','traits','perks','age','lifespan','inv','tool','builds','success','kids','shared','stolen','attacks','kills','hunts','beastKills','crafts','deposits'];
+const AGENT_KEYS=['gen','parent','lineage','traits','perks','stash','age','lifespan','inv','tool','builds','success','kids','shared','stolen','attacks','kills','hunts','beastKills','crafts','deposits'];
 function serialize(){
   return {version:11,shape,seed,ticks,nextId,nextBid,births,deaths,deathsBy,tally,maxGen,peakPop,selected,settings:{...settings},
     agents:agents.map(a=>{ const o={id:a.id,x:r2(a.x),y:r2(a.y),hd:r2(a.hd),energy:r2(a.energy),health:r2(a.health),memory:r4(a.memory),memA:r4(a.memA),memB:r4(a.memB),baseline:r4(a.baseline),
@@ -697,7 +724,7 @@ function deserialize(s){
     a.trust=new Map(Array.isArray(o.trust)?o.trust:Object.entries(o.trust||{}).map(([k,v])=>[+k,v]));
     if (o.actionCounts&&o.actionCounts.length===O) a.actionCounts=Uint32Array.from(o.actionCounts);
     if (o.learned&&!legacy){ a.learned=o.learned.map(x=>Float32Array.from(x)); }
-    derive(a);
+    derive(a); a.phi=wellbeing(a);
     if (!o.lineage){ const ch=[]; let id=o.parent; for (let i=0;i<12&&id&&reg[id];i++){ ch.push({id,gen:reg[id].gen,hue:0}); id=reg[id].parent; } a.lineage=ch; }
     return a;
   });
@@ -718,7 +745,7 @@ function deserialize(s){
 
 // ---------- reporting ----------
 let started=false, running=true, speed=3, maxMode=false, last=performance.now(), acc=0, stepsWin=0, tps=0, lastMetrics=last, lastFrame=0, lastStats=0, lastInspect=0, inspecting=false;
-function postMeta(){ self.postMessage({type:'meta',perks:PERKS,clash:CLASH,phys:PHYS,ment:MENT,traitInfo:TRAIT_INFO,senses:SENSES,actions:ACTIONS,short:SHORT,cont:CONT,W,H,FW,FH,FC,shape,settings,fert,forest,rock,seed}); }
+function postMeta(){ self.postMessage({type:'meta',bounds:TB,perks:PERKS,clash:CLASH,phys:PHYS,ment:MENT,traitInfo:TRAIT_INFO,senses:SENSES,actions:ACTIONS,short:SHORT,cont:CONT,W,H,FW,FH,FC,shape,settings,fert,forest,rock,seed}); }
 function postFrame(){
   const na=agents.length, A=new Float32Array(na*10);
   for (let i=0,o=0;i<na;i++,o+=10){ const a=agents[i]; A[o]=a.id; A[o+1]=a.x; A[o+2]=a.y; A[o+3]=a.traits.hue; A[o+4]=a.hd; A[o+5]=a.energy/200; A[o+6]=a.health/100;
@@ -757,7 +784,7 @@ function postInspect(){
     acts:a.acts.map(x=>Array.from(x)),trust:[...a.trust].sort((x,y)=>Math.abs(y[1])-Math.abs(x[1])).slice(0,10).map(([id,v])=>({id,v,alive:alive.has(id)})),
     lineage:a.lineage.map(l=>({...l,alive:alive.has(l.id)})),parent:a.parent,cost:traitCost(a.traits,a.perks),metab:a.ph.baseMetab*a.ph.metab,perks:a.perks,ph:{maxE:a.ph.maxE,maxH:a.ph.maxH,speed:a.ph.speed,dmg:a.ph.dmg,armor:a.ph.armor,coldT:a.ph.coldT,hotT:a.ph.hotT,sense:a.ph.sense},brainCost:a.brainCost,
     deeds:{shared:a.shared,stolen:a.stolen,attacks:a.attacks,kills:a.kills,hunts:a.hunts,beastKills:a.beastKills,crafts:a.crafts,deposits:a.deposits,builds:a.builds},
-    actionCounts:Array.from(a.actionCounts),memory:a.memory,memA:a.memA,memB:a.memB,signal:a.signal,pain:a.pain});
+    actionCounts:Array.from(a.actionCounts),wellbeing:a.phi,rewardAvg:a.lastReward||0,curiosityGain:a.lastBonus||0,memory:a.memory,memA:a.memA,memB:a.memB,signal:a.signal,pain:a.pain});
 }
 // yield through a MessageChannel: unlike setTimeout(0) it is not clamped to 4 ms, so hyperspeed keeps the CPU busy
 const chan=new MessageChannel(); let pending=false;
