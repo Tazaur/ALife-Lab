@@ -22,5 +22,7 @@ head = '''<title>ALife Lab</title>
 content = body + '\n<script id="simSource" type="text/plain">\n' + sim.replace('</script', '<\\/script') + '\n</script>\n<script>\n' + app + '\n</script>\n'
 (root / 'dist').mkdir(exist_ok=True)
 (root / 'dist/artifact.html').write_text(head + content)
-(root / 'dist/alife-lab.html').write_text('<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">\n' + head + '</head>\n<body>\n' + content + '</body>\n</html>\n')
+doc = ('<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">\n' + head + '</head>\n<body>\n' + content + '</body>\n</html>\n')
+(root / 'dist/alife-lab.html').write_text(doc)
+(root / 'index.html').write_text(doc)  # the GitHub Pages entry point always matches the build
 print('built', len(head + content) // 1024, 'KB')
