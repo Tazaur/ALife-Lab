@@ -306,7 +306,7 @@ button.chip:hover{border-color:var(--line-hi);background:rgba(255,255,255,.05)}
 .tcard div b{font:500 13px var(--f-mono);color:var(--fg)}
 .tcard div b em{font-style:normal;color:var(--dim);font-size:11px}
 .sel{grid-column:1/-1;background:rgba(255,255,255,.05);border:1px solid var(--line-hi);border-radius:8px;padding:6px 8px;color:var(--fg)}
-@media (max-width:560px){ #islands{display:none} }
+@media (max-width:560px){ #islands{position:fixed;left:50%;transform:translateX(-50%);top:auto;bottom:calc(var(--bh,200px) + 64px);height:36px;z-index:5} #islands .isl{height:30px;padding:2px 8px} }
 @media (max-width:760px){ .islands{height:46px;padding:2px} .isl{padding:2px 6px;height:40px} .isl small{display:none} }
 @media (max-height:520px){ .islands{height:40px} .isl{height:34px} .isl small{display:none} }
 
@@ -462,7 +462,7 @@ button.chip:hover{border-color:var(--line-hi);background:rgba(255,255,255,.05)}
   <header class="top">
     <div class="brand glass">
       <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14" fill="none" stroke="#f3c96b" stroke-width="1.5" opacity=".5"/><circle cx="16" cy="16" r="9" fill="none" stroke="#7ed6b0" stroke-width="1.2" stroke-dasharray="2 3"/><circle cx="16" cy="16" r="4" fill="#f3c96b"/><circle cx="25" cy="10" r="2" fill="#8fd67a"/><circle cx="8" cy="22" r="1.6" fill="#7fd8ea"/></svg>
-      <h1>ALife <span>Lab</span><small id="ver">build 16</small></h1>
+      <h1>ALife <span>Lab</span><small id="ver">build 17</small></h1>
     </div>
     <div class="readouts glass" role="status">
       <div class="ro"><small><span class="lg">Living</span><span class="sh">Pop</span></small><b id="roPop">0</b></div>
@@ -607,7 +607,7 @@ button.chip:hover{border-color:var(--line-hi);background:rgba(255,255,255,.05)}
           <input type="file" id="lFile" accept="application/json,.json,.gz" hidden>
         </div>
       </section>
-      <section class="sec"><h3>About</h3><p class="note">ALife Lab build 16 · 2026-11-05</p></section>
+      <section class="sec"><h3>About</h3><p class="note">ALife Lab build 17 · 2026-11-05</p></section>
       <section class="sec"><h3>Shortcuts</h3>
         <div class="keys">
           <kbd>Space</kbd><span>Pause or resume</span>
@@ -2078,17 +2078,15 @@ let sims = [], usingWorker = true, watched = 0, turbo = false;
 const ISLAND = i => 'ABCD'[i] || String(i + 1);
 const cores = navigator.hardwareConcurrency || 2;
 const prefIslands = (() => { try { const v = JSON.parse(localStorage.getItem('alife.ui') || '{}').islands; return v; } catch { return null; } })();
-const islandCount = clamp(prefIslands || Math.min(3, Math.max(1, cores - 1)), 1, 4);
+let islandCount = clamp(prefIslands || Math.min(3, Math.max(2, cores - 1)), 1, 4);
 const pulses = [];
+const simUrl = URL.createObjectURL(new Blob([$('simSource').textContent], { type: 'text/javascript' }));
+function spawnIsland(i) { const w = new Worker(simUrl); w.onmessage = e => onSim(e.data, i); w.onerror = e => console.warn('Worker error', e); sims[i] = w; return w; }
 (function boot() {
   const src = $('simSource').textContent;
-  const url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
   for (let i = 0; i < islandCount; i++) {
     try {
-      const w = new Worker(url);
-      w.onmessage = e => onSim(e.data, i);
-      w.onerror = e => console.warn('Worker error', e);
-      sims.push(w);
+      spawnIsland(i);
     } catch (err) {
       if (i > 0) break;
       usingWorker = false;
@@ -2534,7 +2532,7 @@ requestAnimationFrame(render);
 /* ================= islands & turbo ================= */
 function renderIslands() {
   const html = sims.map((_, i) => { const p = pulses[i]; return `<button class="isl${i === watched ? ' on' : ''}" data-isl="${i}"><b>${ISLAND(i)}</b><span class="num">${p ? p.pop : '…'}</span><small>${p ? 'gen ' + p.maxGen : ''}</small></button>`; }).join('');
-  $('islands').innerHTML = html; $('islands2').innerHTML = html; $('islands').hidden = sims.length < 2;
+  $('islands').innerHTML = html; $('islands2').innerHTML = html; $('islands').hidden = sims.length < 2; $('islandCount').value = sims.length;
   if (turbo) {
     $('turboStats').innerHTML = sims.map((_, i) => { const p = pulses[i] || {}; return `<div class="tcard${i === watched ? ' on' : ''}"><b>Island ${ISLAND(i)}</b><div><span>Tick</span><b class="num">${fmt(p.ticks || 0)}</b></div><div><span>Ticks / s</span><b class="num">${fmt(p.tps || 0)}</b></div><div><span>Living</span><b class="num">${p.pop ?? '…'}</b></div><div><span>Generation</span><b class="num">${p.maxGen ?? 0} <em>avg ${(p.avgGen || 0).toFixed(1)}</em></b></div><div><span>Births / deaths</span><b class="num">${fmt(p.births || 0)} / ${fmt(p.deaths || 0)}</b></div></div>`; }).join('');
     const total = pulses.reduce((s, p) => s + (p ? p.tps : 0), 0);
@@ -2556,8 +2554,17 @@ function setTurbo(on) {
 $('bTurbo').onclick = () => setTurbo(!turbo);
 $('turboExit').onclick = () => setTurbo(false);
 $('islandCount').value = islandCount;
-$('islandCount').onchange = () => { ui.islands = +$('islandCount').value; saveUi(); toast('Reload the page to change the number of islands', 'info'); };
-$('coreNote').textContent = `This device reports ${cores} CPU core${cores > 1 ? 's' : ''}; ${islandCount} island${islandCount > 1 ? 's are' : ' is'} running.`;
+// change the number of islands live: new ones start fresh, removed ones are discarded (save first to keep them)
+function setIslandCount(n) {
+  if (!usingWorker) { toast('This browser can only run one island', 'info'); return; }
+  n = clamp(n, 1, 4);
+  while (sims.length > n) { const i = sims.length - 1; sims.pop().terminate(); pulses.length = sims.length; if (watched === i) watchIsland(0); }
+  while (sims.length < n) spawnIsland(sims.length);
+  islandCount = n; ui.islands = n; saveUi(); updateCoreNote(); renderIslands();
+}
+const updateCoreNote = () => { $('coreNote').textContent = `This device reports ${cores} CPU core${cores > 1 ? 's' : ''}; ${sims.length} island${sims.length > 1 ? 's are' : ' is'} running.${sims.length >= cores ? ' More islands than cores share the processor and each runs slower.' : ''}`; };
+$('islandCount').onchange = () => { const n = +$('islandCount').value, gone = sims.length - n; setIslandCount(n); if (gone) toast(gone > 0 ? `Removed ${gone} island${gone > 1 ? 's' : ''}` : `${-gone} new island${-gone > 1 ? 's' : ''} started with fresh founders`, 'info'); };
+updateCoreNote();
 
 /* ================= HUD ================= */
 const SEASONS = ['Spring', 'Summer', 'Autumn', 'Winter'];

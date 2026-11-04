@@ -301,7 +301,7 @@ button.chip:hover{border-color:var(--line-hi);background:rgba(255,255,255,.05)}
 .tcard div b{font:500 13px var(--f-mono);color:var(--fg)}
 .tcard div b em{font-style:normal;color:var(--dim);font-size:11px}
 .sel{grid-column:1/-1;background:rgba(255,255,255,.05);border:1px solid var(--line-hi);border-radius:8px;padding:6px 8px;color:var(--fg)}
-@media (max-width:560px){ #islands{display:none} }
+@media (max-width:560px){ #islands{position:fixed;left:50%;transform:translateX(-50%);top:auto;bottom:calc(var(--bh,200px) + 64px);height:36px;z-index:5} #islands .isl{height:30px;padding:2px 8px} }
 @media (max-width:760px){ .islands{height:46px;padding:2px} .isl{padding:2px 6px;height:40px} .isl small{display:none} }
 @media (max-height:520px){ .islands{height:40px} .isl{height:34px} .isl small{display:none} }
 

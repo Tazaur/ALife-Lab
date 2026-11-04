@@ -24,17 +24,15 @@ let sims = [], usingWorker = true, watched = 0, turbo = false;
 const ISLAND = i => 'ABCD'[i] || String(i + 1);
 const cores = navigator.hardwareConcurrency || 2;
 const prefIslands = (() => { try { const v = JSON.parse(localStorage.getItem('alife.ui') || '{}').islands; return v; } catch { return null; } })();
-const islandCount = clamp(prefIslands || Math.min(3, Math.max(1, cores - 1)), 1, 4);
+let islandCount = clamp(prefIslands || Math.min(3, Math.max(2, cores - 1)), 1, 4);
 const pulses = [];
+const simUrl = URL.createObjectURL(new Blob([$('simSource').textContent], { type: 'text/javascript' }));
+function spawnIsland(i) { const w = new Worker(simUrl); w.onmessage = e => onSim(e.data, i); w.onerror = e => console.warn('Worker error', e); sims[i] = w; return w; }
 (function boot() {
   const src = $('simSource').textContent;
-  const url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
   for (let i = 0; i < islandCount; i++) {
     try {
-      const w = new Worker(url);
-      w.onmessage = e => onSim(e.data, i);
-      w.onerror = e => console.warn('Worker error', e);
-      sims.push(w);
+      spawnIsland(i);
     } catch (err) {
       if (i > 0) break;
       usingWorker = false;
@@ -480,7 +478,7 @@ requestAnimationFrame(render);
 /* ================= islands & turbo ================= */
 function renderIslands() {
   const html = sims.map((_, i) => { const p = pulses[i]; return `<button class="isl${i === watched ? ' on' : ''}" data-isl="${i}"><b>${ISLAND(i)}</b><span class="num">${p ? p.pop : '…'}</span><small>${p ? 'gen ' + p.maxGen : ''}</small></button>`; }).join('');
-  $('islands').innerHTML = html; $('islands2').innerHTML = html; $('islands').hidden = sims.length < 2;
+  $('islands').innerHTML = html; $('islands2').innerHTML = html; $('islands').hidden = sims.length < 2; $('islandCount').value = sims.length;
   if (turbo) {
     $('turboStats').innerHTML = sims.map((_, i) => { const p = pulses[i] || {}; return `<div class="tcard${i === watched ? ' on' : ''}"><b>Island ${ISLAND(i)}</b><div><span>Tick</span><b class="num">${fmt(p.ticks || 0)}</b></div><div><span>Ticks / s</span><b class="num">${fmt(p.tps || 0)}</b></div><div><span>Living</span><b class="num">${p.pop ?? '…'}</b></div><div><span>Generation</span><b class="num">${p.maxGen ?? 0} <em>avg ${(p.avgGen || 0).toFixed(1)}</em></b></div><div><span>Births / deaths</span><b class="num">${fmt(p.births || 0)} / ${fmt(p.deaths || 0)}</b></div></div>`; }).join('');
     const total = pulses.reduce((s, p) => s + (p ? p.tps : 0), 0);
@@ -502,8 +500,17 @@ function setTurbo(on) {
 $('bTurbo').onclick = () => setTurbo(!turbo);
 $('turboExit').onclick = () => setTurbo(false);
 $('islandCount').value = islandCount;
-$('islandCount').onchange = () => { ui.islands = +$('islandCount').value; saveUi(); toast('Reload the page to change the number of islands', 'info'); };
-$('coreNote').textContent = `This device reports ${cores} CPU core${cores > 1 ? 's' : ''}; ${islandCount} island${islandCount > 1 ? 's are' : ' is'} running.`;
+// change the number of islands live: new ones start fresh, removed ones are discarded (save first to keep them)
+function setIslandCount(n) {
+  if (!usingWorker) { toast('This browser can only run one island', 'info'); return; }
+  n = clamp(n, 1, 4);
+  while (sims.length > n) { const i = sims.length - 1; sims.pop().terminate(); pulses.length = sims.length; if (watched === i) watchIsland(0); }
+  while (sims.length < n) spawnIsland(sims.length);
+  islandCount = n; ui.islands = n; saveUi(); updateCoreNote(); renderIslands();
+}
+const updateCoreNote = () => { $('coreNote').textContent = `This device reports ${cores} CPU core${cores > 1 ? 's' : ''}; ${sims.length} island${sims.length > 1 ? 's are' : ' is'} running.${sims.length >= cores ? ' More islands than cores share the processor and each runs slower.' : ''}`; };
+$('islandCount').onchange = () => { const n = +$('islandCount').value, gone = sims.length - n; setIslandCount(n); if (gone) toast(gone > 0 ? `Removed ${gone} island${gone > 1 ? 's' : ''}` : `${-gone} new island${-gone > 1 ? 's' : ''} started with fresh founders`, 'info'); };
+updateCoreNote();
 
 /* ================= HUD ================= */
 const SEASONS = ['Spring', 'Summer', 'Autumn', 'Winter'];
