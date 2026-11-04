@@ -71,6 +71,9 @@ function fromIsland(i, m) {
       if (m.purpose === 'server') return onServerSaved(i, m);
       return reply(pendingSave, i, m);
     case 'libraryPack': return reply(pendingLib, i, m);
+    // a selection belongs to whoever asked for it, so one viewer's picks don't open inspectors on the others
+    case 'selected': { const c = isl.picker; isl.picker = null; if (c && clients.has(c) && m.id) { c.sel = m.id; send(c, i, m); return; } break; }
+    case 'inspect': for (const c of clients) if (c.watch === i && c.sel === m.id) send(c, i, m); return;
     case 'meta': isl.meta = m; break;
   }
   if (m.type === 'frame') { const now = Date.now(); for (const c of clients) if (c.watch === i && now - c.lastFrame >= c.gap && c.sock.writableLength < 1.5e6) { c.lastFrame = now; send(c, i, m); } return; }
@@ -109,6 +112,8 @@ function fromClient(c, data) {
     case 'save': (pendingSave[i] = pendingSave[i] || []).push(c); break;
     case 'library': (pendingLib[i] = pendingLib[i] || []).push(c); break;
     case 'play': islands[i].running = m.running; break;
+    case 'select': c.sel = m.id || 0; break;
+    case 'pick': islands[i].picker = c; break;
   }
   post(i, m);
 }

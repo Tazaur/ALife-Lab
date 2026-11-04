@@ -52,9 +52,17 @@ Rewards come only from inside each yip. It has six needs, each an urgency from 0
 - **Popularity** is the total trust other living yips hold in you.
 - Curiosity remains as an internal novelty drive: succeeding at something few yips do satisfies it, less with every repeat.
 
-## Sim server (run on a PC, watch on a phone)
+## Watch from another device
 
-The page can run everything itself, or connect to a sim server that runs the islands on another computer while the viewer only draws.
+On the PC, open the page and go to Settings → Watch from another device → **Start hosting**. It shows a code, a link and a QR code. On the phone, scan the QR code, open the link, or type the code in the same section. The islands keep running on the PC; the phone only draws them, buffered a little behind real time (Settings → Sim server → Smoothing and updates per second). The phone can still switch islands, inspect, paint, save, use the library and change the island count.
+
+- Devices connect directly over WebRTC; the free PeerJS broker only introduces them. It works on the same Wi-Fi and usually across the internet.
+- Keep the host tab open. Hosting turns itself back on, with the same code, when the host page reloads. The host keeps running while its tab is in the background.
+- Each viewer's selection is its own: picking a yip on the phone doesn't open the inspector on the PC.
+
+## Sim server (optional, run without a browser tab)
+
+For runs that should keep going with no browser open, the same thing works from a small Node server that also autosaves to disk.
 
 1. Install [Node.js](https://nodejs.org) 18 or newer on the PC and clone this repo.
 2. Run `node server/server.js` (on Windows you can double-click `server/start.bat`). It prints the addresses to open.

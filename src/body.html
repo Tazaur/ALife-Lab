@@ -109,8 +109,23 @@
           <label class="toggle"><span>Performance readout</span><span class="sw"><input type="checkbox" id="oPerf" checked><i></i></span></label>
         </div>
       </section>
+      <section class="sec" id="hostSec"><h3>Watch from another device</h3>
+        <p class="note">Host from this device and watch from a phone or another computer. The islands keep running here and the other device only draws them, a little behind real time. It works across the internet too. Keep this tab open while hosting.</p>
+        <div class="row"><button class="btn pri" id="hHost">Start hosting</button></div>
+        <div class="host" id="hostInfo" hidden>
+          <div class="hq" id="hQr"></div>
+          <div class="hm">
+            <small>Code</small><b class="num" id="hCodeBig"></b>
+            <span id="hState"></span>
+            <div class="hl"><code id="hLink"></code><button class="btn" id="hCopy">Copy link</button></div>
+          </div>
+        </div>
+        <div class="row join"><input id="hCode" class="inp" placeholder="Host code" maxlength="10" autocomplete="off" autocapitalize="characters" spellcheck="false"><button class="btn" id="hJoin">Watch</button></div>
+        <p class="note">On the other device, scan the QR code, open the link, or type the code here.</p>
+      </section>
       <section class="sec" id="netSec" hidden><h3>Sim server</h3>
         <p class="note" id="netNote"></p>
+        <div class="row"><button class="btn" id="netLeave">Stop watching</button></div>
         <div class="slider"><label>Smoothing</label></div>
         <div class="seg" role="radiogroup">
           <label><input type="radio" name="netBuf" value="low"><span>Live</span></label>

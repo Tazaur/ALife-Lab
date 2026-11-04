@@ -352,6 +352,19 @@ button.chip:hover{border-color:var(--line-hi);background:rgba(255,255,255,.05)}
 .libi button{color:var(--dim);padding:2px 6px;font-size:14px}
 .libi button:hover{color:var(--bad)}
 
+.host{display:flex;gap:14px;align-items:center;flex-wrap:wrap;padding:10px;border:1px solid var(--line);border-radius:var(--r-sm)}
+.hq{width:132px;height:132px;flex:none;background:#fff;border-radius:6px;padding:4px}
+.hq svg{width:100%;height:100%;display:block}
+.hm{display:flex;flex-direction:column;gap:4px;min-width:0;flex:1}
+.hm small{color:var(--dim);font-size:10px;letter-spacing:.08em;text-transform:uppercase}
+.hm b{font:700 26px var(--f-mono, monospace);letter-spacing:.12em;color:var(--accent)}
+.hm span{font-size:12px;color:var(--muted)}
+.hl{display:flex;gap:6px;align-items:center;min-width:0}
+.hl code{font-size:10.5px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1}
+.row.join{display:flex;gap:6px}
+.inp{flex:1;min-width:0;height:36px;border-radius:9px;border:1px solid var(--line-hi);background:rgba(255,255,255,.04);color:var(--fg);padding:0 12px;font:600 14px var(--f-mono, monospace);letter-spacing:.1em;text-transform:uppercase}
+.inp::placeholder{letter-spacing:normal;text-transform:none;font-weight:500;color:var(--dim)}
+
 /* ---------- overlays ---------- */
 .legend{position:absolute;right:var(--gut);top:72px;display:flex;gap:10px;padding:7px 11px;font-size:11px;color:var(--muted);z-index:4;pointer-events:none;transition:opacity .2s}
 .legend span{display:flex;align-items:center;gap:5px;white-space:nowrap}
@@ -469,7 +482,7 @@ button.chip:hover{border-color:var(--line-hi);background:rgba(255,255,255,.05)}
   <header class="top">
     <div class="brand glass">
       <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14" fill="none" stroke="#f3c96b" stroke-width="1.5" opacity=".5"/><circle cx="16" cy="16" r="9" fill="none" stroke="#7ed6b0" stroke-width="1.2" stroke-dasharray="2 3"/><circle cx="16" cy="16" r="4" fill="#f3c96b"/><circle cx="25" cy="10" r="2" fill="#8fd67a"/><circle cx="8" cy="22" r="1.6" fill="#7fd8ea"/></svg>
-      <h1>ALife <span>Lab</span><small id="ver">build 18</small></h1>
+      <h1>ALife <span>Lab</span><small id="ver">build 19</small></h1>
     </div>
     <div class="readouts glass" role="status">
       <div class="ro"><small><span class="lg">Living</span><span class="sh">Pop</span></small><b id="roPop">0</b></div>
@@ -573,8 +586,23 @@ button.chip:hover{border-color:var(--line-hi);background:rgba(255,255,255,.05)}
           <label class="toggle"><span>Performance readout</span><span class="sw"><input type="checkbox" id="oPerf" checked><i></i></span></label>
         </div>
       </section>
+      <section class="sec" id="hostSec"><h3>Watch from another device</h3>
+        <p class="note">Host from this device and watch from a phone or another computer. The islands keep running here and the other device only draws them, a little behind real time. It works across the internet too. Keep this tab open while hosting.</p>
+        <div class="row"><button class="btn pri" id="hHost">Start hosting</button></div>
+        <div class="host" id="hostInfo" hidden>
+          <div class="hq" id="hQr"></div>
+          <div class="hm">
+            <small>Code</small><b class="num" id="hCodeBig"></b>
+            <span id="hState"></span>
+            <div class="hl"><code id="hLink"></code><button class="btn" id="hCopy">Copy link</button></div>
+          </div>
+        </div>
+        <div class="row join"><input id="hCode" class="inp" placeholder="Host code" maxlength="10" autocomplete="off" autocapitalize="characters" spellcheck="false"><button class="btn" id="hJoin">Watch</button></div>
+        <p class="note">On the other device, scan the QR code, open the link, or type the code here.</p>
+      </section>
       <section class="sec" id="netSec" hidden><h3>Sim server</h3>
         <p class="note" id="netNote"></p>
+        <div class="row"><button class="btn" id="netLeave">Stop watching</button></div>
         <div class="slider"><label>Smoothing</label></div>
         <div class="seg" role="radiogroup">
           <label><input type="radio" name="netBuf" value="low"><span>Live</span></label>
@@ -625,7 +653,7 @@ button.chip:hover{border-color:var(--line-hi);background:rgba(255,255,255,.05)}
           <input type="file" id="lFile" accept="application/json,.json,.gz" hidden>
         </div>
       </section>
-      <section class="sec"><h3>About</h3><p class="note">ALife Lab build 18 · 2026-11-05</p></section>
+      <section class="sec"><h3>About</h3><p class="note">ALife Lab build 19 · 2026-11-05</p></section>
       <section class="sec"><h3>Shortcuts</h3>
         <div class="keys">
           <kbd>Space</kbd><span>Pause or resume</span>
@@ -2126,32 +2154,199 @@ const hueFill = Array.from({ length: 360 }, (_, h) => `hsl(${h} 72% 66%)`);
 let meta = null, W = 960, H = 600;
 // Islands: each world runs in its own worker. The watched island streams frames; the others run unseen.
 let sims = [], usingWorker = true, watched = 0, turbo = false;
-const REMOTE = !!window.ALIFE_SERVER;   // set when the page is served by server/server.js
+// Watching another device: #watch-CODE in the address joins a host over WebRTC; a page served by server/server.js joins that server.
+const PEER_WATCH = ((location.hash.match(/^#watch-([a-z0-9]{4,10})$/i) || [])[1] || '').toUpperCase() || null;
+const REMOTE = !!window.ALIFE_SERVER || !!PEER_WATCH;
 const ISLAND = i => 'ABCD'[i] || String(i + 1);
 const cores = navigator.hardwareConcurrency || 2;
 const prefIslands = (() => { try { const v = JSON.parse(localStorage.getItem('alife.ui') || '{}').islands; return v; } catch { return null; } })();
 let islandCount = clamp(prefIslands || Math.min(3, Math.max(2, cores - 1)), 1, 4);
 const pulses = [];
+
+/* ---------- hub: the island workers and everyone watching them ----------
+   This page is always one viewer. While hosting, devices connected over WebRTC are viewers too.
+   An island draws only while someone watches it; unwatched islands run flat out. */
 const simUrl = REMOTE ? '' : URL.createObjectURL(new Blob([$('simSource').textContent], { type: 'text/javascript' }));
-function spawnIsland(i) { const w = new Worker(simUrl); w.onmessage = e => onSim(e.data, i); w.onerror = e => console.warn('Worker error', e); sims[i] = w; return w; }
-/* ---------- remote viewing: a sim server on another computer runs the islands and this page only draws ----------
+const workers = [], isl = [], viewers = new Set(), replyQ = { saved: [], libraryPack: [] };
+const me = { local: true, watch: 0, speed: null };
+viewers.add(me);
+function spawnIsland(i) {
+  let w;
+  try { w = new Worker(simUrl); w.onmessage = e => fromIsland(i, e.data); w.onerror = e => console.warn('Worker error', e); }
+  catch (err) {
+    if (i > 0) throw err;
+    usingWorker = false;
+    const fake = { onmessage: null, postMessage: m => queueMicrotask(() => fromIsland(0, m)) };
+    new Function('self', $('simSource').textContent)(fake);
+    w = { postMessage: m => fake.onmessage && fake.onmessage({ data: m }), terminate() { } };
+  }
+  workers[i] = w; isl[i] = { ready: false, viewing: false };
+  sims[i] = { postMessage: m => fromViewer(me, i, m), terminate() { } };
+}
+function deliver(v, i, m) { if (v.local) onSim(m, i); else peerSendTo(v, { isl: i, m }); }
+function fromIsland(i, m) {
+  const st = isl[i], w = workers[i]; if (!st || !w) return;
+  switch (m.type) {
+    case 'ready':
+      st.ready = true;
+      w.postMessage({ type: 'init', island: i, view: false, settings: currentSettings() });
+      w.postMessage({ type: 'play', running });
+      hubViews(); if (i === watched) syncIslands();
+      return;
+    case 'emigrants': { let to = i; if (workers.length > 1) { to = Math.floor(Math.random() * (workers.length - 1)); if (to >= i) to++; } workers[to].postMessage({ type: 'immigrants', pack: m.pack, from: i }); return; }
+    case 'pulse': for (const v of viewers) deliver(v, i, m); return;
+    case 'saved': case 'libraryPack': { const v = (replyQ[m.type][i] || []).shift(); if (v && viewers.has(v)) deliver(v, i, m); return; }
+    // a selection belongs to whoever asked for it, so one viewer's picks don't open inspectors on the others
+    case 'selected': { const v = st.picker; st.picker = null; if (v && viewers.has(v) && m.id) { v.sel = m.id; deliver(v, i, m); return; } break; }
+    case 'inspect': for (const v of viewers) if (v.watch === i && v.sel === m.id) deliver(v, i, m); return;
+  }
+  const now = performance.now();
+  for (const v of viewers) {
+    if (v.watch !== i) continue;
+    if (m.type === 'frame' && !v.local) { if (now - v.lastFrame < v.gap || peerBacklog(v) > 1.5e6) continue; v.lastFrame = now; }
+    deliver(v, i, m);
+  }
+}
+function fromViewer(v, i, m) {
+  const w = workers[i], st = isl[i]; if (!w) return;
+  switch (m.type) {
+    case 'init': return;
+    case 'view': { const was = v.watch; if (m.on) v.watch = i; else if (v.watch === i) v.watch = -1; if (m.on && st.viewing && was !== i) w.postMessage(m); hubViews(); return; }
+    case 'speed': if (v.watch === i) { v.speed = m; w.postMessage(m); } return;
+    case 'select': v.sel = m.id || 0; break;
+    case 'pick': st.picker = v; break;
+    case 'save': (replyQ.saved[i] = replyQ.saved[i] || []).push(v); break;
+    case 'library': (replyQ.libraryPack[i] = replyQ.libraryPack[i] || []).push(v); break;
+  }
+  w.postMessage(m);
+}
+function hubViews() {
+  workers.forEach((w, i) => {
+    const st = isl[i]; if (!st || !st.ready) return;
+    const ws = [...viewers].filter(v => v.watch === i), on = ws.length > 0;
+    if (on !== st.viewing) { st.viewing = on; w.postMessage({ type: 'view', on }); const sp = ws.find(v => v.speed); if (on && sp) w.postMessage(sp.speed); }
+    if (!on) w.postMessage({ type: 'speed', speed: 1, max: true });
+  });
+}
+
+/* ---------- WebRTC transport (PeerJS's free broker only introduces the devices; data flows directly between them) ---------- */
+const PEERJS = 'https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js', QRJS = 'https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js';
+const loaded = {};
+const loadScript = src => loaded[src] || (loaded[src] = new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => { delete loaded[src]; rej(new Error('Could not load ' + src)); }; document.head.append(s); }));
+const peerId = code => 'alifelab-' + code.toLowerCase();
+const CHUNK = 60000;   // data channels cap a message near 256 KB, so big messages (terrain, saves) go in pieces
+let chunkSeq = 0;
+function sendChunked(conn, u8) {
+  if (u8.length <= CHUNK) { const out = new Uint8Array(u8.length + 1); out.set(u8, 1); conn.send(out); return; }
+  const id = ++chunkSeq, total = Math.ceil(u8.length / CHUNK);
+  for (let k = 0; k < total; k++) { const part = u8.subarray(k * CHUNK, (k + 1) * CHUNK), out = new Uint8Array(part.length + 9), dv = new DataView(out.buffer); out[0] = 1; dv.setUint32(1, id); dv.setUint16(5, k); dv.setUint16(7, total); out.set(part, 9); conn.send(out); }
+}
+function reassembler(cb) {
+  const parts = new Map();
+  return d => {
+    const u8 = d instanceof ArrayBuffer ? new Uint8Array(d) : new Uint8Array(d.buffer, d.byteOffset, d.byteLength);
+    netBytes += u8.length;
+    if (u8[0] === 0) return cb(CODEC.decode(u8.subarray(1)));
+    const dv = new DataView(u8.buffer, u8.byteOffset), id = dv.getUint32(1), k = dv.getUint16(5), total = dv.getUint16(7);
+    let p = parts.get(id); if (!p) parts.set(id, p = { n: 0, a: new Array(total) });
+    p.a[k] = u8.slice(9);
+    if (++p.n < total) return;
+    parts.delete(id); let len = 0; for (const x of p.a) len += x.length;
+    const all = new Uint8Array(len); let o = 0; for (const x of p.a) { all.set(x, o); o += x.length; }
+    cb(CODEC.decode(all));
+  };
+}
+const peerSendTo = (v, o) => { try { if (v.conn.open) sendChunked(v.conn, CODEC.encode(o)); } catch (e) { console.warn(e); } };
+const peerBacklog = v => (v.conn.dataChannel && v.conn.dataChannel.bufferedAmount) || 0;
+
+/* hosting: other devices watch and steer this device's islands */
+let peer = null, hostState = 'off';
+const randomCode = () => Array.from(crypto.getRandomValues(new Uint8Array(6)), b => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[b % 32]).join('');
+const watchLink = () => location.origin + location.pathname + '#watch-' + ui.hostCode;
+async function startHosting(retry = 0) {
+  if (REMOTE) return;
+  ui.hostCode = ui.hostCode || randomCode(); ui.hosting = true; saveUi();
+  hostState = 'starting'; renderHost();
+  try { await loadScript(PEERJS); } catch { hostState = 'off'; ui.hosting = false; saveUi(); renderHost(); toast('Could not load the connection library. Check the internet connection.', 'death'); return; }
+  if (peer) peer.destroy();
+  peer = new Peer(peerId(ui.hostCode), { debug: 0 });
+  peer.on('open', () => { hostState = 'on'; renderHost(); });
+  peer.on('connection', conn => conn.on('open', () => addPeerViewer(conn)));
+  peer.on('disconnected', () => { if (hostState === 'on' && !peer.destroyed) peer.reconnect(); });
+  peer.on('error', e => {
+    // after a reload the broker can hold the old registration for a little while
+    if (e.type === 'unavailable-id' && retry < 8) { hostState = 'starting'; renderHost(); setTimeout(() => ui.hosting && startHosting(retry + 1), 4000); return; }
+    if (e.type === 'unavailable-id') { ui.hostCode = randomCode(); saveUi(); startHosting(); return; }
+    if (e.type === 'network' || e.type === 'server-error' || e.type === 'socket-error') { hostState = 'starting'; renderHost(); setTimeout(() => ui.hosting && startHosting(retry), 5000); return; }
+    console.warn('peer', e.type, e);
+  });
+}
+function stopHosting() {
+  ui.hosting = false; saveUi(); hostState = 'off';
+  for (const v of [...viewers]) if (!v.local) { v.conn.close(); viewers.delete(v); }
+  if (peer) { peer.destroy(); peer = null; }
+  hubViews(); renderHost();
+}
+function addPeerViewer(conn) {
+  const v = { local: false, watch: -1, speed: null, gap: 1000 / 15, lastFrame: 0, conn };
+  viewers.add(v);
+  conn.on('data', reassembler(o => {
+    if (o.cmd === 'rate') { v.gap = 1000 / clamp(+o.fps || 15, 2, 40); return; }
+    if (o.cmd === 'islands') { setIslandCount(o.n); return; }
+    if (o.m) fromViewer(v, o.isl, o.m);
+  }));
+  const gone = () => { if (!viewers.delete(v)) return; hubViews(); renderHost(); toast('A viewer disconnected', 'info'); };
+  conn.on('close', gone); conn.on('error', gone);
+  peerSendTo(v, hostHello());
+  pulses.forEach((p, i) => p && peerSendTo(v, { isl: i, m: p }));
+  renderHost(); toast('A device is now watching', 'birth');
+}
+const hostHello = () => ({ hello: true, islands: workers.length, running, host: `host ${ui.hostCode}` });
+function helloPeers() { for (const v of viewers) if (!v.local) peerSendTo(v, hostHello()); }
+
+/* ---------- remote viewing: islands run on another device and this page only draws ----------
    Frames are queued and played back at an even pace a little behind real time, so network hiccups don't stutter. */
-let ws = null, remoteHost = '', netState = 'connecting', frameQ = [], lastSched = 0, lastArrive = 0, arriveMean = 66, netBytes = 0, netRate = 0;
+let outbox = [], ws = null, rconn = null, rpeer = null, remoteHost = '', netState = 'connecting', frameQ = [], lastSched = 0, lastArrive = 0, arriveMean = 66, netBytes = 0, netRate = 0;
 const BUFFER_MS = { low: 60, normal: 250, smooth: 800 };
-const remoteProxy = i => ({ postMessage: m => wsSendJson({ isl: i, m }), terminate() { } });
-function wsSendJson(o) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); }
-function connect() {
+const remoteProxy = i => ({ postMessage: m => remoteSend({ isl: i, m }), terminate() { } });
+function remoteSend(o) {
+  if (PEER_WATCH) { if (rconn && rconn.open) sendChunked(rconn, CODEC.encode(o)); else outbox.push(o); }
+  else if (ws && ws.readyState === 1) ws.send(JSON.stringify(o));
+}
+function onRemote(o) {
+  if (o.hello) return onHello(o);
+  const { isl: i, m } = o;
+  if (m.type === 'frame') { if (i === watched) queueFrame(m); return; }
+  onSim(m, i);
+}
+function lostRemote(why) {
+  if (netState === 'lost') return;
+  netState = 'lost'; updateNetNote(); toast(why || 'Lost the connection. Reconnecting…', 'death');
+  setTimeout(connect, PEER_WATCH ? 3000 : 2000);
+}
+async function connect() {
+  if (PEER_WATCH) {
+    try { await loadScript(PEERJS); } catch { lostRemote('Could not load the connection library. Retrying…'); return; }
+    if (rpeer) rpeer.destroy(); outbox = [];
+    rpeer = new Peer({ debug: 0 });
+    rpeer.on('open', () => {
+      rconn = rpeer.connect(peerId(PEER_WATCH), { serialization: 'raw', reliable: true });
+      rconn.on('open', () => { const q = outbox; outbox = []; remoteSend({ cmd: 'rate', fps: ui.netFps }); for (const o of q) remoteSend(o); });
+      rconn.on('data', reassembler(onRemote));
+      rconn.on('close', () => lostRemote('The host closed the connection. Reconnecting…'));
+      rconn.on('error', () => lostRemote());
+    });
+    rpeer.on('error', e => lostRemote(e.type === 'peer-unavailable' ? `No host with code ${PEER_WATCH} is online. Retrying…` : undefined));
+    return;
+  }
   ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
   ws.binaryType = 'arraybuffer';
-  ws.onopen = () => { netState = 'connected'; wsSendJson({ cmd: 'rate', fps: ui.netFps }); };
+  ws.onopen = () => remoteSend({ cmd: 'rate', fps: ui.netFps });
   ws.onmessage = e => {
     if (typeof e.data === 'string') { const h = JSON.parse(e.data); if (h.hello) onHello(h); return; }
-    netBytes += e.data.byteLength;
-    const { isl, m } = CODEC.decode(e.data);
-    if (m.type === 'frame') { if (isl === watched) queueFrame(m); return; }
-    onSim(m, isl);
+    netBytes += e.data.byteLength; onRemote(CODEC.decode(e.data));
   };
-  ws.onclose = () => { if (netState !== 'lost') toast('Lost the sim server. Reconnecting…', 'death'); netState = 'lost'; updateNetNote(); setTimeout(connect, 2000); };
+  ws.onclose = () => lostRemote('Lost the sim server. Reconnecting…');
 }
 function onHello(h) {
   const back = netState === 'lost'; netState = 'connected'; remoteHost = h.host;
@@ -2177,32 +2372,24 @@ function queueFrame(m) {
 function drainFrames(now) { while (frameQ.length && frameQ[0].s <= now) { const { m } = frameQ.shift(); ingestFrame(m); if (m.P) paintPher(m.P); } }
 const netDelay = () => frameQ.length ? Math.max(0, frameQ[frameQ.length - 1].s - performance.now()) : 0;
 if (REMOTE) setInterval(() => { netRate = netBytes; netBytes = 0; }, 1000);
-function updateNetNote() { if (!REMOTE) return; $('netNote').textContent = netState === 'connected' ? `Connected to ${remoteHost} at ${location.host}. The islands run there; this device only draws them, so closing this page doesn't stop them. The server autosaves to its own disk.` : 'Not connected to the sim server. Retrying every 2 seconds…'; }
+function updateNetNote() {
+  if (!REMOTE) return;
+  const where = PEER_WATCH ? `host ${PEER_WATCH}` : `${remoteHost} at ${location.host}`;
+  $('netNote').textContent = netState === 'connected' ? `Watching ${where}. The islands run there; this device only draws them, so closing this page doesn't stop them.` : PEER_WATCH ? `Looking for host ${PEER_WATCH}… Keep the host's tab open with hosting on.` : 'Not connected to the sim server. Retrying every 2 seconds…';
+}
 
 (function boot() {
-  const src = $('simSource').textContent;
   if (REMOTE) { sims.push(remoteProxy(0)); return; }
-  for (let i = 0; i < islandCount; i++) {
-    try {
-      spawnIsland(i);
-    } catch (err) {
-      if (i > 0) break;
-      usingWorker = false;
-      const fake = { onmessage: null, postMessage: m => queueMicrotask(() => onSim(m, 0)) };
-      new Function('self', src)(fake);
-      sims.push({ postMessage: m => fake.onmessage && fake.onmessage({ data: m }) });
-      break;
-    }
-  }
+  for (let i = 0; i < islandCount; i++) { try { spawnIsland(i); } catch { break; } if (!usingWorker) break; }
 })();
 const send = (type, rest = {}) => sims[watched].postMessage({ type, ...rest });
 const sendAll = (type, rest = {}) => sims.forEach(w => w.postMessage({ type, ...rest }));
 // background islands always run flat out; the watched one follows the speed control (or flat out in Turbo)
 function syncIslands() {
   sims.forEach((w, i) => {
-    const me = i === watched;
-    w.postMessage({ type: 'view', on: me && !turbo && !(REMOTE && document.hidden) });
-    w.postMessage({ type: 'speed', speed: SPEEDS[speedIdx], max: !me || turbo || maxMode });
+    const mine = i === watched;
+    w.postMessage({ type: 'view', on: mine && !turbo && !(REMOTE && document.hidden) });
+    w.postMessage({ type: 'speed', speed: SPEEDS[speedIdx], max: !mine || turbo || maxMode });
   });
 }
 
@@ -2227,11 +2414,9 @@ const hyper = () => maxMode || SPEEDS[speedIdx] >= 64;
 
 function preferredShape() { const w = innerWidth, h = innerHeight; return h > w * 1.15 ? 'tall' : w > h * 1.15 ? 'wide' : 'square'; }
 function onSim(m, isl = 0) {
-  if (m.type === 'ready') { sims[isl].postMessage({ type: 'init', island: isl, view: isl === watched, settings: currentSettings() }); if (isl !== watched) sims[isl].postMessage({ type: 'speed', speed: 1, max: true }); return; }
   if (m.type === 'pulse') { pulses[isl] = m; renderIslands(); return; }
   if (m.type === 'saved') { onSaved(m, isl); return; }
   if (m.type === 'libraryPack') { onLibraryPack(m, isl); return; }
-  if (m.type === 'emigrants') { if (sims.length > 1) { let to = Math.floor(Math.random() * (sims.length - 1)); if (to >= isl) to++; sims[to].postMessage({ type: 'immigrants', pack: m.pack, from: isl }); } else sims[isl].postMessage({ type: 'immigrants', pack: m.pack, from: isl }); return; }
   if (isl !== watched && m.type !== 'toast') return;
   if (m.type === 'toast' && isl !== watched) return;
   switch (m.type) {
@@ -2655,12 +2840,12 @@ $('turboExit').onclick = () => setTurbo(false);
 $('islandCount').value = islandCount;
 // change the number of islands live: new ones start fresh, removed ones are discarded (save first to keep them)
 function setIslandCount(n) {
-  if (REMOTE) { wsSendJson({ cmd: 'islands', n: clamp(n, 1, 4) }); return; }
+  if (REMOTE) { remoteSend({ cmd: 'islands', n: clamp(n, 1, 4) }); return; }
   if (!usingWorker) { toast('This browser can only run one island', 'info'); return; }
   n = clamp(n, 1, 4);
-  while (sims.length > n) { const i = sims.length - 1; sims.pop().terminate(); pulses.length = sims.length; if (watched === i) watchIsland(0); }
+  while (sims.length > n) { const i = sims.length - 1; workers.pop().terminate(); sims.pop(); isl.pop(); pulses.length = sims.length; for (const v of viewers) if (v.watch === i) v.watch = v.local ? 0 : -1; if (watched === i) watchIsland(0); }
   while (sims.length < n) spawnIsland(sims.length);
-  islandCount = n; ui.islands = n; saveUi(); updateCoreNote(); renderIslands();
+  islandCount = n; ui.islands = n; saveUi(); updateCoreNote(); renderIslands(); helloPeers(); hubViews();
 }
 const updateCoreNote = () => { $('coreNote').textContent = REMOTE ? `${sims.length} island${sims.length > 1 ? 's are' : ' is'} running on ${remoteHost || 'the server'}.` : `This device reports ${cores} CPU core${cores > 1 ? 's' : ''}; ${sims.length} island${sims.length > 1 ? 's are' : ' is'} running.${sims.length >= cores ? ' More islands than cores share the processor and each runs slower.' : ''}`; };
 $('islandCount').onchange = () => { const n = +$('islandCount').value, gone = sims.length - n; setIslandCount(n); if (gone) toast(gone > 0 ? `Removed ${gone} island${gone > 1 ? 's' : ''}` : `${-gone} new island${-gone > 1 ? 's' : ''} started with fresh founders`, 'info'); };
@@ -3346,14 +3531,34 @@ addEventListener('pointerdown', syncWake, { once: true });
 let hiddenPaused = false;
 document.addEventListener('visibilitychange', () => {
   if (REMOTE) { syncIslands(); if (document.visibilityState !== 'hidden') { frameQ = []; lastSched = 0; } syncWake(); return; }
+  if (hostState !== 'off') { syncWake(); return; }   // a host keeps running for its viewers
   if (document.visibilityState === 'hidden') { if (ui.hidePause && running) { hiddenPaused = true; running = false; sendAll('play', { running: false }); paintPlay(); } if (ui.auto) saveAll('auto'); }
   else if (hiddenPaused) { hiddenPaused = false; setRunning(true); }
   syncWake();
 });
 setInterval(() => { if (!REMOTE && ui.auto && running && (pulses[watched] || {}).ticks > 200) saveAll('auto'); }, 120000);
 document.querySelectorAll('[name=netBuf]').forEach(r => { r.checked = r.value === ui.netBuf; r.onchange = () => { if (r.checked) { ui.netBuf = r.value; saveUi(); } }; });
-$('netFps').value = ui.netFps; $('netFps').onchange = () => { ui.netFps = +$('netFps').value; saveUi(); wsSendJson({ cmd: 'rate', fps: ui.netFps }); };
+$('netFps').value = ui.netFps; $('netFps').onchange = () => { ui.netFps = +$('netFps').value; saveUi(); remoteSend({ cmd: 'rate', fps: ui.netFps }); };
 $('netSec').hidden = !REMOTE; if (REMOTE) { updateNetNote(); connect(); }
+$('netLeave').hidden = !PEER_WATCH; $('netLeave').onclick = () => { location.hash = ''; location.reload(); };
+$('hostSec').hidden = REMOTE;
+function renderHost() {
+  const on = hostState !== 'off', n = [...viewers].filter(v => !v.local).length;
+  $('hHost').textContent = on ? 'Stop hosting' : 'Start hosting';
+  $('hHost').classList.toggle('pri', !on);
+  $('hostInfo').hidden = !on;
+  if (!on) return;
+  $('hCodeBig').textContent = ui.hostCode;
+  $('hState').textContent = hostState === 'on' ? (n ? `${n} device${n > 1 ? 's' : ''} watching` : 'Waiting for a device to join') : 'Connecting to the broker…';
+  $('hLink').textContent = watchLink();
+  if (location.protocol === 'file:') $('hState').textContent += ' · this page was opened as a file, so the link won\'t work; enter the code on the other device instead';
+  loadScript(QRJS).then(() => { if ($('hQr').dataset.code === ui.hostCode) return; const q = qrcode(0, 'M'); q.addData(watchLink()); q.make(); $('hQr').innerHTML = q.createSvgTag({ cellSize: 4, margin: 2, scalable: true }); $('hQr').dataset.code = ui.hostCode; }).catch(() => { });
+}
+$('hHost').onclick = () => hostState === 'off' ? startHosting() : stopHosting();
+$('hCopy').onclick = () => { const t = watchLink(); (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => toast('Link copied', 'info'), () => { const r = document.createRange(); r.selectNodeContents($('hLink')); getSelection().removeAllRanges(); getSelection().addRange(r); }); };
+$('hJoin').onclick = () => { const c = $('hCode').value.trim().toUpperCase().replace(/[^A-Z0-9]/g, ''); if (c.length < 4) { toast('Enter the code shown on the host', 'info'); return; } location.hash = 'watch-' + c; location.reload(); };
+$('hCode').onkeydown = e => { if (e.key === 'Enter') $('hJoin').click(); };
+if (!REMOTE) { renderHost(); if (ui.hosting) startHosting(); }
 document.querySelectorAll('[name=notify]').forEach(r => { r.checked = r.value === ui.notify; r.onchange = () => { if (r.checked) { ui.notify = r.value; saveUi(); } }; });
 applyUi();
 
