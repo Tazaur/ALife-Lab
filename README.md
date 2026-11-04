@@ -52,6 +52,20 @@ Rewards come only from inside each yip. It has six needs, each an urgency from 0
 - **Popularity** is the total trust other living yips hold in you.
 - Curiosity remains as an internal novelty drive: succeeding at something few yips do satisfies it, less with every repeat.
 
+## Sim server (run on a PC, watch on a phone)
+
+The page can run everything itself, or connect to a sim server that runs the islands on another computer while the viewer only draws.
+
+1. Install [Node.js](https://nodejs.org) 18 or newer on the PC and clone this repo.
+2. Run `node server/server.js` (on Windows you can double-click `server/start.bat`). It prints the addresses to open.
+3. On the PC, open `http://localhost:8787` to watch with visuals. On a phone on the same Wi-Fi, open the `http://<pc address>:8787` it printed. Allow Node through the firewall if asked.
+
+- The server runs the islands whether or not anyone is watching. An island streams frames only while a viewer watches it; unwatched islands run flat out.
+- Viewers queue frames and play them a little behind real time at an even pace (Settings → Sim server → Smoothing: Live / Normal / Smooth, and updates per second).
+- The server autosaves every 2 minutes to `server/saves/autosave.json.gz`, saves when you press Ctrl+C, and resumes from that file on the next start (`--fresh` starts over).
+- Options: `--port 8787`, `--islands 1-4`, `--autosave-min 2`, `--fresh`. `http://<pc>:8787/status` shows island counters as JSON.
+- Outside your home network you'd need something like Tailscale; the server has no login, so don't expose the port to the internet.
+
 ## Saves and the yip library
 
 - **Saves** hold every island (yips, brains, genes, resources, settings), gzipped into the browser's IndexedDB. Autosave runs every 2 minutes; Settings has save, load, download and import. Old single-world files still load.
@@ -102,6 +116,8 @@ The page shows an automatic build number (commit count) in the header and in Set
 - **Saves**: autosave to the browser, resume prompt on reopen, JSON download/import (also reads 0.6–0.9 snapshots). Extinctions reseed from archived top genomes.
 
 ## Structure
+
+- `server/server.js`, `server/codec.js`: the dependency-free sim server (worker threads + a minimal WebSocket) and the binary frame codec shared with the page.
 
 ```
 src/sim.js     simulation core, runs in a Web Worker

@@ -6,6 +6,7 @@ import pathlib, subprocess, datetime
 root = pathlib.Path(__file__).parent
 src = root / 'src'
 css, body, sim, app = [(src / f).read_text() for f in ('style.css', 'body.html', 'sim.js', 'app.js')]
+app = (root / 'server' / 'codec.js').read_text().replace("if (typeof module !== 'undefined') module.exports = CODEC;", '') + '\n' + app
 # version is automatic: build number = commits so far (+1 when there are uncommitted changes, i.e. the commit about to be made)
 def git(*a):
     try: return subprocess.run(['git', *a], cwd=root, capture_output=True, text=True).stdout.strip()

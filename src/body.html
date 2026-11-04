@@ -109,6 +109,17 @@
           <label class="toggle"><span>Performance readout</span><span class="sw"><input type="checkbox" id="oPerf" checked><i></i></span></label>
         </div>
       </section>
+      <section class="sec" id="netSec" hidden><h3>Sim server</h3>
+        <p class="note" id="netNote"></p>
+        <div class="slider"><label>Smoothing</label></div>
+        <div class="seg" role="radiogroup">
+          <label><input type="radio" name="netBuf" value="low"><span>Live</span></label>
+          <label><input type="radio" name="netBuf" value="normal"><span>Normal</span></label>
+          <label><input type="radio" name="netBuf" value="smooth"><span>Smooth</span></label>
+        </div>
+        <p class="note">Frames are held back a little and played at an even pace. Smooth keeps a bigger backlog for shaky Wi-Fi; Live has the least delay.</p>
+        <div class="slider"><label for="netFps">Updates per second</label><output></output><select id="netFps" class="sel"><option value="8">8</option><option value="15">15</option><option value="24">24</option><option value="30">30</option></select></div>
+      </section>
       <section class="sec"><h3>Islands</h3>
         <div class="slider"><label for="islandCount">Number of islands</label><output></output><select id="islandCount" class="sel"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></div>
         <div class="islands" id="islands2" style="height:auto;padding:0"></div>

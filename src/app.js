@@ -21,15 +21,62 @@ const hueFill = Array.from({ length: 360 }, (_, h) => `hsl(${h} 72% 66%)`);
 let meta = null, W = 960, H = 600;
 // Islands: each world runs in its own worker. The watched island streams frames; the others run unseen.
 let sims = [], usingWorker = true, watched = 0, turbo = false;
+const REMOTE = !!window.ALIFE_SERVER;   // set when the page is served by server/server.js
 const ISLAND = i => 'ABCD'[i] || String(i + 1);
 const cores = navigator.hardwareConcurrency || 2;
 const prefIslands = (() => { try { const v = JSON.parse(localStorage.getItem('alife.ui') || '{}').islands; return v; } catch { return null; } })();
 let islandCount = clamp(prefIslands || Math.min(3, Math.max(2, cores - 1)), 1, 4);
 const pulses = [];
-const simUrl = URL.createObjectURL(new Blob([$('simSource').textContent], { type: 'text/javascript' }));
+const simUrl = REMOTE ? '' : URL.createObjectURL(new Blob([$('simSource').textContent], { type: 'text/javascript' }));
 function spawnIsland(i) { const w = new Worker(simUrl); w.onmessage = e => onSim(e.data, i); w.onerror = e => console.warn('Worker error', e); sims[i] = w; return w; }
+/* ---------- remote viewing: a sim server on another computer runs the islands and this page only draws ----------
+   Frames are queued and played back at an even pace a little behind real time, so network hiccups don't stutter. */
+let ws = null, remoteHost = '', netState = 'connecting', frameQ = [], lastSched = 0, lastArrive = 0, arriveMean = 66, netBytes = 0, netRate = 0;
+const BUFFER_MS = { low: 60, normal: 250, smooth: 800 };
+const remoteProxy = i => ({ postMessage: m => wsSendJson({ isl: i, m }), terminate() { } });
+function wsSendJson(o) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); }
+function connect() {
+  ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
+  ws.binaryType = 'arraybuffer';
+  ws.onopen = () => { netState = 'connected'; wsSendJson({ cmd: 'rate', fps: ui.netFps }); };
+  ws.onmessage = e => {
+    if (typeof e.data === 'string') { const h = JSON.parse(e.data); if (h.hello) onHello(h); return; }
+    netBytes += e.data.byteLength;
+    const { isl, m } = CODEC.decode(e.data);
+    if (m.type === 'frame') { if (isl === watched) queueFrame(m); return; }
+    onSim(m, isl);
+  };
+  ws.onclose = () => { if (netState !== 'lost') toast('Lost the sim server. Reconnecting…', 'death'); netState = 'lost'; updateNetNote(); setTimeout(connect, 2000); };
+}
+function onHello(h) {
+  const back = netState === 'lost'; netState = 'connected'; remoteHost = h.host;
+  while (sims.length > h.islands) sims.pop();
+  while (sims.length < h.islands) sims.push(remoteProxy(sims.length));
+  pulses.length = sims.length; islandCount = sims.length;
+  if (watched >= sims.length) watchIsland(0);
+  if (h.running !== running) { running = h.running; paintPlay(); }
+  frameQ = []; lastSched = 0;
+  syncIslands(); renderIslands(); updateCoreNote(); updateNetNote();
+  if (back) toast(`Reconnected to ${h.host}`, 'info');
+}
+function queueFrame(m) {
+  const now = performance.now(), minD = BUFFER_MS[ui.netBuf] || 250;
+  if (lastArrive) arriveMean += (clamp(now - lastArrive, 5, 1000) - arriveMean) * .08;
+  lastArrive = now;
+  // play frames evenly spaced; after a stall the burst is spread out, and the backlog slowly shrinks back to the minimum delay
+  let s = Math.max(lastSched + arriveMean * .97, now + minD);
+  s = Math.min(s, now + minD + 2500);
+  lastSched = s; frameQ.push({ s, m });
+  if (frameQ.length > 150) frameQ.splice(0, frameQ.length - 150);
+}
+function drainFrames(now) { while (frameQ.length && frameQ[0].s <= now) { const { m } = frameQ.shift(); ingestFrame(m); if (m.P) paintPher(m.P); } }
+const netDelay = () => frameQ.length ? Math.max(0, frameQ[frameQ.length - 1].s - performance.now()) : 0;
+if (REMOTE) setInterval(() => { netRate = netBytes; netBytes = 0; }, 1000);
+function updateNetNote() { if (!REMOTE) return; $('netNote').textContent = netState === 'connected' ? `Connected to ${remoteHost} at ${location.host}. The islands run there; this device only draws them, so closing this page doesn't stop them. The server autosaves to its own disk.` : 'Not connected to the sim server. Retrying every 2 seconds…'; }
+
 (function boot() {
   const src = $('simSource').textContent;
+  if (REMOTE) { sims.push(remoteProxy(0)); return; }
   for (let i = 0; i < islandCount; i++) {
     try {
       spawnIsland(i);
@@ -49,7 +96,7 @@ const sendAll = (type, rest = {}) => sims.forEach(w => w.postMessage({ type, ...
 function syncIslands() {
   sims.forEach((w, i) => {
     const me = i === watched;
-    w.postMessage({ type: 'view', on: me && !turbo });
+    w.postMessage({ type: 'view', on: me && !turbo && !(REMOTE && document.hidden) });
     w.postMessage({ type: 'speed', speed: SPEEDS[speedIdx], max: !me || turbo || maxMode });
   });
 }
@@ -59,7 +106,7 @@ let F = null, stats = null, insp = null, names = {};
 const nameOf = id => names[id] || `#${id}`;
 let selected = 0, follow = false, running = true, tool = 'select', maxMode = false;
 const SPEEDS = [1, 2, 4, 8, 16, 32, 64, 128, 256];
-const ui = Object.assign({ notify: 'important', scent: false, night: true, fx: true, sense: true, trail: true, legend: true, perf: true, auto: true, hidePause: true, wake: true, speedIdx: 2, brushSize: 22, brushAmt: 1 }, store.get('alife.ui', {}));
+const ui = Object.assign({ netBuf: 'normal', netFps: 15, notify: 'important', scent: false, night: true, fx: true, sense: true, trail: true, legend: true, perf: true, auto: true, hidePause: true, wake: true, speedIdx: 2, brushSize: 22, brushAmt: 1 }, store.get('alife.ui', {}));
 ui.speedIdx = clamp(ui.speedIdx | 0, 0, SPEEDS.length - 1);
 let speedIdx = ui.speedIdx;
 const saveUi = () => store.set('alife.ui', ui);
@@ -265,9 +312,10 @@ let lastT = performance.now(), fpsFrames = 0, fpsT = lastT, hoverId = 0, pointer
 const phaseOf = (ticks, len) => len ? (ticks % len) / len : 0;
 const FXC = { 1: [126, 214, 176], 2: [242, 100, 90], 4: [240, 179, 90], 8: [201, 179, 230], 32: [255, 80, 70], 64: [127, 216, 234], 128: [243, 201, 107], 256: [255, 143, 200] };
 function render(t) {
+  if (REMOTE) drainFrames(t);
   const dt = Math.min(.1, (t - lastT) / 1000); lastT = t;
   if (camTarget) { const k = 1 - Math.exp(-dt * 9); cam.x += (camTarget.x - cam.x) * k; cam.y += (camTarget.y - cam.y) * k; cam.z += (camTarget.z - cam.z) * k; if (Math.abs(camTarget.z - cam.z) < .001 && Math.hypot(camTarget.x - cam.x, camTarget.y - cam.y) < .05) { Object.assign(cam, camTarget); camTarget = null; } }
-  const k = 1 - Math.exp(-dt * 16), fast = hyper();
+  const k = 1 - Math.exp(-dt * (REMOTE ? clamp(1300 / arriveMean, 5, 16) : 16)), fast = hyper();
   if (!fast) {
     for (const map of [rpos, bpos]) for (const p of map.values()) {
       if (p.tx === undefined) continue;
@@ -502,13 +550,14 @@ $('turboExit').onclick = () => setTurbo(false);
 $('islandCount').value = islandCount;
 // change the number of islands live: new ones start fresh, removed ones are discarded (save first to keep them)
 function setIslandCount(n) {
+  if (REMOTE) { wsSendJson({ cmd: 'islands', n: clamp(n, 1, 4) }); return; }
   if (!usingWorker) { toast('This browser can only run one island', 'info'); return; }
   n = clamp(n, 1, 4);
   while (sims.length > n) { const i = sims.length - 1; sims.pop().terminate(); pulses.length = sims.length; if (watched === i) watchIsland(0); }
   while (sims.length < n) spawnIsland(sims.length);
   islandCount = n; ui.islands = n; saveUi(); updateCoreNote(); renderIslands();
 }
-const updateCoreNote = () => { $('coreNote').textContent = `This device reports ${cores} CPU core${cores > 1 ? 's' : ''}; ${sims.length} island${sims.length > 1 ? 's are' : ' is'} running.${sims.length >= cores ? ' More islands than cores share the processor and each runs slower.' : ''}`; };
+const updateCoreNote = () => { $('coreNote').textContent = REMOTE ? `${sims.length} island${sims.length > 1 ? 's are' : ' is'} running on ${remoteHost || 'the server'}.` : `This device reports ${cores} CPU core${cores > 1 ? 's' : ''}; ${sims.length} island${sims.length > 1 ? 's are' : ' is'} running.${sims.length >= cores ? ' More islands than cores share the processor and each runs slower.' : ''}`; };
 $('islandCount').onchange = () => { const n = +$('islandCount').value, gone = sims.length - n; setIslandCount(n); if (gone) toast(gone > 0 ? `Removed ${gone} island${gone > 1 ? 's' : ''}` : `${-gone} new island${-gone > 1 ? 's' : ''} started with fresh founders`, 'info'); };
 updateCoreNote();
 
@@ -528,7 +577,7 @@ function updateHud() {
   $('roTemp').innerHTML = `<span class="sun" id="sun"></span>${F.temp.toFixed(0)}°C<em>${dayLabel(p).toLowerCase()}</em>`;
   const sun = $('sun'), light = Math.sin(TAU * p);
   sun.style.background = light > 0 ? C.accent : '#9cb6ff'; sun.style.boxShadow = `0 0 ${light > 0 ? 8 : 4}px ${light > 0 ? C.accent : '#9cb6ff'}`;
-  $('perf').textContent = `island ${ISLAND(watched)} of ${sims.length} · tick ${fmt(F.ticks)} · ${fmt(simTps)} ticks/s · ${renderFps} fps`;
+  $('perf').textContent = `${REMOTE ? `${remoteHost || 'server'} · buffer ${Math.round(netDelay())} ms · ${fmt(Math.round(netRate / 1024))} KB/s · ` : ''}island ${ISLAND(watched)} of ${sims.length} · tick ${fmt(F.ticks)} · ${fmt(simTps)} ticks/s · ${renderFps} fps`;
 }
 
 /* ================= controls ================= */
@@ -1191,11 +1240,15 @@ async function syncWake() {
 addEventListener('pointerdown', syncWake, { once: true });
 let hiddenPaused = false;
 document.addEventListener('visibilitychange', () => {
+  if (REMOTE) { syncIslands(); if (document.visibilityState !== 'hidden') { frameQ = []; lastSched = 0; } syncWake(); return; }
   if (document.visibilityState === 'hidden') { if (ui.hidePause && running) { hiddenPaused = true; running = false; sendAll('play', { running: false }); paintPlay(); } if (ui.auto) saveAll('auto'); }
   else if (hiddenPaused) { hiddenPaused = false; setRunning(true); }
   syncWake();
 });
-setInterval(() => { if (ui.auto && running && (pulses[watched] || {}).ticks > 200) saveAll('auto'); }, 120000);
+setInterval(() => { if (!REMOTE && ui.auto && running && (pulses[watched] || {}).ticks > 200) saveAll('auto'); }, 120000);
+document.querySelectorAll('[name=netBuf]').forEach(r => { r.checked = r.value === ui.netBuf; r.onchange = () => { if (r.checked) { ui.netBuf = r.value; saveUi(); } }; });
+$('netFps').value = ui.netFps; $('netFps').onchange = () => { ui.netFps = +$('netFps').value; saveUi(); wsSendJson({ cmd: 'rate', fps: ui.netFps }); };
+$('netSec').hidden = !REMOTE; if (REMOTE) { updateNetNote(); connect(); }
 document.querySelectorAll('[name=notify]').forEach(r => { r.checked = r.value === ui.notify; r.onchange = () => { if (r.checked) { ui.notify = r.value; saveUi(); } }; });
 applyUi();
 
@@ -1205,7 +1258,7 @@ if (!store.get('alife.coached11', false)) $('coach').hidden = false;
 $('coachOk').onclick = () => { $('coach').hidden = true; store.set('alife.coached11', true); };
 (() => {
   const m = store.get('alife.saveMeta', null);
-  if (!m || !m.ticks) return;
+  if (REMOTE || !m || !m.ticks) return;
   $('coach').hidden = false;
   $('coachText').innerHTML = `<b>Saved run found</b> · ${m.islands || 1} island${(m.islands || 1) > 1 ? 's' : ''}, tick ${[].concat(m.ticks).map(fmt).join(' / ')} from ${new Date(m.at).toLocaleDateString()}`;
   $('coachResume').hidden = false;
