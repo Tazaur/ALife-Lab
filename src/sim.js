@@ -31,7 +31,7 @@ const Q = {FOOD:1,TREE:2,STONE:4,SHELTER:8,FIRE:16,STORM:32,OTHER:64,PRED:128,CR
 let agents=[], items=[], buildings=[], storms=[], beasts=[], events=[], history=[], elite=[];
 let ticks=0, nextId=1, nextBid=1, births=0, deaths=0, maxGen=0, peakPop=0, selected=0, lastMilestone=0, seed=1;
 let deathsBy = {age:0,hunger:0,storm:0,fire:0,beast:0,attack:0};
-let tally = {thanks:0,loves:0,pairings:0,shares:0,thefts:0,attacks:0,hunts:0,beastKills:0,crafts:0,deposits:0,withdraws:0,builds:0};
+let tally = {gifts:0,thanks:0,loves:0,pairings:0,shares:0,thefts:0,attacks:0,hunts:0,beastKills:0,crafts:0,deposits:0,withdraws:0,builds:0};
 let baseTemp = 19, dayS = 0, seasonS = 0;
 let fires=[], shelters=[], walls=[];
 let fert = new Float32Array(FW*FH), forest = new Float32Array(FW*FH), rock = new Float32Array(FW*FH);
@@ -309,7 +309,7 @@ function updateActFreq(){ let s=0; for (let i=0;i<O;i++) s+=okTick[i]; if (s>0) 
 // Physical traits change slowly between generations and draw heavily on the body budget.
 // Mental traits (temperament and motivations) mutate fast and cost almost nothing.
 const PHYS = ['budget','strength','speed','thermal','sense','rest','regen'];
-const MENT = ['lr','explore','curiosity','aggression','social','altruism','greed','caution'];
+const MENT = ['lr','explore','curiosity','aggression','social','trustful','altruism','greed','caution'];
 const TRAIT_INFO = {
   budget:['Body budget','Room for costly traits before metabolism suffers; larger bodies burn more at rest'],
   strength:['Strength','Damage, carrying capacity and winning food fights'],
@@ -322,15 +322,16 @@ const TRAIT_INFO = {
   explore:['Impulsiveness','Randomness in its choices'],
   curiosity:['Curiosity','Reward for succeeding at things few yips do; fades with repetition'],
   aggression:['Aggression','Harder hits, at a higher energy cost'],
-  social:['Sociability','How quickly trust builds when it receives help'],
+  social:['Sociability','How much it needs company; loneliness weighs more'],
+  trustful:['Trustfulness','How readily it trusts, and how much benefit of the doubt it gives yips it already trusts'],
   altruism:['Altruism','How much helping a needier kin or ally feels like a gain'],
   greed:['Greed','How much food in its own store counts as wealth'],
   caution:['Caution','How much its own health counts toward wellbeing'],
 };
 const TB = {budget:[2,15],strength:[.2,3],speed:[.2,3],thermal:[.2,2.5],sense:[30,210],rest:[.2,3],regen:[.2,3],
-  lr:[.0001,.15],explore:[.02,2.8],curiosity:[0,3],aggression:[.05,3],social:[.2,2.5],altruism:[0,2],greed:[0,1.5],caution:[.1,3]};
+  lr:[.0001,.15],explore:[.02,2.8],curiosity:[0,3],aggression:[.05,3],social:[.2,2.5],trustful:[.1,2],altruism:[0,2],greed:[0,1.5],caution:[.1,3]};
 function freshTraits(){ return {budget:rnd(6.5,9),strength:rnd(.8,1.5),speed:rnd(.8,1.6),thermal:rnd(.6,1.4),sense:rnd(60,130),rest:rnd(.7,1.3),regen:rnd(.7,1.3),
-  lr:rnd(.001,.03),explore:rnd(.12,1.2),curiosity:rnd(.2,1.2),aggression:rnd(.2,1),social:rnd(.3,1.4),altruism:rnd(0,.6),greed:rnd(0,.6),caution:rnd(.5,1.5),hue:rnd(0,360)}; }
+  lr:rnd(.001,.03),explore:rnd(.12,1.2),curiosity:rnd(.2,1.2),aggression:rnd(.2,1),social:rnd(.3,1.4),trustful:rnd(.5,1.2),altruism:rnd(0,.6),greed:rnd(0,.6),caution:rnd(.5,1.5),hue:rnd(0,360)}; }
 
 // Physical upgrade trees. Each perk has a benefit and a drawback; some are physically incompatible.
 const PERKS = [
@@ -409,6 +410,8 @@ function makeAgent(x,y,brain=freshBrain(),gen=0,parent=null,traits=freshTraits()
   a.perks=perks.filter(id=>PERK[id]); derive(a); updateDrives(a,20,false,0,0); a.phi=wellbeing(a);
   compileBrain(a); if (gen>maxGen) maxGen=gen; return a;
 }
+// using another yip's store or house with its owner's trust: the guest feels grateful
+function hostGrace(a,b,strength){ const ow=b.owner&&b.owner!==a.id?byId.get(b.owner):null; if (!ow) return; gainTrust(a,ow.id,.03*strength); thank(a,ow,strength); }
 function socialTick(a){
   // loneliness eases near yips it trusts and grows when alone among strangers or enemies
   let friends=0; const r=40, x0=Math.max(0,(a.x-r)/CELL|0), x1=Math.min(GC-1,(a.x+r)/CELL|0), y0=Math.max(0,(a.y-r)/CELL|0), y1=Math.min(GR-1,(a.y+r)/CELL|0);
@@ -445,7 +448,7 @@ function setTrust(a,id,v){
   if (a.trust.size>48){ const all=[...a.trust].sort((x,y)=>Math.abs(y[1])-Math.abs(x[1])); for (const [k,w] of all.slice(32)) repMap.set(k,repOf(k)-w); a.trust=new Map(all.slice(0,32)); }
 }
 // trust is slow to earn (diminishing as it nears 1, scaled by the truster's sociability) and quick to lose
-function gainTrust(a,id,x){ const t=a.trust.get(id)||0; setTrust(a,id,t+x*.5*a.traits.social*(1-Math.max(0,t))); }
+function gainTrust(a,id,x){ const t=a.trust.get(id)||0; setTrust(a,id,t+x*.6*a.traits.trustful*(1-Math.max(0,t))); }
 function loseTrust(a,id,x){ const t=a.trust.get(id)||0; setTrust(a,id,t-x); }
 function forgetAll(a){ for (const [k,w] of a.trust) repMap.set(k,repOf(k)-w); a.trust.clear(); }
 // a yip that benefits from another thanks them; a trusted, satisfied yip may say it with love
@@ -460,9 +463,30 @@ function thank(g,b,strength){
   if (love){ b.lovesGot++; tally.loves++; g.fx|=256; } else { b.thanksGot++; tally.thanks++; g.fx|=128; }
 }
 function witness(attacker,victim,amount){
-  // others nearby who saw it trust the attacker less; distrust spreads, trust does not
+  // Bystanders judge an attack by how they feel about both sides.
+  //  - victim is kin or a friend: big loss of trust in the attacker
+  //  - victim is a stranger: small loss
+  //  - victim is distrusted: a small, slow gain ("enemy of my enemy")
+  // A trustful witness gives a yip it already trusts the benefit of the doubt, unless its own kin was hurt.
   const r=40, x0=Math.max(0,(attacker.x-r)/CELL|0), x1=Math.min(GC-1,(attacker.x+r)/CELL|0), y0=Math.max(0,(attacker.y-r)/CELL|0), y1=Math.min(GR-1,(attacker.y+r)/CELL|0);
-  for (let cy=y0;cy<=y1;cy++) for (let cx=x0;cx<=x1;cx++) for (const w of gAgent[cx+cy*GC]){ if (w===attacker||w===victim||w.dead) continue; const dx=w.x-attacker.x, dy=w.y-attacker.y; if (dx*dx+dy*dy<r*r) loseTrust(w,attacker.id,amount*(1+kinship(w,victim))); }
+  for (let cy=y0;cy<=y1;cy++) for (let cx=x0;cx<=x1;cx++) for (const w of gAgent[cx+cy*GC]){
+    if (w===attacker||w===victim||w.dead) continue;
+    const dx=w.x-attacker.x, dy=w.y-attacker.y; if (dx*dx+dy*dy>=r*r) continue;
+    const kin=kinship(w,victim), tv=w.trust.get(victim.id)||0, ta=w.trust.get(attacker.id)||0;
+    if (tv<-.2&&kin<.3){ gainTrust(w,attacker.id,amount*.6*-tv); continue; }
+    const care=.5+kin+Math.max(0,tv), doubt=kin>.3?1:1-.4*w.traits.trustful*Math.max(0,ta);
+    loseTrust(w,attacker.id,amount*care*Math.max(.2,doubt));
+  }
+}
+// bystanders who see a yip help someone (or fight off a beast) trust it a little more, scaled by how they feel about who was helped
+function witnessGood(helper,helped,amount){
+  const r=40, x0=Math.max(0,(helper.x-r)/CELL|0), x1=Math.min(GC-1,(helper.x+r)/CELL|0), y0=Math.max(0,(helper.y-r)/CELL|0), y1=Math.min(GR-1,(helper.y+r)/CELL|0);
+  for (let cy=y0;cy<=y1;cy++) for (let cx=x0;cx<=x1;cx++) for (const w of gAgent[cx+cy*GC]){
+    if (w===helper||w===helped||w.dead) continue;
+    const dx=w.x-helper.x, dy=w.y-helper.y; if (dx*dx+dy*dy>=r*r) continue;
+    const view=helped?Math.max(kinship(w,helped),w.trust.get(helped.id)||0):.5;
+    if (view>-.2) gainTrust(w,helper.id,amount*(.3+Math.max(0,view)));
+  }
 }
 
 function addItem(type,x,y){
@@ -583,26 +607,36 @@ function act(a,choice,e){
     }
     case A_.EAT:
       if (a.inv.food>0&&a.energy<a.ph.maxE-30){ a.inv.food--; a.energy+=30*a.ph.food; ok=true; }
-      else if (insideNow&&insideNow.stock.food>0&&a.energy<a.ph.maxE-30){ insideNow.stock.food--; if (insideNow.owner===a.id) a.stash=Math.max(0,a.stash-1); a.energy+=30*a.ph.food; ok=true; }
+      else if (insideNow&&insideNow.stock.food>0&&a.energy<a.ph.maxE-30){ insideNow.stock.food--; if (insideNow.owner===a.id) a.stash=Math.max(0,a.stash-1); else hostGrace(a,insideNow,.5+a.drv.hunger); a.energy+=30*a.ph.food; ok=true; }
       break;
     case A_.DEPOSIT:
-      if (insideNow){ let n=0; for (const k of ['food','wood','stone']) if (a.inv[k]>0){ insideNow.stock[k]+=a.inv[k]; n+=a.inv[k]; a.inv[k]=0; } if (n){ ok=true; a.stash+=insideNow.owner===a.id?n:0; a.deposits+=n; tally.deposits+=n; a.fx|=64; } }
+      if (insideNow){ let n=0; for (const k of ['food','wood','stone']) if (a.inv[k]>0){ insideNow.stock[k]+=a.inv[k]; n+=a.inv[k]; a.inv[k]=0; } if (n){ ok=true; a.stash+=insideNow.owner===a.id?n:0; a.deposits+=n; tally.deposits+=n; a.fx|=64; if (insideNow.owner&&insideNow.owner!==a.id){ const ow=byId.get(insideNow.owner); if (ow){ gainTrust(ow,a.id,.04*n); thank(ow,a,.3+.1*n); } } } }
       break;
     case A_.WITHDRAW:
-      if (insideNow){ let n=0; for (const k of ['wood','stone','food']) while (insideNow.stock[k]>0&&load(a)+(k==='stone'?2:k==='wood'?1.4:1)<=capacity(a)&&n<4){ insideNow.stock[k]--; a.inv[k]++; n++; } if (n){ ok=true; if (insideNow.owner===a.id) a.stash=Math.max(0,a.stash-n); tally.withdraws+=n; if (insideNow.owner&&insideNow.owner!==a.id){ const ow=byId.get(insideNow.owner); if (ow) loseTrust(ow,a.id,.2); } } }
+      if (insideNow){ let n=0; for (const k of ['wood','stone','food']) while (insideNow.stock[k]>0&&load(a)+(k==='stone'?2:k==='wood'?1.4:1)<=capacity(a)&&n<4){ insideNow.stock[k]--; a.inv[k]++; n++; } if (n){ ok=true; if (insideNow.owner===a.id) a.stash=Math.max(0,a.stash-n); tally.withdraws+=n; if (insideNow.owner&&insideNow.owner!==a.id){ const ow=byId.get(insideNow.owner); if (ow){ if ((ow.trust.get(a.id)||0)>.3) hostGrace(a,insideNow,.4+.5*a.drv.insecure); else loseTrust(ow,a.id,.2*n/2); } } } }
       break;
     case A_.HOUSE: case A_.STORE: case A_.WALL: case A_.FIRE:
       ok=build(BTYPES[choice-A_.HOUSE],a); break;
     case A_.REPAIR: {
       const b=nearestList(buildings,a,17,_r,isDamaged).obj;
-      if (b&&a.inv.wood>=1&&(b.type==='fire'||a.inv.stone>=1)){ a.inv.wood--; if (b.type!=='fire') a.inv.stone--; b.hp=Math.min(b.max,b.hp+110); ok=true; }
+      if (b&&a.inv.wood>=1&&(b.type==='fire'||a.inv.stone>=1)){ a.inv.wood--; if (b.type!=='fire') a.inv.stone--; b.hp=Math.min(b.max,b.hp+110); ok=true; if (b.owner&&b.owner!==a.id){ const ow=byId.get(b.owner); if (ow){ gainTrust(ow,a.id,.06); thank(ow,a,.5); } } }
       break;
     }
     case A_.SHARE:
-      if (o&&od<16&&a.inv.food>0&&load(o)+1<=capacity(o)){
-        a.inv.food--; o.inv.food++; gainTrust(o,a.id,.2); gainTrust(a,o.id,.03);
-        thank(o,a,.4+o.drv.hunger);
-        ok=true; a.shared++; tally.shares++; a.fx|=1;
+      if (o&&od<16){
+        // give food to a hungry yip, otherwise the material it is shortest on
+        let k=null;
+        if (a.inv.food>0&&(o.drv.hunger>.2||o.inv.food===0)) k='food';
+        else if (a.inv.wood>0&&o.inv.wood<a.inv.wood) k='wood';
+        else if (a.inv.stone>0&&o.inv.stone<a.inv.stone) k='stone';
+        else if (a.inv.food>0) k='food';
+        const wt=k==='stone'?2:k==='wood'?1.4:1;
+        if (k&&load(o)+wt<=capacity(o)){
+          a.inv[k]--; o.inv[k]++;
+          const value=k==='food'?.4+o.drv.hunger:.3+.5*o.drv.insecure;
+          gainTrust(o,a.id,.15*value+.05); gainTrust(a,o.id,.03); thank(o,a,value); witnessGood(a,o,.02);
+          ok=true; a.shared++; tally.shares++; if (k!=='food') tally.gifts++; a.fx|=1;
+        }
       }
       break;
     case A_.ATTACK:
@@ -620,6 +654,9 @@ function act(a,choice,e){
       const z=nearestList(beasts,a,16,_z).obj;
       if (z){
         const dmg=5*a.traits.strength*a.ph.dmg*(a.tool>0?2.2:1)*(.7+.3*a.traits.aggression);
+        const prey=z.target&&z.target!==a&&!z.target.dead?z.target:null;
+        if (prey){ gainTrust(prey,a.id,.1); thank(prey,a,.6+prey.drv.injury); }
+        witnessGood(a,prey,.015);
         z.hp-=dmg; z.target=a; a.energy-=1; a.hunts++; tally.hunts++; a.fx|=4; if (a.tool>0) a.tool--;
         ok=true;
         if (z.hp<=0){ a.beastKills++; tally.beastKills++; log(`Yip #${a.id} slew a beast`,'beast'); }
@@ -718,9 +755,10 @@ function tick(){
     if (a.drv.fatigue>.8) a.vx*=.8, a.vy*=.8;
     // gratitude for warmth and shelter that someone else provided
     if (preDrv-a.drv.cold>.004){
-      if (sheltered&&sheltered.owner&&sheltered.owner!==a.id) thank(a,byId.get(sheltered.owner),.6+preDrv);
+      if (sheltered&&sheltered.owner&&sheltered.owner!==a.id) hostGrace(a,sheltered,.6+preDrv);
       else { const f=nearestList(fires,a,65,_fw).obj; if (f&&f.owner&&f.owner!==a.id){ const ow=byId.get(f.owner); if (ow){ gainTrust(a,ow.id,.006); if (preDrv>.25) thank(a,ow,.5+preDrv); } } }
     }
+    if (resting&&sheltered&&sheltered.owner&&sheltered.owner!==a.id&&a.drv.fatigue>.3&&Math.random()<.05) hostGrace(a,sheltered,.4+a.drv.fatigue);
     if ((a.id+ticks)%6===0) socialTick(a);
     const phi=wellbeing(a), reward=(phi-a.phi+bonus)*REWARD_SCALE; a.phi=phi; a.lastReward=.9*(a.lastReward||0)+.1*reward; a.lastBonus=bonus;
     if (settings.learning) learn(a,reward,temp);

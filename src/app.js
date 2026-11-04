@@ -820,7 +820,7 @@ function renderStats() {
   lineChart($('cPop'), [{ values: h.map(x => x.pop), color: C.good }, { values: h.map(x => x.build), color: C.house }, { values: h.map(x => (x.beasts || 0) * 10), color: C.beast }]);
   lineChart($('cBeh'), [{ values: per100('shares'), color: C.good }, { values: per100('thefts'), color: C.bad }, { values: per100('attacks').map(v => v / 10), color: C.beast + '99' }, { values: per100('hunts'), color: C.warn }, { values: per100('crafts'), color: C.wall }, { values: per100('thanks'), color: C.accent }, { values: per100('loves').map(v => v * 5), color: '#ff8fc8' }]);
   lineChart($('cSocial'), [{ values: h.map(x => x.rep || 0), color: '#ff8fc8' }, { values: h.map(x => (x.lonely || 0) * 5), color: '#9cb6ff' }], { decimals: 1 });
-  $('behFigs').innerHTML = [['Food shared', ta.shares], ['Food stolen', ta.thefts], ['Thank-yous', ta.thanks], ['Loving thanks', ta.loves], ['Co-parented births', ta.pairings], ['Beasts slain', ta.beastKills], ['Tools made', ta.crafts], ['Holding tools', Math.round(s.tools / Math.max(1, s.pop) * 100) + '%']]
+  $('behFigs').innerHTML = [['Gifts given', ta.shares], ['Food stolen', ta.thefts], ['Thank-yous', ta.thanks], ['Loving thanks', ta.loves], ['Co-parented births', ta.pairings], ['Beasts slain', ta.beastKills], ['Tools made', ta.crafts], ['Holding tools', Math.round(s.tools / Math.max(1, s.pop) * 100) + '%']]
     .map(([k, v]) => `<div class="fig"><b>${typeof v === 'number' ? fmt(v) : v}</b><small>${k}</small></div>`).join('');
   lineChart($('cGen'), [{ values: h.map(x => x.gen), color: C.accent }]);
   lineChart($('cBody'), [{ values: h.map(x => x.str), color: C.bad, area: false }, { values: h.map(x => x.spd), color: C.store }, { values: h.map(x => x.sense / 100), color: C.wall }, { values: h.map(x => x.agg || 0), color: C.beast }, { values: h.map(x => (x.neurons || 0) / 50), color: C.accent }], { decimals: 1 });
@@ -909,7 +909,7 @@ function bodyPane(m) {
   $('budgetBar').innerHTML = `<div class="row2"><span>Body budget used</span><b>${cost.toFixed(1)} / ${budget.toFixed(1)}${over ? ' · over budget' : ''}</b></div><div class="bb"><i style="width:${pct(cost)}%;background:${over ? 'var(--bad)' : 'var(--good)'};opacity:.7"></i><u style="left:${pct(budget)}%"></u></div><span>Going over the budget raises metabolism. Upgrades and strong physical traits use it up.</span>`;
   renderTrees(m.perks || []);
   const d = m.deeds;
-  $('deedKV').innerHTML = [['Food shared', d.shared], ['Food stolen', d.stolen], ['Attacks', d.attacks], ['Yips killed', d.kills], ['Beast hits', d.hunts], ['Beasts slain', d.beastKills], ['Tools made', d.crafts], ['Items stored', d.deposits], ['Built', d.builds], ['Harvested', m.success]]
+  $('deedKV').innerHTML = [['Gifts given', d.shared], ['Food stolen', d.stolen], ['Attacks', d.attacks], ['Yips killed', d.kills], ['Beast hits', d.hunts], ['Beasts slain', d.beastKills], ['Tools made', d.crafts], ['Items stored', d.deposits], ['Built', d.builds], ['Harvested', m.success]]
     .map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join('');
   const ph = m.ph || {};
   const kv = [['Wellbeing', m.wellbeing.toFixed(2)], ['Avg reward', (m.rewardAvg >= 0 ? '+' : '') + m.rewardAvg.toFixed(3)], ['Food carried', m.inv.food], ['Wood / stone', `${m.inv.wood} / ${m.inv.stone}`], ['Tool uses left', m.tool], ['Metabolism', m.metab.toFixed(2) + '×'], ['Brain upkeep', m.brainCost.toFixed(3)], ['Comfort range', `${ph.coldT}–${ph.hotT}°C`], ['Felt temp.', m.temp.toFixed(1) + '°C'], ['Max energy / health', `${ph.maxE} / ${ph.maxH}`], ['Lifespan', fmt(m.lifespan)], ['Last act', meta.short[m.lastChoice]]];
@@ -917,7 +917,7 @@ function bodyPane(m) {
 }
 function socialPane(m) {
   $('socialKV').innerHTML = [['Popularity', m.rep.toFixed(2)], ['Admirers', m.admirers], ['Thanks received', m.thanksGot], ['Loving thanks', m.lovesGot], ['Co-parented', m.partners], ['Co-parent', m.coparent ? `#${m.coparent}${m.coparentAlive ? '' : ' (gone)'}` : 'none']].map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join('');
-  $('trustedBy').innerHTML = m.trustedBy.length ? m.trustedBy.map(t => `<button class="chip" data-goto="${t.id}"><i style="background:${hueFill[t.hue | 0]}"></i>#${t.id} · ${t.v.toFixed(2)}</button>`).join('') : '<p class="note">Nobody yet. Trust is earned slowly by sharing food and providing warmth or shelter, and lost fast by attacks and theft.</p>';
+  $('trustedBy').innerHTML = m.trustedBy.length ? m.trustedBy.map(t => `<button class="chip" data-goto="${t.id}"><i style="background:${hueFill[t.hue | 0]}"></i>#${t.id} · ${t.v.toFixed(2)}</button>`).join('') : '<p class="note">Nobody yet. Trust is earned slowly by sharing food or materials, warmth, shelter, repairs and defending others from beasts, and lost fast by attacks and theft.</p>';
   $('trustBars').innerHTML = m.trust.length ? m.trust.map(t => {
     const w = Math.abs(t.v) * 50, left = t.v < 0 ? 50 - w : 50;
     return `<div class="bar"><div class="bt" style="cursor:${t.alive ? 'pointer' : 'default'}" ${t.alive ? `data-goto="${t.id}"` : ''}><i style="left:${left}%;width:${w}%;background:${t.v < 0 ? 'rgba(242,131,111,.4)' : 'rgba(126,214,176,.35)'}"></i><span style="${t.alive ? '' : 'color:var(--dim)'}">#${t.id}${t.alive ? '' : ' · gone'}</span></div><b>${t.v > 0 ? '+' : ''}${t.v.toFixed(2)}</b></div>`;
