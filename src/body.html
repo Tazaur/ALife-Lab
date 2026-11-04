@@ -40,11 +40,12 @@
       <section class="sec"><h3>Population &amp; structures <span id="hSpan"></span></h3><canvas class="chart tall" id="cPop"></canvas><div class="key"><span><i style="background:#7ed6b0"></i>Population</span><span><i style="background:#f0c87e"></i>Structures</span><span><i style="background:#e26d5a"></i>Beasts × 10</span></div></section>
       <section class="sec"><h3>Behavior <span>events per 100 ticks</span></h3>
         <canvas class="chart tall" id="cBeh"></canvas>
-        <div class="key"><span><i style="background:#7ed6b0"></i>Sharing</span><span><i style="background:#f2836f"></i>Thefts</span><span><i style="background:#e26d5a;opacity:.55"></i>Attacks ÷ 10</span><span><i style="background:#f0b35a"></i>Hunts</span><span><i style="background:#c9b3e6"></i>Tools made</span><span><i style="background:#7fd8ea"></i>Stored</span></div>
+        <div class="key"><span><i style="background:#7ed6b0"></i>Sharing</span><span><i style="background:#f2836f"></i>Thefts</span><span><i style="background:#e26d5a;opacity:.55"></i>Attacks ÷ 10</span><span><i style="background:#f0b35a"></i>Hunts</span><span><i style="background:#c9b3e6"></i>Tools made</span><span><i style="background:#f3c96b"></i>Thanks</span><span><i style="background:#ff8fc8"></i>Loving thanks ×5</span></div>
         <div class="figs" id="behFigs"></div>
       </section>
       <section class="sec"><h3>Average generation</h3><canvas class="chart" id="cGen"></canvas></section>
       <section class="sec"><h3>Body &amp; temperament drift</h3><canvas class="chart" id="cBody"></canvas><div class="key"><span><i style="background:#f2836f"></i>Strength</span><span><i style="background:#7fd8ea"></i>Speed</span><span><i style="background:#c9b3e6"></i>Sense ÷ 100</span><span><i style="background:#e26d5a"></i>Aggression</span><span><i style="background:#f3c96b"></i>Brain size ÷ 50</span></div></section>
+      <section class="sec"><h3>Social life</h3><canvas class="chart" id="cSocial"></canvas><div class="key"><span><i style="background:#ff8fc8"></i>Avg popularity</span><span><i style="background:#9cb6ff"></i>Avg loneliness × 5</span></div></section>
       <section class="sec"><h3>Physical upgrades <span>share of yips carrying each</span></h3><div class="bars" id="perkBars"></div></section>
       <section class="sec"><h3>Temperament <span>population average</span></h3><div class="sec" id="mentAvg" style="gap:7px"></div></section>
       <section class="sec"><h3>How they died</h3><div class="stack" id="deathStack"></div><div class="key" id="deathKey"></div></section>
@@ -144,6 +145,7 @@
         <div class="vital"><div>Life used<b id="vA">0</b></div><div class="meter"><i id="mA" style="background:var(--muted)"></i></div></div>
         <div class="vital"><div>Load<b id="vL">0</b></div><div class="meter"><i id="mL" style="background:var(--tree)"></i></div></div>
       </div>
+      <div class="sec" style="gap:6px"><h3>Needs <span>internal drives · rewards come from relieving these</span></h3><div class="drives" id="driveBars"></div></div>
       <div class="sec" style="gap:6px"><h3>Jump to</h3>
       <div class="nav">
         <button class="btn sm" data-pick="parent">Parent</button>
@@ -155,6 +157,8 @@
         <button class="btn sm" data-pick="violent">Most violent</button>
         <button class="btn sm" data-pick="hunter">Top hunter</button>
         <button class="btn sm" data-pick="builder">Top builder</button>
+        <button class="btn sm" data-pick="popular">Most popular</button>
+        <button class="btn sm" data-pick="youngest">Newest gen</button>
       </div></div>
       <div class="tabs" role="tablist">
         <button class="on" data-pane="pMind">Mind</button>
@@ -184,6 +188,9 @@
         <div class="kv" id="bodyKV"></div>
       </div>
       <div class="pane sec" id="pSocial" hidden>
+        <div class="kv" id="socialKV"></div>
+        <h3>Trusted by <span>yips who trust this one</span></h3>
+        <div class="chips" id="trustedBy"></div>
         <h3>Trust ledger <span>−1 hostile · +1 ally</span></h3>
         <div class="bars" id="trustBars"></div>
         <h3>Living children</h3>

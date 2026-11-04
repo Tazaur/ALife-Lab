@@ -2,14 +2,16 @@
 
 An evolution sandbox. A colony of yips, each driven by its own neural network, forages, hoards, builds, shares, steals, fights, hunts beasts, crafts tools and breeds. Brains mutate between generations (senses, layers and neurons are added and removed) and also learn within a lifetime through a policy-gradient update. Nothing social is scripted: sharing, theft, kin loyalty and group hunting only happen if evolution finds them worth it.
 
-## How yips learn (1.2)
+## How yips learn (1.3)
 
-There are no hand-tuned rewards for actions. A yip's learning signal is the change in its own **wellbeing**: energy, health (weighted by its caution), what it carries, food it has stored in its own store (weighted by greed), and the standing value of structures it built. Because reward is "wellbeing now minus wellbeing before", any loop that ends where it started earns exactly zero, so nothing can be farmed. Two bounded extras sit on top:
+Rewards come only from inside each yip. It has six needs, each an urgency from 0 to 1: **hunger, cold/heat, injury, fatigue, loneliness and insecurity** (few supplies). Wellbeing is minus the weighted sum of the squared urgencies, and the learning signal is the change in wellbeing. Squaring gives diminishing returns: relief is worth the most when a need is desperate and almost nothing once it is met, so sitting by a fire pays less every tick, while a slowly growing chill builds the desire back up. Because it is a potential over the yip's own state, no loop can farm it. Traits set the weights (caution for injury, sociability for loneliness, greed for insecurity).
 
-- **Curiosity** pays for succeeding at actions few yips perform. Each repeat pays less (inverse-square), so a yip's lifetime total per action is capped.
-- **Altruism** pays for giving food to a needier kin or ally, scaled by how much needier they are, and fading with repeated gifts.
-
-Evolution itself has no reward at all: yips that survive and breed pass on their brains, traits and upgrades.
+**Social life**
+- Trust is slow to earn and fast to lose. Gains shrink as trust nears 1; attacks and theft cut it sharply, and bystanders who see an attack distrust the attacker too.
+- A yip warmed by someone else's fire, sheltered in someone else's house, or given food trusts the provider a little more and may **thank** them (shown as a "ty" bubble). A yip that already trusts the provider and is well satisfied thanks with love (😍).
+- Being thanked relieves the provider's loneliness; the warm glow scales with altruism. That is the only payoff for helping.
+- **Popularity** is the total trust other living yips hold in you. Popular yips breed sooner and more often, and an admirer nearby can co-parent: traits blend and compatible upgrades can come from either side.
+- Curiosity remains as an internal novelty drive: succeeding at something few yips do satisfies it, less with every repeat.
 
 ## Genetics
 

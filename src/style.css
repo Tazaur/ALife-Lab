@@ -268,6 +268,13 @@ button.chip:hover{border-color:var(--line-hi);background:rgba(255,255,255,.05)}
 .trait span[title]{cursor:help}
 @media (max-width:420px){ .trees{grid-template-columns:repeat(2,minmax(0,1fr))} }
 
+.drives{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px 12px}
+.drive{display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--muted);min-width:0}
+.drive div{display:flex;justify-content:space-between}
+.drive b{font:500 11px var(--f-mono);color:var(--fg)}
+.drive .meter{height:5px}
+@media (max-width:420px){ .drives{grid-template-columns:repeat(2,minmax(0,1fr))} }
+
 /* ---------- overlays ---------- */
 .legend{position:absolute;right:var(--gut);top:72px;display:flex;gap:10px;padding:7px 11px;font-size:11px;color:var(--muted);z-index:4;pointer-events:none;transition:opacity .2s}
 .legend span{display:flex;align-items:center;gap:5px;white-space:nowrap}

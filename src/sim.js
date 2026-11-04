@@ -23,7 +23,7 @@ const BTYPES = ['house','store','wall','fire'];
 const SPECS = {house:{wood:3,stone:1,hp:450,r:16},store:{wood:5,stone:4,hp:720,r:23},wall:{wood:2,stone:1,hp:420,r:15},fire:{wood:2,stone:0,hp:180,r:12}};
 const LIMITS = {layers:6, neurons:24, inputs:32};
 const DX = [0,1,0,-1], DY = [-1,0,1,0];
-const settings = {food:3,trees:.12,stone:.08,drain:1,decay:1,storm:1,temperature:19,day:500,season:2600,beasts:3,beastPower:1,popCap:260,mutation:1,learning:true,autoReseed:true};
+const settings = {food:3,trees:.12,stone:.08,drain:1,decay:1,storm:1,temperature:19,day:500,season:2600,beasts:2,beastPower:1,popCap:260,mutation:1,learning:true,autoReseed:true};
 
 // ---------- query masks ----------
 const Q = {FOOD:1,TREE:2,STONE:4,SHELTER:8,FIRE:16,STORM:32,OTHER:64,PRED:128,CROWD:256,WALL:512};
@@ -31,7 +31,7 @@ const Q = {FOOD:1,TREE:2,STONE:4,SHELTER:8,FIRE:16,STORM:32,OTHER:64,PRED:128,CR
 let agents=[], items=[], buildings=[], storms=[], beasts=[], events=[], history=[], elite=[];
 let ticks=0, nextId=1, nextBid=1, births=0, deaths=0, maxGen=0, peakPop=0, selected=0, lastMilestone=0, seed=1;
 let deathsBy = {age:0,hunger:0,storm:0,fire:0,beast:0,attack:0};
-let tally = {shares:0,thefts:0,attacks:0,hunts:0,beastKills:0,crafts:0,deposits:0,withdraws:0,builds:0};
+let tally = {thanks:0,loves:0,pairings:0,shares:0,thefts:0,attacks:0,hunts:0,beastKills:0,crafts:0,deposits:0,withdraws:0,builds:0};
 let baseTemp = 19, dayS = 0, seasonS = 0;
 let fires=[], shelters=[], walls=[];
 let fert = new Float32Array(FW*FH), forest = new Float32Array(FW*FH), rock = new Float32Array(FW*FH);
@@ -132,6 +132,13 @@ const SENSOR_DEFS = [
   ['pain','Recently hurt',0,a=>a.pain],
   ['temp','Local temperature',0,a=>clamp((a._t-20)/30,-1,1)],
   ['comfort','Thermal comfort',0,a=>clamp(1-Math.abs(a._t-20)/(12*a.traits.thermal),-1,1)],
+  ['hungerDrive','Hunger',0,a=>a.drv.hunger],
+  ['coldDrive','Feeling cold or hot',0,a=>a.drv.cold],
+  ['fatigue','Fatigue',0,a=>a.drv.fatigue],
+  ['lonely','Loneliness',0,a=>a.drv.lonely],
+  ['insecure','Insecurity (few supplies)',0,a=>a.drv.insecure],
+  ['popularity','Own popularity',0,a=>clamp(repOf(a.id)/5,-1,1)],
+  ['agentRep','Nearest yip\'s popularity',Q.OTHER,(a,e)=>e.other.obj?clamp(repOf(e.other.obj.id)/5,-1,1):0],
   ['sheltered','Inside a house or store',0,a=>a.sheltered?1:0],
   ['night','Night',0,()=>dayS<-.15?1:0],
   ['strength','Strength',0,a=>a.traits.strength/3],
@@ -195,7 +202,7 @@ KEYIDX.memory = KEYIDX.trend;   // pre-1.1 saves
 
 // ---------- brains ----------
 function randArr(n, s=.6){ const f=new Float32Array(n); for (let i=0;i<n;i++) f[i]=rnd(-s,s); return f; }
-const DEFAULT_INPUTS = ['bias','energy','health','pain','foodX','foodY','foodNear','agentX','agentY','agentNear','kin','predX','predY','predNear','foodStock','memA','memB','signal'];
+const DEFAULT_INPUTS = ['bias','energy','health','pain','coldDrive','lonely','foodX','foodY','foodNear','agentX','agentY','agentNear','kin','predX','predY','predNear','foodStock','memA','memB','signal'];
 function freshBrain(){ const inputs=[...DEFAULT_INPUTS], sizes=[inputs.length,14,12,NOUT]; return {inputs, sizes, w:[randArr(14*inputs.length), randArr(12*14), randArr(NOUT*12)]}; }
 function copyBrain(b){ return {inputs:[...b.inputs], sizes:[...b.sizes], w:b.w.map(f=>new Float32Array(f))}; }
 function toNested(b){ return {inputs:[...b.inputs], sizes:[...b.sizes], weights:b.w.map((f,l)=>{ const rows=b.sizes[l+1], cols=b.sizes[l], m=[]; for (let j=0;j<rows;j++) m.push(Array.from(f.subarray(j*cols,(j+1)*cols))); return m; })}; }
@@ -270,19 +277,30 @@ function learn(a, reward, temp){
   }
 }
 
-// ---------- reward ----------
-// A yip's learning signal is the change in its own wellbeing, a potential over its state.
-// Because reward = phi(now) - phi(before), any loop that ends where it started earns exactly zero,
-// so nothing can be farmed. Temperament traits set the weights; they never add free reward.
-function wellbeing(a){
-  const t=a.traits, inv=a.inv;
-  return a.energy/100 + t.caution*a.health/100 + .3*inv.food*a.ph.food + .12*inv.wood + .15*inv.stone + .006*a.tool + t.greed*.3*a.stash + (ownVal.get(a.id)||0);
+// ---------- drives & reward ----------
+// Rewards come from inside the yip. Each drive is an urgency from 0 (satisfied) to 1 (desperate):
+//   hunger, cold/heat, injury, fatigue, loneliness, insecurity.
+// Wellbeing = -sum(weight * urgency^2) and reward = change in wellbeing. Squaring makes relief worth the most when
+// the need is greatest and almost nothing once satisfied (sitting by a fire pays less every tick), while a slowly
+// growing need builds the desire back up. It is a potential over the yip's own state, so no loop can farm it.
+const DRIVES = ['hunger','cold','injury','fatigue','lonely','insecure'];
+function updateDrives(a,lt,moved,exertion,restBoost){
+  const ph=a.ph, d=a.drv;
+  d.hunger=clamp(1-a.energy/(ph.maxE*.7),0,1);
+  const disc=clamp((Math.max(0,ph.coldT-lt)+Math.max(0,lt-ph.hotT))/12,0,1);
+  d.cold+=(disc-d.cold)*(disc>d.cold?.015:.12);                     // chill builds slowly, warmth relieves fast
+  d.injury=clamp((1-a.health/ph.maxH)*.8+a.pain*.4,0,1);
+  d.fatigue=clamp(d.fatigue+.0002+(moved?.00025:0)+exertion-restBoost,0,1);
+  d.insecure=clamp(1-(a.inv.food+.4*a.inv.wood+.4*a.inv.stone+.8*a.stash+3*(ownVal.get(a.id)||0))/6,0,1);
+  // loneliness is updated where yips meet (socialTick) and relieved by thanks
 }
-// structures keep their material value for the builder while they stand, so building is neither a loss nor a prize;
-// the value wears away as they decay, and only real use (warmth, rest, safety) makes them pay off
+function wellbeing(a){
+  const d=a.drv, t=a.traits;
+  return -(d.hunger*d.hunger + d.cold*d.cold + t.caution*d.injury*d.injury + .6*d.fatigue*d.fatigue + .8*t.social*d.lonely*d.lonely + (.5+t.greed)*d.insecure*d.insecure);
+}
 const MATV={wood:.12,stone:.15}; let ownVal=new Map();
 const buildValue=b=>{ const s=SPECS[b.type]; return (s.wood*MATV.wood+s.stone*MATV.stone)*Math.max(0,b.hp/b.max); };
-const REWARD_SCALE=3;   // one wellbeing unit = one energy-100; scaled so learning moves at a useful pace
+const REWARD_SCALE=8;   // one wellbeing unit = one energy-100; scaled so learning moves at a useful pace
 const actFreq=new Float64Array(O).fill(1/O), okTick=new Float64Array(O);
 function updateActFreq(){ let s=0; for (let i=0;i<O;i++) s+=okTick[i]; if (s>0) for (let i=0;i<O;i++){ actFreq[i]=.995*actFreq[i]+.005*okTick[i]/s; okTick[i]=0; } }
 
@@ -385,20 +403,67 @@ function makeAgent(x,y,brain=freshBrain(),gen=0,parent=null,traits=freshTraits()
   const a={id:nextId++,x,y,vx:0,vy:0,hd:rnd(0,6.283),brain,gen,parent,lineage,traits,energy,health:100,prevHealth:100,age:0,lifespan:rnd(3600,5100),
     inv:{food:0,wood:0,stone:0},tool:0,memory:0,memA:0,memB:0,signal:0,pain:0,trust:new Map(),lastChoice:O-1,probs:new Float32Array(O),
     builds:0,success:0,kids:0,shared:0,stolen:0,attacks:0,kills:0,hunts:0,beastKills:0,crafts:0,deposits:0,
-    actionCounts:new Uint32Array(O),okCounts:new Uint32Array(O),stash:0,shareHeat:0,phi:0,baseline:0,sheltered:false,harm:'hunger',fx:0,_t:20};
+    actionCounts:new Uint32Array(O),okCounts:new Uint32Array(O),stash:0,shareHeat:0,phi:0,baseline:0,
+    drv:{hunger:0,cold:0,injury:0,fatigue:.1,lonely:.2,insecure:.8},thanked:new Map(),thanksGot:0,lovesGot:0,coparent:null,partners:0,sheltered:false,harm:'hunger',fx:0,_t:20};
   for (const k of [...PHYS,...MENT]) if (a.traits[k]==null) a.traits[k]=freshTraits()[k];
-  a.perks=perks.filter(id=>PERK[id]); derive(a); a.phi=wellbeing(a);
+  a.perks=perks.filter(id=>PERK[id]); derive(a); updateDrives(a,20,false,0,0); a.phi=wellbeing(a);
   compileBrain(a); if (gen>maxGen) maxGen=gen; return a;
 }
-function child(a){
+function socialTick(a){
+  // loneliness eases near yips it trusts and grows when alone among strangers or enemies
+  let friends=0; const r=40, x0=Math.max(0,(a.x-r)/CELL|0), x1=Math.min(GC-1,(a.x+r)/CELL|0), y0=Math.max(0,(a.y-r)/CELL|0), y1=Math.min(GR-1,(a.y+r)/CELL|0);
+  for (let cy=y0;cy<=y1;cy++) for (let cx=x0;cx<=x1;cx++) for (const o of gAgent[cx+cy*GC]){ if (o===a||o.dead) continue; const dx=o.x-a.x, dy=o.y-a.y; if (dx*dx+dy*dy<r*r&&((a.trust.get(o.id)||0)>.25||kinship(a,o)>.4)) friends++; }
+  const d=a.drv; d.lonely=clamp(d.lonely+(friends?-.012*Math.min(3,friends):.006*a.traits.social),0,1);
+}
+function findAdmirer(a){
+  let best=null, bt=.5; const r=40, x0=Math.max(0,(a.x-r)/CELL|0), x1=Math.min(GC-1,(a.x+r)/CELL|0), y0=Math.max(0,(a.y-r)/CELL|0), y1=Math.min(GR-1,(a.y+r)/CELL|0);
+  for (let cy=y0;cy<=y1;cy++) for (let cx=x0;cx<=x1;cx++) for (const o of gAgent[cx+cy*GC]){ if (o===a||o.dead||o.energy<60) continue; const t=o.trust.get(a.id)||0; if (t>bt&&kinship(a,o)<.5){ bt=t; best=o; } }
+  return best;
+}
+function blendTraits(x,y){ const t={}; for (const k in x){ if (k==='hue'){ let d=((y.hue-x.hue+540)%360)-180; t.hue=(x.hue+d*Math.random()+360)%360; continue; } const w=Math.random(); t[k]=y[k]==null?x[k]:x[k]*w+y[k]*(1-w); } return t; }
+function child(a,mate){
   const lineage=[{id:a.id,gen:a.gen,hue:a.traits.hue},...a.lineage].slice(0,12);
-  const c=makeAgent(clamp(a.x+rnd(-13,13),8,W-8),clamp(a.y+rnd(-13,13),8,H-8),mutateBrain(a.brain),a.gen+1,a.id,mutateTraits(a.traits),60,lineage,mutatePerks(a.perks));
-  c.trust.set(a.id,.5); a.trust.set(c.id,.5);
+  let traits=a.traits, perks=[...a.perks];
+  if (mate){
+    // an admirer co-parents: traits blend, and compatible upgrades can come from either side
+    traits=blendTraits(a.traits,mate.traits);
+    for (const id of mate.perks) if (Math.random()<.5&&perkAvailable(perks,PERK[id])) perks.push(id);
+    mate.energy-=12; mate.drv.lonely=Math.max(0,mate.drv.lonely-.25); a.drv.lonely=Math.max(0,a.drv.lonely-.25);
+    a.partners++; mate.partners++; tally.pairings++;
+  }
+  const c=makeAgent(clamp(a.x+rnd(-13,13),8,W-8),clamp(a.y+rnd(-13,13),8,H-8),mutateBrain(a.brain),a.gen+1,a.id,mutateTraits(traits),60,lineage,mutatePerks(perks));
+  if (mate){ c.coparent=mate.id; c.trust.set(mate.id,.4); repMap.set(mate.id,repOf(mate.id)+.4); }
+  setTrust(c,a.id,.5); setTrust(a,c.id,.5);
   a.kids++; return c;
 }
 const load = a => a.inv.food+a.inv.wood*1.4+a.inv.stone*2;
 const capacity = a => Math.max(1,2+a.traits.strength*4+a.ph.carry);
-function setTrust(a,id,v){ a.trust.set(id,clamp(v,-1,1)); if (a.trust.size>48){ const keep=[...a.trust].sort((x,y)=>Math.abs(y[1])-Math.abs(x[1])).slice(0,32); a.trust=new Map(keep); } }
+const repMap=new Map();   // id -> sum of trust other living yips hold toward it
+const repOf = id => repMap.get(id)||0;
+function setTrust(a,id,v){
+  v=clamp(v,-1,1); const old=a.trust.get(id)||0; a.trust.set(id,v); repMap.set(id,repOf(id)+v-old);
+  if (a.trust.size>48){ const all=[...a.trust].sort((x,y)=>Math.abs(y[1])-Math.abs(x[1])); for (const [k,w] of all.slice(32)) repMap.set(k,repOf(k)-w); a.trust=new Map(all.slice(0,32)); }
+}
+// trust is slow to earn (diminishing as it nears 1, scaled by the truster's sociability) and quick to lose
+function gainTrust(a,id,x){ const t=a.trust.get(id)||0; setTrust(a,id,t+x*.5*a.traits.social*(1-Math.max(0,t))); }
+function loseTrust(a,id,x){ const t=a.trust.get(id)||0; setTrust(a,id,t-x); }
+function forgetAll(a){ for (const [k,w] of a.trust) repMap.set(k,repOf(k)-w); a.trust.clear(); }
+// a yip that benefits from another thanks them; a trusted, satisfied yip may say it with love
+function thank(g,b,strength){
+  if (!b||b.dead||b===g) return;
+  const last=g.thanked.get(b.id); if (last!==undefined&&ticks-last<150) { gainTrust(g,b.id,.01*strength); return; }
+  g.thanked.set(b.id,ticks); if (g.thanked.size>24) g.thanked.delete(g.thanked.keys().next().value);
+  const tr=g.trust.get(b.id)||0, d=g.drv, sat=1-(d.hunger+d.cold+d.injury)/3;
+  const love=tr>.55&&sat>.7&&g.traits.social>.7;
+  gainTrust(g,b.id,(love?.14:.07)*strength);
+  b.drv.lonely=Math.max(0,b.drv.lonely-(love?.2:.07)*(.5+b.traits.altruism));   // being appreciated: the warm glow scales with altruism
+  if (love){ b.lovesGot++; tally.loves++; g.fx|=256; } else { b.thanksGot++; tally.thanks++; g.fx|=128; }
+}
+function witness(attacker,victim,amount){
+  // others nearby who saw it trust the attacker less; distrust spreads, trust does not
+  const r=40, x0=Math.max(0,(attacker.x-r)/CELL|0), x1=Math.min(GC-1,(attacker.x+r)/CELL|0), y0=Math.max(0,(attacker.y-r)/CELL|0), y1=Math.min(GR-1,(attacker.y+r)/CELL|0);
+  for (let cy=y0;cy<=y1;cy++) for (let cx=x0;cx<=x1;cx++) for (const w of gAgent[cx+cy*GC]){ if (w===attacker||w===victim||w.dead) continue; const dx=w.x-attacker.x, dy=w.y-attacker.y; if (dx*dx+dy*dy<r*r) loseTrust(w,attacker.id,amount*(1+kinship(w,victim))); }
+}
 
 function addItem(type,x,y){
   if (items.length>1600) return;
@@ -442,11 +507,11 @@ function dropInventory(a){
 let nextBeast=1;
 function spawnBeast(x,y){
   if (x===undefined){ const side=Math.floor(rnd(0,4)); x=side===0?4:side===1?W-4:rnd(0,W); y=side<2?rnd(0,H):side===2?4:H-4; }
-  beasts.push({id:nextBeast++,x,y,vx:0,vy:0,hd:0,hp:80,max:80,cd:0,energy:100,age:0,target:null,wander:rnd(0,6.28)});
+  beasts.push({id:nextBeast++,x,y,vx:0,vy:0,hd:0,hp:40,max:40,cd:0,energy:100,age:0,target:null,wander:rnd(0,6.28)});
 }
 const _bq={}, _bf={};
 function tickBeasts(){
-  if (beasts.length<settings.beasts&&Math.random()<1/300) spawnBeast();
+  if (beasts.length<settings.beasts&&Math.random()<1/600) spawnBeast();
   while (beasts.length>settings.beasts+3) beasts.shift();
   const pw=settings.beastPower;
   for (const z of beasts){
@@ -464,7 +529,7 @@ function tickBeasts(){
     if (wallBlocks(nx,ny,4.5)){ z.vx*=-.5; z.vy*=-.5; z.wander+=Math.PI/2; } else { z.x=nx; z.y=ny; }
     if (nx<=3||nx>=W-3||ny<=3||ny>=H-3) z.wander+=Math.PI;
     if (z.vx*z.vx+z.vy*z.vy>.01) z.hd=Math.atan2(z.vy,z.vx);
-    if (tgt&&z.cd<=0&&Math.hypot(tgt.x-z.x,tgt.y-z.y)<7){ const dmg=10*pw*(.6+.4*Math.random()); tgt.health-=dmg*tgt.ph.armor*tgt.ph.beastArmor; tgt.pain=1; tgt.harm='beast'; tgt.fx|=32; z.cd=18; z.energy=Math.min(140,z.energy+8); }
+    if (tgt&&z.cd<=0&&Math.hypot(tgt.x-z.x,tgt.y-z.y)<7){ const dmg=5*pw*(.6+.4*Math.random()); tgt.health-=dmg*tgt.ph.armor*tgt.ph.beastArmor; tgt.pain=1; tgt.harm='beast'; tgt.fx|=32; z.cd=18; z.energy=Math.min(140,z.energy+8); }
   }
   for (let i=beasts.length-1;i>=0;i--){ const z=beasts[i]; if (z.hp<=0||z.energy<=0||z.age>12000){ if (z.hp<=0) for (let k=0;k<4;k++) addItem('food',z.x+rnd(-8,8),z.y+rnd(-8,8)); beasts.splice(i,1); } }
 }
@@ -497,7 +562,8 @@ function sense(a){
   const inp=a.acts[0], codes=a.codes;
   for (let i=0;i<codes.length;i++) inp[i]=SFN[codes[i]](a,env);
 }
-const _h={}, _r={}, _z={}, _f2={};
+const _h={}, _r={}, _z={}, _f2={}, _fw={};
+let byId=new Map();
 function act(a,choice,e){
   let bonus=0, ok=false, moved=false; const insideNow=inside(a); a.actionCounts[choice]++;
   const o=e.other.obj, od=e.other.dist;
@@ -523,7 +589,7 @@ function act(a,choice,e){
       if (insideNow){ let n=0; for (const k of ['food','wood','stone']) if (a.inv[k]>0){ insideNow.stock[k]+=a.inv[k]; n+=a.inv[k]; a.inv[k]=0; } if (n){ ok=true; a.stash+=insideNow.owner===a.id?n:0; a.deposits+=n; tally.deposits+=n; a.fx|=64; } }
       break;
     case A_.WITHDRAW:
-      if (insideNow){ let n=0; for (const k of ['wood','stone','food']) while (insideNow.stock[k]>0&&load(a)+(k==='stone'?2:k==='wood'?1.4:1)<=capacity(a)&&n<4){ insideNow.stock[k]--; a.inv[k]++; n++; } if (n){ ok=true; if (insideNow.owner===a.id) a.stash=Math.max(0,a.stash-n); tally.withdraws+=n; if (insideNow.owner&&insideNow.owner!==a.id){ const ow=agents.find(x=>x.id===insideNow.owner); if (ow) setTrust(ow,a.id,(ow.trust.get(a.id)||0)-.15); } } }
+      if (insideNow){ let n=0; for (const k of ['wood','stone','food']) while (insideNow.stock[k]>0&&load(a)+(k==='stone'?2:k==='wood'?1.4:1)<=capacity(a)&&n<4){ insideNow.stock[k]--; a.inv[k]++; n++; } if (n){ ok=true; if (insideNow.owner===a.id) a.stash=Math.max(0,a.stash-n); tally.withdraws+=n; if (insideNow.owner&&insideNow.owner!==a.id){ const ow=byId.get(insideNow.owner); if (ow) loseTrust(ow,a.id,.2); } } }
       break;
     case A_.HOUSE: case A_.STORE: case A_.WALL: case A_.FIRE:
       ok=build(BTYPES[choice-A_.HOUSE],a); break;
@@ -534,9 +600,8 @@ function act(a,choice,e){
     }
     case A_.SHARE:
       if (o&&od<16&&a.inv.food>0&&load(o)+1<=capacity(o)){
-        const need=clamp((a.energy-o.energy)/60,0,1), bond=Math.max(kinship(a,o),clamp(a.trust.get(o.id)||0,0,1)*.6,.15);
-        bonus+=a.traits.altruism*.3*need*bond/(1+a.shareHeat); a.shareHeat+=1;
-        a.inv.food--; o.inv.food++; setTrust(o,a.id,(o.trust.get(a.id)||0)+.25*o.traits.social); setTrust(a,o.id,(a.trust.get(o.id)||0)+.05);
+        a.inv.food--; o.inv.food++; gainTrust(o,a.id,.2); gainTrust(a,o.id,.03);
+        thank(o,a,.4+o.drv.hunger);
         ok=true; a.shared++; tally.shares++; a.fx|=1;
       }
       break;
@@ -545,8 +610,8 @@ function act(a,choice,e){
         const dmg=5*a.traits.strength*a.ph.dmg*o.ph.armor*(a.tool>0?2.2:1)*(o.sheltered?.3:1)*(.6+.4*a.traits.aggression);
         o.health-=dmg; o.pain=1; o.harm='attack'; a.energy-=.8+.5*a.traits.aggression; a.attacks++; tally.attacks++; a.fx|=2; o.fx|=32;
         if (a.tool>0) a.tool--;
-        setTrust(o,a.id,(o.trust.get(a.id)||0)-.6); setTrust(a,o.id,(a.trust.get(o.id)||0)-.2);
-        if (o.inv.food>0&&a.traits.strength>o.traits.strength*.8&&load(a)+1<=capacity(a)){ o.inv.food--; a.inv.food++; a.stolen++; tally.thefts++; }
+        loseTrust(o,a.id,.6); loseTrust(a,o.id,.15); witness(a,o,.15);
+        if (o.inv.food>0&&a.traits.strength>o.traits.strength*.8&&load(a)+1<=capacity(a)){ o.inv.food--; a.inv.food++; a.stolen++; tally.thefts++; loseTrust(o,a.id,.3); witness(a,o,.1); }
         ok=true;
         if (o.health<=0) a.kills++;
       }
@@ -625,7 +690,7 @@ function tick(){
   fires=[]; shelters=[]; walls=[];
   for (const b of buildings){ if (b.type==='fire') fires.push(b); else if (b.type==='wall') walls.push(b); else shelters.push(b); }
   ownVal=new Map(); for (const b of buildings) if (b.owner) ownVal.set(b.owner,(ownVal.get(b.owner)||0)+buildValue(b));
-  for (const a of agents) a.fx=0;
+  byId=new Map(); for (const a of agents){ a.fx=0; byId.set(a.id,a); }
   tickBeasts();
 
   const newborn=[], cap=settings.popCap, drainK=.11*settings.drain; let dead=0;
@@ -635,7 +700,7 @@ function tick(){
     a._t=tempAt(a);
     sense(a);
     const temp=forward(a);
-    const bonus=act(a,a.lastChoice,env);
+    const preDrv=a.drv.cold, choice=a.lastChoice, bonus=act(a,choice,env);
     const sheltered=inside(a), storm=stormAt(a), lt=tempAt(a), ph=a.ph, cold=Math.max(0,ph.coldT-lt), hot=Math.max(0,lt-ph.hotT), thermal=(cold+hot)/(16*a.traits.thermal); a._t=lt;
     a.sheltered=!!sheltered;
     a.energy-=drainK*ph.baseMetab*ph.metab*(ph.hib&&lt<10?.7:1)+a.brainCost+thermal*(sheltered?.006:.045);
@@ -648,13 +713,24 @@ function tick(){
     if (a.inv.food&&Math.random()<.0012*a.inv.food) a.inv.food--;   // carried food spoils; stores keep it better
     a.memory=clamp(.96*a.memory+.04*(a.energy/100-1),-1,1);
     a.prevHealth=a.health; a.shareHeat*=.99;
+    const resting=choice===A_.REST, exert=(choice===A_.ATTACK||choice===A_.HUNT)?.003:0;
+    updateDrives(a,lt,choice<4,exert,resting?(sheltered&&sheltered.type==='house'?.014:.006)*a.traits.rest:0);
+    if (a.drv.fatigue>.8) a.vx*=.8, a.vy*=.8;
+    // gratitude for warmth and shelter that someone else provided
+    if (preDrv-a.drv.cold>.004){
+      if (sheltered&&sheltered.owner&&sheltered.owner!==a.id) thank(a,byId.get(sheltered.owner),.6+preDrv);
+      else { const f=nearestList(fires,a,65,_fw).obj; if (f&&f.owner&&f.owner!==a.id){ const ow=byId.get(f.owner); if (ow){ gainTrust(a,ow.id,.006); if (preDrv>.25) thank(a,ow,.5+preDrv); } } }
+    }
+    if ((a.id+ticks)%6===0) socialTick(a);
     const phi=wellbeing(a), reward=(phi-a.phi+bonus)*REWARD_SCALE; a.phi=phi; a.lastReward=.9*(a.lastReward||0)+.1*reward; a.lastBonus=bonus;
     if (settings.learning) learn(a,reward,temp);
-    if (a.energy>135&&a.age>100&&Math.random()<.012&&agents.length+newborn.length<cap){
-      a.energy-=60; a.phi-=.6; const c=child(a); newborn.push(c); births++;
+    const pop=Math.min(1.5,Math.max(0,repOf(a.id))/4);   // popular yips breed sooner and more often
+    if (a.energy>135-20*pop&&a.age>100&&Math.random()<.012*(1+pop)&&agents.length+newborn.length<cap){
+      a.energy-=60; const mate=findAdmirer(a), c=child(a,mate); newborn.push(c); births++;
+      updateDrives(a,lt,false,0,0); a.phi=wellbeing(a);
       if (c.gen>=lastMilestone+10){ lastMilestone=c.gen-c.gen%10; toast(`Generation ${lastMilestone} reached`,'birth'); log(`Generation ${lastMilestone} reached`,'birth'); }
     }
-    if (a.health<=0||a.age>a.lifespan){ a.dead=true; dead++; deaths++; deathsBy[a.age>a.lifespan?'age':a.harm]=(deathsBy[a.age>a.lifespan?'age':a.harm]||0)+1; dropInventory(a); archive(a); }
+    if (a.health<=0||a.age>a.lifespan){ forgetAll(a); repMap.delete(a.id); a.dead=true; dead++; deaths++; deathsBy[a.age>a.lifespan?'age':a.harm]=(deathsBy[a.age>a.lifespan?'age':a.harm]||0)+1; dropInventory(a); archive(a); }
   }
   updateActFreq();
   if (dead) agents=agents.filter(a=>!a.dead);
@@ -669,7 +745,7 @@ function pushHistory(){
   let food=0; for (const it of items) if (!it.dead&&it.t===0) food++;
   let stocked=0; for (const b of buildings) stocked+=b.stock.food;
   const d={}; for (const k in tally){ d[k]=tally[k]-(lastTally[k]||0); } lastTally={...tally};
-  history.push({t:ticks,pop:agents.length,food,build:buildings.length,beasts:beasts.length,stocked,gen:avg(a=>a.gen),str:avg(a=>a.traits.strength),spd:avg(a=>a.traits.speed),sense:avg(a=>a.traits.sense),agg:avg(a=>a.traits.aggression),
+  history.push({t:ticks,pop:agents.length,rep:avg(a=>Math.max(0,repOf(a.id))),lonely:avg(a=>a.drv.lonely),food,build:buildings.length,beasts:beasts.length,stocked,gen:avg(a=>a.gen),str:avg(a=>a.traits.strength),spd:avg(a=>a.traits.speed),sense:avg(a=>a.traits.sense),agg:avg(a=>a.traits.aggression),
     neurons:avg(a=>a.brain.sizes.reduce((s,n)=>s+n,0)),tools:avg(a=>a.tool>0?1:0),births,deaths,...d});
   if (history.length>600){ // keep long runs readable: thin the older half
     const half=history.length>>1, old=history.slice(0,half).filter((_,i)=>i%2===0); history=old.concat(history.slice(half));
@@ -679,7 +755,7 @@ function pushHistory(){
 function reset(newShape){
   if (newShape) setSize(newShape);
   seed=(Math.random()*2**31)|0; makeFields(seed);
-  agents=[]; items=[]; buildings=[]; storms=[]; beasts=[]; events=[]; history=[]; elite=[];
+  agents=[]; items=[]; buildings=[]; storms=[]; beasts=[]; events=[]; history=[]; elite=[]; repMap.clear();
   ticks=0; nextId=1; nextBid=1; births=0; deaths=0; maxGen=0; peakPop=0; lastMilestone=0;
   deathsBy={age:0,hunger:0,storm:0,fire:0,beast:0,attack:0}; for (const k in tally) tally[k]=0; lastTally={...tally};
   for (let i=0;i<120;i++){ const [x,y]=spawnPoint(fert,1); agents.push(makeAgent(x,y)); }
@@ -692,7 +768,7 @@ function reset(newShape){
 // ---------- serialization ----------
 const r4 = v => Math.round(v*1e4)/1e4, r2 = v => Math.round(v*100)/100;
 const serBrain = b => ({inputs:b.inputs,sizes:b.sizes,w:b.w.map(f=>Array.from(f,r4))});
-const AGENT_KEYS=['gen','parent','lineage','traits','perks','stash','age','lifespan','inv','tool','builds','success','kids','shared','stolen','attacks','kills','hunts','beastKills','crafts','deposits'];
+const AGENT_KEYS=['gen','parent','lineage','traits','perks','stash','drv','thanksGot','lovesGot','coparent','partners','age','lifespan','inv','tool','builds','success','kids','shared','stolen','attacks','kills','hunts','beastKills','crafts','deposits'];
 function serialize(){
   return {version:11,shape,seed,ticks,nextId,nextBid,births,deaths,deathsBy,tally,maxGen,peakPop,selected,settings:{...settings},
     agents:agents.map(a=>{ const o={id:a.id,x:r2(a.x),y:r2(a.y),hd:r2(a.hd),energy:r2(a.energy),health:r2(a.health),memory:r4(a.memory),memA:r4(a.memA),memB:r4(a.memB),baseline:r4(a.baseline),
@@ -724,11 +800,12 @@ function deserialize(s){
     a.trust=new Map(Array.isArray(o.trust)?o.trust:Object.entries(o.trust||{}).map(([k,v])=>[+k,v]));
     if (o.actionCounts&&o.actionCounts.length===O) a.actionCounts=Uint32Array.from(o.actionCounts);
     if (o.learned&&!legacy){ a.learned=o.learned.map(x=>Float32Array.from(x)); }
-    derive(a); a.phi=wellbeing(a);
+    derive(a); if (o.drv) Object.assign(a.drv,o.drv); a.phi=wellbeing(a);
     if (!o.lineage){ const ch=[]; let id=o.parent; for (let i=0;i<12&&id&&reg[id];i++){ ch.push({id,gen:reg[id].gen,hue:0}); id=reg[id].parent; } a.lineage=ch; }
     return a;
   });
-  agents=A; ticks=s.ticks||0; nextId=Math.max(s.nextId||1,...A.map(a=>a.id+1)); births=s.births||0; deaths=s.deaths||0;
+  agents=A; repMap.clear(); for (const a of A) for (const [k,v] of a.trust) repMap.set(k,repOf(k)+v);
+  ticks=s.ticks||0; nextId=Math.max(s.nextId||1,...A.map(a=>a.id+1)); births=s.births||0; deaths=s.deaths||0;
   deathsBy={age:0,hunger:0,storm:0,fire:0,beast:0,attack:0,...(s.deathsBy||{})}; Object.assign(tally,s.tally||{}); lastTally={...tally};
   maxGen=s.maxGen||Math.max(0,...A.map(a=>a.gen)); peakPop=s.peakPop||A.length;
   items=(s.items||[]).map(i=>Array.isArray(i)?{t:i[0],type:ITYPES[i[0]],x:i[1]*sx,y:i[2]*sy,life:i[3],max:i[4]||i[3],dead:false}:{t:ITYPES.indexOf(i.type),type:i.type,x:i.x*sx,y:i.y*sy,life:i.life,max:i.life,dead:false});
@@ -745,11 +822,11 @@ function deserialize(s){
 
 // ---------- reporting ----------
 let started=false, running=true, speed=3, maxMode=false, last=performance.now(), acc=0, stepsWin=0, tps=0, lastMetrics=last, lastFrame=0, lastStats=0, lastInspect=0, inspecting=false;
-function postMeta(){ self.postMessage({type:'meta',bounds:TB,perks:PERKS,clash:CLASH,phys:PHYS,ment:MENT,traitInfo:TRAIT_INFO,senses:SENSES,actions:ACTIONS,short:SHORT,cont:CONT,W,H,FW,FH,FC,shape,settings,fert,forest,rock,seed}); }
+function postMeta(){ self.postMessage({type:'meta',drives:DRIVES,bounds:TB,perks:PERKS,clash:CLASH,phys:PHYS,ment:MENT,traitInfo:TRAIT_INFO,senses:SENSES,actions:ACTIONS,short:SHORT,cont:CONT,W,H,FW,FH,FC,shape,settings,fert,forest,rock,seed}); }
 function postFrame(){
   const na=agents.length, A=new Float32Array(na*10);
   for (let i=0,o=0;i<na;i++,o+=10){ const a=agents[i]; A[o]=a.id; A[o+1]=a.x; A[o+2]=a.y; A[o+3]=a.traits.hue; A[o+4]=a.hd; A[o+5]=a.energy/200; A[o+6]=a.health/100;
-    A[o+7]=(a.sheltered?1:0)|(a.inv.food+a.inv.wood+a.inv.stone>0?2:0)|(a.tool>0?4:0); A[o+8]=a._r||a.ph.sense; A[o+9]=a.fx; }
+    A[o+7]=(a.sheltered?1:0)|(a.inv.food+a.inv.wood+a.inv.stone>0?2:0)|(a.tool>0?4:0)|(repOf(a.id)>3?8:0); A[o+8]=a._r||a.ph.sense; A[o+9]=a.fx; }
   let ni=0; for (const it of items) if (!it.dead) ni++;
   const I=new Float32Array(ni*4); let o=0;
   for (const it of items){ if (it.dead) continue; I[o]=it.t; I[o+1]=it.x; I[o+2]=it.y; I[o+3]=it.life/it.max; o+=4; }
@@ -782,9 +859,10 @@ function postInspect(){
   self.postMessage({type:'inspect',id:a.id,gen:a.gen,age:a.age,lifespan:a.lifespan,energy:a.energy,health:a.health,x:a.x,y:a.y,traits:a.traits,inv:a.inv,tool:a.tool,load:load(a),cap:capacity(a),
     builds:a.builds,success:a.success,kids:a.kids,livingKids:kids,sheltered:a.sheltered,temp:a._t,lastChoice:a.lastChoice,probs:Array.from(a.probs),inputs:b.inputs,sizes:b.sizes,ws,
     acts:a.acts.map(x=>Array.from(x)),trust:[...a.trust].sort((x,y)=>Math.abs(y[1])-Math.abs(x[1])).slice(0,10).map(([id,v])=>({id,v,alive:alive.has(id)})),
+    trustedBy:agents.filter(x=>(x.trust.get(a.id)||0)>.3).map(x=>({id:x.id,v:x.trust.get(a.id),hue:x.traits.hue})).sort((p,q)=>q.v-p.v).slice(0,12),coparentAlive:alive.has(a.coparent),
     lineage:a.lineage.map(l=>({...l,alive:alive.has(l.id)})),parent:a.parent,cost:traitCost(a.traits,a.perks),metab:a.ph.baseMetab*a.ph.metab,perks:a.perks,ph:{maxE:a.ph.maxE,maxH:a.ph.maxH,speed:a.ph.speed,dmg:a.ph.dmg,armor:a.ph.armor,coldT:a.ph.coldT,hotT:a.ph.hotT,sense:a.ph.sense},brainCost:a.brainCost,
     deeds:{shared:a.shared,stolen:a.stolen,attacks:a.attacks,kills:a.kills,hunts:a.hunts,beastKills:a.beastKills,crafts:a.crafts,deposits:a.deposits,builds:a.builds},
-    actionCounts:Array.from(a.actionCounts),wellbeing:a.phi,rewardAvg:a.lastReward||0,curiosityGain:a.lastBonus||0,memory:a.memory,memA:a.memA,memB:a.memB,signal:a.signal,pain:a.pain});
+    actionCounts:Array.from(a.actionCounts),drv:a.drv,rep:repOf(a.id),admirers:agents.filter(x=>(x.trust.get(a.id)||0)>.5).length,thanksGot:a.thanksGot,lovesGot:a.lovesGot,coparent:a.coparent,partners:a.partners,wellbeing:a.phi,rewardAvg:a.lastReward||0,curiosityGain:a.lastBonus||0,memory:a.memory,memA:a.memA,memB:a.memB,signal:a.signal,pain:a.pain});
 }
 // yield through a MessageChannel: unlike setTimeout(0) it is not clamped to 4 ms, so hyperspeed keeps the CPU busy
 const chan=new MessageChannel(); let pending=false;
@@ -819,6 +897,7 @@ function pickAgent(how){
   else if (how==='violent') a=best(x=>x.attacks+x.kills*20);
   else if (how==='hunter') a=best(x=>x.hunts+x.beastKills*20);
   else if (how==='builder') a=best(x=>x.builds*10+x.deposits);
+  else if (how==='popular') a=best(x=>repOf(x.id));
   else if (how==='child'&&cur){ const k=agents.filter(x=>x.parent===cur.id); if (k.length) a=pick(k); else toast('No living children yet','info'); }
   else if (how==='parent'&&cur){ a=agents.find(x=>x.id===cur.parent)||null; if (!a) toast('Parent is no longer alive','info'); }
   if (a){ selected=a.id; self.postMessage({type:'selected',id:a.id,x:a.x,y:a.y}); postInspect(); }

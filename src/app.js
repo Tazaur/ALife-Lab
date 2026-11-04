@@ -85,7 +85,7 @@ function ingestFrame(m) {
     p.tx = A[o + 1]; p.ty = A[o + 2]; p.thd = A[o + 4]; p.i = o;
     if (snap) { p.x = p.tx; p.y = p.ty; p.hd = p.thd; }
     const f = A[o + 9];
-    if (doFx && f) { for (const bit of [1, 2, 4, 8, 32, 64]) if (f & bit) fx.push({ x: p.tx, y: p.ty, k: bit, t: now }); }
+    if (doFx && f) { for (const bit of [1, 2, 4, 8, 32, 64, 128, 256]) if (f & bit) fx.push({ x: p.tx, y: p.ty, k: bit, t: now }); }
   }
   for (const id of rpos.keys()) if (!seen.has(id)) rpos.delete(id);
   const Z = m.Z, bseen = new Set();
@@ -226,7 +226,7 @@ function buildTerrain(m) {
 /* ================= world rendering ================= */
 let lastT = performance.now(), fpsFrames = 0, fpsT = lastT, hoverId = 0, pointerWorld = null, flash = 0;
 const phaseOf = (ticks, len) => len ? (ticks % len) / len : 0;
-const FXC = { 1: [126, 214, 176], 2: [242, 100, 90], 4: [240, 179, 90], 8: [201, 179, 230], 32: [255, 80, 70], 64: [127, 216, 234] };
+const FXC = { 1: [126, 214, 176], 2: [242, 100, 90], 4: [240, 179, 90], 8: [201, 179, 230], 32: [255, 80, 70], 64: [127, 216, 234], 128: [243, 201, 107], 256: [255, 143, 200] };
 function render(t) {
   const dt = Math.min(.1, (t - lastT) / 1000); lastT = t;
   if (camTarget) { const k = 1 - Math.exp(-dt * 9); cam.x += (camTarget.x - cam.x) * k; cam.y += (camTarget.y - cam.y) * k; cam.z += (camTarget.z - cam.z) * k; if (Math.abs(camTarget.z - cam.z) < .001 && Math.hypot(camTarget.x - cam.x, camTarget.y - cam.y) < .05) { Object.assign(cam, camTarget); camTarget = null; } }
@@ -350,6 +350,9 @@ function render(t) {
     ctx.fillStyle = hueFill[(A[o + 3] | 0) % 360]; ctx.beginPath(); ctx.arc(p.x, p.y, R, 0, TAU); ctx.fill();
   }
   ctx.globalAlpha = 1;
+  ctx.strokeStyle = 'rgba(255,143,200,.8)'; ctx.lineWidth = .8; ctx.beginPath();
+  for (let i = 0; i < list.length; i += 2) { const o = list[i], p = list[i + 1]; if (!(A[o + 7] & 8)) continue; ctx.moveTo(p.x + R + 1.8, p.y); ctx.arc(p.x, p.y, R + 1.8, 0, TAU); }
+  ctx.stroke();
   if (z > .6) {
     ctx.strokeStyle = 'rgba(8,14,13,.85)'; ctx.lineWidth = 1.1; ctx.lineCap = 'round'; ctx.beginPath();
     for (let i = 0; i < list.length; i += 2) { const p = list[i + 1], c = Math.cos(p.hd), s = Math.sin(p.hd); ctx.moveTo(p.x + c * .6, p.y + s * .6); ctx.lineTo(p.x + c * R * 1.05, p.y + s * R * 1.05); }
@@ -385,6 +388,7 @@ function render(t) {
       const [r, g, b] = FXC[e.k], a = (1 - age) * .9;
       ctx.strokeStyle = `rgba(${r},${g},${b},${a})`; ctx.beginPath();
       if (e.k === 2 || e.k === 4) { const s = 3 + age * 6; ctx.moveTo(e.x - s, e.y - s); ctx.lineTo(e.x + s, e.y + s); ctx.moveTo(e.x + s, e.y - s); ctx.lineTo(e.x - s, e.y + s); }
+      else if (e.k === 128 || e.k === 256) { const love = e.k === 256, yy = e.y - 7 - age * 6; ctx.globalAlpha = 1 - age; ctx.fillStyle = 'rgba(12,20,19,.8)'; roundRect(e.x - (love ? 6 : 5.5), yy - 4.5, love ? 12 : 11, 9, 4); ctx.fill(); ctx.fillStyle = `rgb(${r},${g},${b})`; ctx.font = love ? '7px sans-serif' : 'bold 5px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(love ? '😍' : 'ty', e.x, yy + .3); ctx.globalAlpha = 1; continue; }
       else if (e.k === 32) { ctx.fillStyle = `rgba(${r},${g},${b},${a * .5})`; ctx.arc(e.x, e.y, 4.5, 0, TAU); ctx.fill(); continue; }
       else if (e.k === 8) { for (let q = 0; q < 4; q++) { const ang = q * Math.PI / 2 + age * 2, d = 3 + age * 7; ctx.moveTo(e.x + Math.cos(ang) * d, e.y + Math.sin(ang) * d); ctx.arc(e.x + Math.cos(ang) * d, e.y + Math.sin(ang) * d, .7, 0, TAU); } }
       else ctx.arc(e.x, e.y, 4 + age * 9, 0, TAU);
@@ -699,12 +703,12 @@ const SLIDERS2 = [
 ];
 const ALLS = [...SLIDERS, ...SLIDERS2];
 const PRESETS = [
-  ['Temperate', 'Balanced defaults', { food: 3, trees: .12, stone: .08, drain: 1, decay: 1, storm: 1, temperature: 19, day: 500, season: 2600, beasts: 3, beastPower: 1 }],
-  ['Abundance', 'Rich and mild', { food: 5.5, trees: .2, stone: .14, drain: .8, decay: 1, storm: .5, temperature: 21, day: 500, season: 2600, beasts: 2, beastPower: .8 }],
-  ['Scarcity', 'Lean and hungry', { food: 1.4, trees: .07, stone: .05, drain: 1.3, decay: 1.2, storm: 1, temperature: 18, day: 500, season: 2600, beasts: 4, beastPower: 1 }],
-  ['Long winter', 'Hoard or starve', { food: 2.4, trees: .12, stone: .08, drain: 1.1, decay: 1, storm: 1.5, temperature: 4, day: 600, season: 4200, beasts: 3, beastPower: 1.1 }],
-  ['Predators', 'Hunted every day', { food: 3, trees: .14, stone: .1, drain: 1, decay: 1, storm: .8, temperature: 19, day: 500, season: 2600, beasts: 12, beastPower: 1.4 }],
-  ['Tempest', 'Storm season', { food: 3.2, trees: .14, stone: .1, drain: 1, decay: 1.6, storm: 3, temperature: 15, day: 500, season: 2000, beasts: 3, beastPower: 1 }],
+  ['Temperate', 'Balanced defaults', { food: 3, trees: .12, stone: .08, drain: 1, decay: 1, storm: 1, temperature: 19, day: 500, season: 2600, beasts: 2, beastPower: 1 }],
+  ['Abundance', 'Rich and mild', { food: 5.5, trees: .2, stone: .14, drain: .8, decay: 1, storm: .5, temperature: 21, day: 500, season: 2600, beasts: 1, beastPower: .8 }],
+  ['Scarcity', 'Lean and hungry', { food: 1.4, trees: .07, stone: .05, drain: 1.3, decay: 1.2, storm: 1, temperature: 18, day: 500, season: 2600, beasts: 2, beastPower: 1 }],
+  ['Long winter', 'Hoard or starve', { food: 2.4, trees: .12, stone: .08, drain: 1.1, decay: 1, storm: 1.5, temperature: 4, day: 600, season: 4200, beasts: 2, beastPower: 1.1 }],
+  ['Predators', 'Hunted every day', { food: 3, trees: .14, stone: .1, drain: 1, decay: 1, storm: .8, temperature: 19, day: 500, season: 2600, beasts: 6, beastPower: 1.4 }],
+  ['Tempest', 'Storm season', { food: 3.2, trees: .14, stone: .1, drain: 1, decay: 1.6, storm: 3, temperature: 15, day: 500, season: 2000, beasts: 2, beastPower: 1 }],
 ];
 function paintSlider(el) { const p = (el.value - el.min) / (el.max - el.min) * 100; el.style.setProperty('--p', p + '%'); const s = ALLS.find(x => x[0] === el.id); $(el.id + 'v').textContent = s[5](el.value); }
 function buildClimate(settings) {
@@ -814,8 +818,9 @@ function renderStats() {
   if (h.length) $('hSpan').textContent = `last ${fmt(h[h.length - 1].t - h[0].t)} ticks`;
   const per100 = k => smooth(h.map((x, i) => i ? (x[k] || 0) * 100 / Math.max(1, x.t - h[i - 1].t) : 0));
   lineChart($('cPop'), [{ values: h.map(x => x.pop), color: C.good }, { values: h.map(x => x.build), color: C.house }, { values: h.map(x => (x.beasts || 0) * 10), color: C.beast }]);
-  lineChart($('cBeh'), [{ values: per100('shares'), color: C.good }, { values: per100('thefts'), color: C.bad }, { values: per100('attacks').map(v => v / 10), color: C.beast + '99' }, { values: per100('hunts'), color: C.warn }, { values: per100('crafts'), color: C.wall }, { values: per100('deposits'), color: C.store }]);
-  $('behFigs').innerHTML = [['Food shared', ta.shares], ['Food stolen', ta.thefts], ['Beasts slain', ta.beastKills], ['Tools made', ta.crafts], ['Items stored', ta.deposits], ['Holding tools', Math.round(s.tools / Math.max(1, s.pop) * 100) + '%']]
+  lineChart($('cBeh'), [{ values: per100('shares'), color: C.good }, { values: per100('thefts'), color: C.bad }, { values: per100('attacks').map(v => v / 10), color: C.beast + '99' }, { values: per100('hunts'), color: C.warn }, { values: per100('crafts'), color: C.wall }, { values: per100('thanks'), color: C.accent }, { values: per100('loves').map(v => v * 5), color: '#ff8fc8' }]);
+  lineChart($('cSocial'), [{ values: h.map(x => x.rep || 0), color: '#ff8fc8' }, { values: h.map(x => (x.lonely || 0) * 5), color: '#9cb6ff' }], { decimals: 1 });
+  $('behFigs').innerHTML = [['Food shared', ta.shares], ['Food stolen', ta.thefts], ['Thank-yous', ta.thanks], ['Loving thanks', ta.loves], ['Co-parented births', ta.pairings], ['Beasts slain', ta.beastKills], ['Tools made', ta.crafts], ['Holding tools', Math.round(s.tools / Math.max(1, s.pop) * 100) + '%']]
     .map(([k, v]) => `<div class="fig"><b>${typeof v === 'number' ? fmt(v) : v}</b><small>${k}</small></div>`).join('');
   lineChart($('cGen'), [{ values: h.map(x => x.gen), color: C.accent }]);
   lineChart($('cBody'), [{ values: h.map(x => x.str), color: C.bad, area: false }, { values: h.map(x => x.spd), color: C.store }, { values: h.map(x => x.sense / 100), color: C.wall }, { values: h.map(x => x.agg || 0), color: C.beast }, { values: h.map(x => (x.neurons || 0) / 50), color: C.accent }], { decimals: 1 });
@@ -877,10 +882,13 @@ function renderInspector() {
   if (m.energy < 30) badges.push(['Starving', 'bad']); else if (m.energy > 135) badges.push(['Ready to breed', 'good']);
   if (m.health < 40) badges.push(['Injured', 'bad']);
   if (m.pain > .3) badges.push(['Under attack', 'bad']);
+  if (m.rep > 3) badges.push(['Popular', 'good']);
   if (m.temp < 10) badges.push([`Cold ${m.temp.toFixed(0)}°`, 'warn']); else if (m.temp > 31) badges.push([`Hot ${m.temp.toFixed(0)}°`, 'warn']);
   $('iBadges').innerHTML = badges.map(([t, c]) => `<span class="badge ${c}">${t}</span>`).join('');
   meter('E', m.energy, (m.ph && m.ph.maxE) || 200, m.energy.toFixed(0)); meter('H', m.health, (m.ph && m.ph.maxH) || 100, m.health.toFixed(0));
   meter('A', m.age, m.lifespan, Math.round(m.age / m.lifespan * 100) + '%'); meter('L', m.load, m.cap, `${m.load.toFixed(1)}/${m.cap.toFixed(1)}`);
+  const DL = { hunger: ['Hunger', C.warn], cold: ['Cold / heat', '#9cc6ff'], injury: ['Injury', C.bad], fatigue: ['Fatigue', C.muted], lonely: ['Loneliness', '#c9b3e6'], insecure: ['Insecurity', C.tree] };
+  $('driveBars').innerHTML = meta.drives.map(k => { const v = m.drv[k] || 0; return `<div class="drive"><div>${DL[k][0]}<b>${Math.round(v * 100)}</b></div><div class="meter"><i style="width:${v * 100}%;background:${DL[k][1]}"></i></div></div>`; }).join('');
   if (pane === 'pMind') { drawBrain(m); probBars(m); }
   else if (pane === 'pBody') bodyPane(m);
   else if (pane === 'pSocial') socialPane(m);
@@ -908,6 +916,8 @@ function bodyPane(m) {
   $('bodyKV').innerHTML = kv.map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join('');
 }
 function socialPane(m) {
+  $('socialKV').innerHTML = [['Popularity', m.rep.toFixed(2)], ['Admirers', m.admirers], ['Thanks received', m.thanksGot], ['Loving thanks', m.lovesGot], ['Co-parented', m.partners], ['Co-parent', m.coparent ? `#${m.coparent}${m.coparentAlive ? '' : ' (gone)'}` : 'none']].map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join('');
+  $('trustedBy').innerHTML = m.trustedBy.length ? m.trustedBy.map(t => `<button class="chip" data-goto="${t.id}"><i style="background:${hueFill[t.hue | 0]}"></i>#${t.id} · ${t.v.toFixed(2)}</button>`).join('') : '<p class="note">Nobody yet. Trust is earned slowly by sharing food and providing warmth or shelter, and lost fast by attacks and theft.</p>';
   $('trustBars').innerHTML = m.trust.length ? m.trust.map(t => {
     const w = Math.abs(t.v) * 50, left = t.v < 0 ? 50 - w : 50;
     return `<div class="bar"><div class="bt" style="cursor:${t.alive ? 'pointer' : 'default'}" ${t.alive ? `data-goto="${t.id}"` : ''}><i style="left:${left}%;width:${w}%;background:${t.v < 0 ? 'rgba(242,131,111,.4)' : 'rgba(126,214,176,.35)'}"></i><span style="${t.alive ? '' : 'color:var(--dim)'}">#${t.id}${t.alive ? '' : ' · gone'}</span></div><b>${t.v > 0 ? '+' : ''}${t.v.toFixed(2)}</b></div>`;
