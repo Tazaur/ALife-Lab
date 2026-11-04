@@ -181,11 +181,13 @@ const SENSOR_DEFS = [
   ['mateScent','Mating scent here',0,a=>Math.min(1,mateSc[cellIdx(a.x,a.y)]/3)],
   ['mateScentX','Mating scent gradient X',0,a=>clamp((mateSc[cellIdx(a.x+FC,a.y)]-mateSc[cellIdx(a.x-FC,a.y)]),-1,1)],
   ['mateScentY','Mating scent gradient Y',0,a=>clamp((mateSc[cellIdx(a.x,a.y+FC)]-mateSc[cellIdx(a.x,a.y-FC)]),-1,1)],
+  ['hurtBy','Nearest yip hurt me recently',Q.OTHER,(a,e)=>e.other.obj&&e.other.obj.id===a.lastHurtBy&&ticks-a.lastHurtAt<600?1:0],
   ['gratitude','Gratitude owed to nearest yip',Q.OTHER,(a,e)=>e.other.obj?Math.min(1,a.owed.get(e.other.obj.id)||0):0],
   ['coldDrive','Feeling cold or hot',0,a=>a.drv.cold],
   ['fatigue','Fatigue',0,a=>a.drv.fatigue],
   ['lonely','Loneliness',0,a=>a.drv.lonely],
   ['insecure','Insecurity (few supplies)',0,a=>a.drv.insecure],
+  ['disliked','Yips nearby who dislike me',0,a=>Math.min(1,(a.hostileN||0)/3)],
   ['popularity','Own popularity',0,a=>clamp(repOf(a.id)/5,-1,1)],
   ['agentRep','Nearest yip\'s popularity',Q.OTHER,(a,e)=>e.other.obj?clamp(repOf(e.other.obj.id)/5,-1,1):0],
   ['sheltered','Inside a house or store',0,a=>a.sheltered?1:0],
@@ -251,7 +253,7 @@ KEYIDX.memory = KEYIDX.trend;   // pre-1.1 saves
 
 // ---------- brains ----------
 function randArr(n, s=.6){ const f=new Float32Array(n); for (let i=0;i<n;i++) f[i]=rnd(-s,s); return f; }
-const DEFAULT_INPUTS = ['bias','energy','health','pain','thirst','waterX','waterY','coldDrive','lonely','foodX','foodY','foodNear','agentX','agentY','agentNear','friendX','friendY','mateScentX','mateScentY','predX','predY','predNear','foodStock','memA','memB','signal'];
+const DEFAULT_INPUTS = ['bias','energy','health','pain','thirst','waterX','waterY','coldDrive','lonely','foodX','foodY','foodNear','agentX','agentY','agentNear','trust','kin','gratitude','hurtBy','agentStrength','friendX','friendY','mateScentX','mateScentY','predX','predY','predNear','foodStock','memA','memB','signal'];
 function freshBrain(){ const inputs=[...DEFAULT_INPUTS], sizes=[inputs.length,14,12,NOUT]; return {inputs, sizes, w:[randArr(14*inputs.length), randArr(12*14), randArr(NOUT*12)]}; }
 function copyBrain(b){ return {inputs:[...b.inputs], sizes:[...b.sizes], w:b.w.map(f=>new Float32Array(f))}; }
 function toNested(b){ return {inputs:[...b.inputs], sizes:[...b.sizes], weights:b.w.map((f,l)=>{ const rows=b.sizes[l+1], cols=b.sizes[l], m=[]; for (let j=0;j<rows;j++) m.push(Array.from(f.subarray(j*cols,(j+1)*cols))); return m; })}; }
@@ -479,7 +481,7 @@ function makeName(){
   return n[0].toUpperCase()+n.slice(1);
 }
 function makeAgent(x,y,brain=freshBrain(),gen=0,parent=null,traits=freshTraits(),energy=90,lineage=[],perks=[]){
-  const a={id:nextId++,name:makeName(),x,y,vx:0,vy:0,hd:rnd(0,6.283),brain,gen,parent,lineage,traits,energy,health:100,prevHealth:100,lastBirth:-1e9,age:0,lifespan:rnd(3600,5100),
+  const a={id:nextId++,name:makeName(),x,y,vx:0,vy:0,hd:rnd(0,6.283),brain,gen,parent,lineage,traits,energy,health:100,prevHealth:100,lastBirth:-1e9,lastHurtBy:0,lastHurtAt:-1e9,clan:null,history:[],age:0,lifespan:rnd(3600,5100),
     inv:{food:0,wood:0,stone:0},tool:0,memory:0,memA:0,memB:0,signal:0,pain:0,trust:new Map(),lastChoice:O-1,probs:new Float32Array(O),
     builds:0,success:0,kids:0,shared:0,stolen:0,attacks:0,kills:0,hunts:0,beastKills:0,crafts:0,deposits:0,
     actionCounts:new Uint32Array(O),okCounts:new Uint32Array(O),stash:0,shareHeat:0,phi:0,baseline:0,
@@ -497,16 +499,17 @@ function bestFriend(a,r,q){
 }
 function socialTick(a){
   // loneliness eases near yips it trusts and grows when alone among strangers or enemies
-  let friends=0, crowd=0; const r=40;
+  let friends=0, crowd=0, hostile=0; const r=40;
   forBins(gAgent,a.x,a.y,r,o=>{
     if (o===a||o.dead||wdist(a,o)>=r) return;
     const t=a.trust.get(o.id)||0;
     if (t>-.1) gainTrust(a,o.id,.025);        // familiarity: time spent near a yip that hasn't hurt you builds a little trust on its own
     if (t>.25||kinship(a,o)>.4) friends++;
+    if ((o.trust.get(a.id)||0)<-.2) hostile++;   // yips can tell when those around them dislike them
     crowd++;
   });
-  a.crowdN=crowd;
-  const d=a.drv; d.lonely=clamp(d.lonely+(friends?-.015*Math.min(3,friends):.01*a.traits.social),0,1);
+  a.crowdN=crowd; a.hostileN=hostile;
+  const d=a.drv; d.lonely=clamp(d.lonely+(friends?-.015*Math.min(3,friends):.01*a.traits.social)+.012*hostile,0,1);
 }
 // Each partner's own standard falls as its urge rises: a yip that has met no one for a long time will pair
 // with a stranger, and one that is crowded stays choosy. Both must accept the other.
@@ -535,7 +538,7 @@ function child(a,mate){
   a.partners++; mate.partners++; tally.pairings++;
   const brain=Math.random()<.5?a.brain:mate.brain;
   const c=makeAgent(wrapX((a.x+wd(mate.x-a.x,W)/2)+rnd(-6,6)),wrapY((a.y+wd(mate.y-a.y,H)/2)+rnd(-6,6)),mutateBrain(brain),Math.max(a.gen,mate.gen)+1,a.id,mutateTraits(traits),80,lineage,mutatePerks(perks));
-  c.coparent=mate.id;
+  c.coparent=mate.id; c.clan=a.clan||mate.clan||a.name;
   const inbred=kinship(a,mate); if (inbred>0){ c.lifespan*=1-.35*inbred; c.health=c.ph.maxH*(1-.3*inbred); c.inbred=inbred; }
   setTrust(c,a.id,.5); setTrust(a,c.id,.5); setTrust(c,mate.id,.5); setTrust(mate,c.id,.5);
   a.kids++; mate.kids++; return c;
@@ -720,7 +723,7 @@ let byId=new Map(), pendingBirths=[];
 const graveNames=new Map();   // recent deaths, so the inspector can still name a yip that just died
 function act(a,choice,e){
   let bonus=0, ok=false, moved=false; const insideNow=inside(a); a.actionCounts[choice]++;
-  const o=e.other.obj, od=e.other.dist;
+  const o=e.other.obj, od=e.other.dist, preRel=o?{t:a.trust.get(o.id)||0,r:relOf(a,o)}:null;
   switch (choice){
     case 0: case 1: case 2: case 3: {
       const swim=a.inWater?.45*a.ph.swim:1;
@@ -773,7 +776,7 @@ function act(a,choice,e){
     case A_.ATTACK:
       if (o&&od<14){
         const dmg=3*a.traits.strength*a.ph.dmg*o.ph.armor*(a.tool>0?2.2:1)*(o.sheltered?.3:1)*(.6+.4*a.traits.aggression);
-        o.health-=dmg; o.pain=1; o.harm='attack';
+        o.health-=dmg; o.pain=1; o.harm='attack'; o.lastHurtBy=a.id; o.lastHurtAt=ticks;
         // fights hurt both sides: the target strikes back in proportion to its own strength
         const recoil=2.5*o.traits.strength*o.ph.dmg*a.ph.armor*(o.tool>0?1.5:1)*(.5+Math.random()); a.health-=recoil; a.pain=Math.max(a.pain,.6); if (a.health<=0) a.harm='attack'; a.energy-=.8+.5*a.traits.aggression; a.attacks++; tally.attacks++; a.fx|=2; o.fx|=32;
         if (a.tool>0) a.tool--;
@@ -822,6 +825,7 @@ function act(a,choice,e){
     if (wallBlocks(nx,ny,3.5)){ a.vx=a.vy=0; } else { a.x=nx; a.y=ny; }
     if (moved) a.hd=Math.atan2(a.vy,a.vx);
   }
+  if (ok&&choice>3){ const kind=RACT[choice], tgt=kind?o:null; if (tgt&&preRel){ relTally[kind][preRel.r]++; relWin[kind][preRel.r]++; } a.history.push([ticks,choice,tgt?tgt.id:0,tgt?tgt.name:'',tgt?+preRel.t.toFixed(2):0]); if (a.history.length>24) a.history.shift(); }
   // curiosity: a successful action that few yips perform earns a bonus that fades the more this yip repeats it
   if (ok&&choice>3){
     const rare=(1/O)/(actFreq[choice]+1/O), n=a.okCounts[choice]++;
@@ -845,7 +849,7 @@ function reseed(){
   for (let i=0;i<n;i++){
     if (i%5===0){ for (const p of band) for (const q of band) if (p!==q) setTrust(p,q.id,.3); band=[]; [bx,by]=spawnPoint(fert,1); }
     const src=elite.length?pick(elite):null, x=wrapX(bx+rnd(-25,25)), y=wrapY(by+rnd(-25,25));
-    const nb=src?makeAgent(x,y,mutateBrain(src.brain),src.gen+1,null,mutateTraits(src.traits),90,[{id:src.id,name:src.name,gen:src.gen,hue:src.traits.hue}],mutatePerks(src.perks||[])):makeAgent(x,y); agents.push(nb); band.push(nb);
+    const nb=src?makeAgent(x,y,mutateBrain(src.brain),src.gen+1,null,mutateTraits(src.traits),90,[{id:src.id,name:src.name,gen:src.gen,hue:src.traits.hue}],mutatePerks(src.perks||[])):makeAgent(x,y); agents.push(nb); band.push(nb); if (band.length===1) band.clanName=nb.name; nb.clan=band.clanName;
   }
   for (const p of band) for (const q of band) if (p!==q) setTrust(p,q.id,.3);
   log(`Extinction. ${n} colonists reseeded from ${elite.length?elite.length+' archived genomes':'scratch'}`,'death');
@@ -946,7 +950,8 @@ function pushHistory(){
   let food=0; for (const it of items) if (!it.dead&&it.t===0) food++;
   let stocked=0; for (const b of buildings) stocked+=b.stock.food;
   const d={}; for (const k in tally){ d[k]=tally[k]-(lastTally[k]||0); } lastTally={...tally};
-  history.push({t:ticks,pop:agents.length,rep:avg(a=>Math.max(0,repOf(a.id))),lonely:avg(a=>a.drv.lonely),food,build:buildings.length,beasts:beasts.length,stocked,gen:avg(a=>a.gen),str:avg(a=>a.traits.strength),spd:avg(a=>a.traits.speed),sense:avg(a=>a.traits.sense),agg:avg(a=>a.traits.aggression),
+  const rel={}; for (const k in relWin){ const v=relWin[k], sm=v[0]+v[1]+v[2]+v[3]; rel[k]=sm?v.map(x=>x/sm):null; } relWin={share:[0,0,0,0],attack:[0,0,0,0],thank:[0,0,0,0],befriend:[0,0,0,0]};
+  history.push({t:ticks,rel,pop:agents.length,rep:avg(a=>Math.max(0,repOf(a.id))),lonely:avg(a=>a.drv.lonely),food,build:buildings.length,beasts:beasts.length,stocked,gen:avg(a=>a.gen),str:avg(a=>a.traits.strength),spd:avg(a=>a.traits.speed),sense:avg(a=>a.traits.sense),agg:avg(a=>a.traits.aggression),
     neurons:avg(a=>a.brain.sizes.reduce((s,n)=>s+n,0)),tools:avg(a=>a.tool>0?1:0),births,deaths,...d});
   if (history.length>600){ // keep long runs readable: thin the older half
     const half=history.length>>1, old=history.slice(0,half).filter((_,i)=>i%2===0); history=old.concat(history.slice(half));
@@ -958,10 +963,11 @@ function reset(newShape){
   seed=(Math.random()*2**31)|0; makeFields(seed);
   agents=[]; items=[]; buildings=[]; storms=[]; beasts=[]; events=[]; history=[]; elite=[]; repMap.clear();
   ticks=0; nextId=1; nextBid=1; births=0; deaths=0; maxGen=0; peakPop=0; lastMilestone=0;
-  deathsBy={age:0,hunger:0,thirst:0,drowning:0,storm:0,fire:0,beast:0,attack:0}; for (const k in tally) tally[k]=0; lastTally={...tally};
+  deathsBy={age:0,hunger:0,thirst:0,drowning:0,storm:0,fire:0,beast:0,attack:0}; for (const k in tally) tally[k]=0; lastTally={...tally}; for (const k in relTally) relTally[k]=[0,0,0,0];
   // founders arrive in bands of five who already trust each other a little
   for (let b=0;b<60;b++){ const [bx,by]=spawnPoint(fert,1), band=[];
     for (let i=0;i<5;i++){ let x=wrapX(bx+rnd(-25,25)), y=wrapY(by+rnd(-25,25)); if (isWater(x,y)){ x=bx; y=by; } const a=makeAgent(x,y); band.push(a); agents.push(a); }
+    for (const a of band) a.clan=band[0].name;
     for (const a of band) for (const o of band) if (a!==o) setTrust(a,o.id,.3); }
   for (let i=0;i<1100;i++) addItem('food'); for (let i=0;i<420;i++) addItem('tree'); for (let i=0;i<320;i++) addItem('stone');
   for (let i=0;i<settings.beasts;i++) spawnBeast();
@@ -972,7 +978,7 @@ function reset(newShape){
 // ---------- serialization ----------
 const r4 = v => Math.round(v*1e4)/1e4, r2 = v => Math.round(v*100)/100;
 const serBrain = b => ({inputs:b.inputs,sizes:b.sizes,w:b.w.map(f=>Array.from(f,r4))});
-const AGENT_KEYS=['name','gen','parent','lineage','traits','perks','stash','thanksGot','lovesGot','coparent','partners','age','lifespan','inv','tool','builds','success','kids','shared','stolen','attacks','kills','hunts','beastKills','crafts','deposits'];
+const AGENT_KEYS=['clan','history','lastHurtBy','lastHurtAt','name','gen','parent','lineage','traits','perks','stash','thanksGot','lovesGot','coparent','partners','age','lifespan','inv','tool','builds','success','kids','shared','stolen','attacks','kills','hunts','beastKills','crafts','deposits'];
 function serAgent(a){
   const o={drv:a.drv,owed:[...a.owed],id:a.id,x:r2(a.x),y:r2(a.y),hd:r2(a.hd),energy:r2(a.energy),health:r2(a.health),memory:r4(a.memory),memA:r4(a.memA),memB:r4(a.memB),baseline:r4(a.baseline),
     trust:[...a.trust].map(([k,v])=>[k,r4(v)]),actionCounts:Array.from(a.actionCounts),brain:serBrain(a.brain),learned:a.learned.map(f=>Array.from(f,r4))};
@@ -1061,7 +1067,10 @@ function postStats(withHistory){
   const counts=[0,0,0]; for (const it of items) if (!it.dead) counts[it.t]++;
   const t=k=>avg(a=>a.traits[k]);
   const names={}; for (const a of agents) names[a.id]=a.name;
-  self.postMessage({type:'stats',names,ticks,pop:agents.length,peakPop,births,deaths,deathsBy,tally,maxGen,avgGen:avg(a=>a.gen),byType,counts,temp:baseTemp,beasts:beasts.length,tools,stocked,
+  const fam=new Map();
+  for (const a of agents){ const k=a.clan||a.name; let f=fam.get(k); if (!f){ f={clan:k,n:0,gen:0,act:new Float64Array(O),hue:0}; fam.set(k,f); } f.n++; f.gen=Math.max(f.gen,a.gen); f.hue+=a.traits.hue; let tot=0; for (let i=0;i<O;i++) tot+=a.actionCounts[i]; if (tot) for (let i=0;i<O;i++) f.act[i]+=a.actionCounts[i]/tot; }
+  const families=[...fam.values()].sort((x,y)=>y.n-x.n).slice(0,10).map(f=>({clan:f.clan,n:f.n,gen:f.gen,hue:f.hue/f.n,mix:Array.from(f.act,v=>v/f.n)}));
+  self.postMessage({type:'stats',families,relTally,names,ticks,pop:agents.length,peakPop,births,deaths,deathsBy,tally,maxGen,avgGen:avg(a=>a.gen),byType,counts,temp:baseTemp,beasts:beasts.length,tools,stocked,
     traits:Object.fromEntries([...PHYS,...MENT].map(k=>[k,t(k)])),perkUse:PERKS.map(p=>[p.id,agents.filter(a=>a.perks.includes(p.id)).length/n]),
     brain:{layers:layers/n,neurons:neurons/n,inputs:inputs/n},sensUse:Object.entries(sensUse).sort((a,b)=>b[1]-a[1]).map(([k,v])=>[k,v/n]),
     actMix:Array.from(act,v=>v/n),events,eliteTop:elite.slice(0,6).map(e=>({id:e.id,name:e.name||('#'+e.id),gen:e.gen,score:e.score|0,hue:e.traits.hue})),history:withHistory?history:null,settings});
@@ -1073,7 +1082,7 @@ function postInspect(){
   const ws=b.w.map((f,l)=>{ const d=a.learned[l], o=new Float32Array(f.length); for (let i=0;i<f.length;i++) o[i]=f[i]+d[i]; return o; });
   const kids=agents.filter(x=>x.parent===a.id).map(x=>({id:x.id,name:x.name,hue:x.traits.hue,age:x.age}));
   const nm=id=>{ const o=byId.get(id); return o?o.name:null; };
-  self.postMessage({type:'inspect',name:a.name,coparentName:nm(a.coparent),parentName:nm(a.parent),id:a.id,gen:a.gen,age:a.age,lifespan:a.lifespan,energy:a.energy,health:a.health,x:a.x,y:a.y,traits:a.traits,inv:a.inv,tool:a.tool,load:load(a),cap:capacity(a),
+  self.postMessage({type:'inspect',clan:a.clan,timeline:a.history.slice().reverse(),name:a.name,coparentName:nm(a.coparent),parentName:nm(a.parent),id:a.id,gen:a.gen,age:a.age,lifespan:a.lifespan,energy:a.energy,health:a.health,x:a.x,y:a.y,traits:a.traits,inv:a.inv,tool:a.tool,load:load(a),cap:capacity(a),
     builds:a.builds,success:a.success,kids:a.kids,livingKids:kids,sheltered:a.sheltered,temp:a._t,lastChoice:a.lastChoice,probs:Array.from(a.probs),inputs:b.inputs,sizes:b.sizes,ws,
     acts:a.acts.map(x=>Array.from(x)),trust:[...a.trust].sort((x,y)=>Math.abs(y[1])-Math.abs(x[1])).slice(0,10).map(([id,v])=>({id,v,name:nm(id),alive:alive.has(id)})),
     trustedBy:agents.filter(x=>(x.trust.get(a.id)||0)>.3).map(x=>({id:x.id,name:x.name,v:x.trust.get(a.id),hue:x.traits.hue})).sort((p,q)=>q.v-p.v).slice(0,12),coparentAlive:alive.has(a.coparent),
@@ -1104,6 +1113,13 @@ function work(){
   if (now-lastPulse>=1000){ postPulse(); lastPulse=now; }
   schedule(!busy);
 }
+// ---------- insights ----------
+// Who each social act was aimed at, from the actor's point of view just before acting.
+const REL=['kin','friend','stranger','enemy'], RACT={13:'share',14:'attack',19:'thank',20:'befriend'};
+const relTally={share:[0,0,0,0],attack:[0,0,0,0],thank:[0,0,0,0],befriend:[0,0,0,0]};
+let relWin={share:[0,0,0,0],attack:[0,0,0,0],thank:[0,0,0,0],befriend:[0,0,0,0]};
+function relOf(a,o){ if (kinship(a,o)>=.5) return 0; const t=a.trust.get(o.id)||0; return t>.25?1:t<-.2?3:2; }
+
 // ---------- islands ----------
 // Several worlds run in parallel workers. Every so often an island sends a few of its most successful yips
 // (children raised plus age) to another island, where they arrive together as a band.
@@ -1124,7 +1140,7 @@ function importMigrants(pack,from){
   for (const o of pack){
     o.id=nextId++; o.trust=[]; o.owed=[]; o.parent=null; o.coparent=null;
     const a=deAgent(o); a.x=wrapX(bx+rnd(-25,25)); a.y=wrapY(by+rnd(-25,25)); if (isWater(a.x,a.y)){ a.x=bx; a.y=by; }
-    a.lastBirth=ticks-150; a.origin=from; band.push(a); agents.push(a);
+    a.lastBirth=ticks-150; a.origin=from; a.history=[]; band.push(a); agents.push(a);
   }
   for (const p of band) for (const q of band) if (p!==q) setTrust(p,q.id,.35);
   log(`${band.length} yips arrived from island ${'ABCD'[from]||from+1}: ${band.map(a=>a.name).join(', ')}`,'birth');

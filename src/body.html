@@ -38,6 +38,14 @@
         <div class="fig"><b id="fBD">0</b><small>Births / deaths</small></div>
         <div class="fig"><b id="fBuilt">0</b><small id="fBuiltSub">Structures</small></div>
       </div>
+      <section class="sec"><h3>Who they target <span>since this world began</span></h3>
+        <div class="relbars" id="relBars"></div>
+        <div class="key"><span><i style="background:#7ed6b0"></i>Kin</span><span><i style="background:#f3c96b"></i>Friends</span><span><i style="background:#93a8a0"></i>Strangers</span><span><i style="background:#f2836f"></i>Enemies</span></div>
+        <canvas class="chart" id="cRel"></canvas>
+        <div class="key"><span><i style="background:#f2836f"></i>Attacks on kin &amp; friends</span><span><i style="background:#7ed6b0"></i>Thanks to kin &amp; friends</span><span><i style="background:#c9b3e6"></i>Gifts to kin &amp; friends</span></div>
+        <p class="note">If yips are learning to tell affection from violence, attacks on kin and friends fall while thanks and gifts to them rise. Shares are of each act's targets per interval.</p>
+      </section>
+      <section class="sec"><h3>Families <span>largest lines alive</span></h3><div class="fams" id="fams"></div></section>
       <section class="sec"><h3>Population &amp; structures <span id="hSpan"></span></h3><canvas class="chart tall" id="cPop"></canvas><div class="key"><span><i style="background:#7ed6b0"></i>Population</span><span><i style="background:#f0c87e"></i>Structures</span><span><i style="background:#e26d5a"></i>Beasts × 10</span></div></section>
       <section class="sec"><h3>Behavior <span>events per 100 ticks</span></h3>
         <canvas class="chart tall" id="cBeh"></canvas>
@@ -183,6 +191,7 @@
         <button data-pane="pBody">Body</button>
         <button data-pane="pSocial">Social</button>
         <button data-pane="pLine">Lineage</button>
+        <button data-pane="pTime">Timeline</button>
       </div>
       <div class="pane sec" id="pMind">
         <div class="brainwrap"><canvas id="brain"></canvas><div class="braininfo" id="brainInfo">Hover or tap a neuron to read it. Teal links excite, coral links inhibit.</div></div>
@@ -213,6 +222,10 @@
         <div class="bars" id="trustBars"></div>
         <h3>Living children</h3>
         <div class="chips" id="kidChips"></div>
+      </div>
+      <div class="pane sec" id="pTime" hidden>
+        <h3>Recent actions <span>newest first · trust in the target at the time</span></h3>
+        <div class="timeline" id="timeline"></div>
       </div>
       <div class="pane sec" id="pLine" hidden>
         <h3>Ancestry <span>most recent first</span></h3>

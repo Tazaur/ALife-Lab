@@ -913,6 +913,12 @@ function renderStats() {
   lineChart($('cBody'), [{ values: h.map(x => x.str), color: C.bad, area: false }, { values: h.map(x => x.spd), color: C.store }, { values: h.map(x => x.sense / 100), color: C.wall }, { values: h.map(x => x.agg || 0), color: C.beast }, { values: h.map(x => (x.neurons || 0) / 50), color: C.accent }], { decimals: 1 });
   if (s.perkUse) $('perkBars').innerHTML = s.perkUse.slice().sort((x, y) => y[1] - x[1]).map(([id, v]) => { const p = meta.perks.find(q => q.id === id); return `<div class="bar"><div class="bt"><i style="width:${v * 100}%"></i><span>${esc(p.name)} · ${p.tree}</span></div><b>${Math.round(v * 100)}%</b></div>`; }).join('');
   $('mentAvg').innerHTML = traitRows(meta.ment, s.traits, null);
+  // who each social act is aimed at
+  const RELC = ['#7ed6b0', '#f3c96b', '#93a8a0', '#f2836f'], RELN = { attack: 'Attacks', share: 'Gifts', thank: 'Thanks', befriend: 'Befriends' };
+  if (s.relTally) $('relBars').innerHTML = ['attack', 'share', 'thank', 'befriend'].map(k => { const v = s.relTally[k], sm = v.reduce((x, y) => x + y, 0) || 1; return `<div class="relrow"><span>${RELN[k]}</span><div class="stack">${v.map((x, i) => `<i style="width:${x / sm * 100}%;background:${RELC[i]}"></i>`).join('')}</div><b>${fmt(v.reduce((x, y) => x + y, 0))}</b></div>`; }).join('');
+  const relSeries = k => smooth(h.map(x => x.rel && x.rel[k] ? (x.rel[k][0] + x.rel[k][1]) * 100 : null).map((v, i, arr) => v ?? (i ? arr[i - 1] ?? 0 : 0)), 8);
+  lineChart($('cRel'), [{ values: relSeries('attack'), color: C.bad, area: false }, { values: relSeries('thank'), color: C.good }, { values: relSeries('share'), color: C.wall }], { decimals: 0 });
+  if (s.families) $('fams').innerHTML = s.families.map(f => { const top = f.mix.map((v, i) => [v, i]).sort((x, y) => y[0] - x[0]).filter(([, i]) => i > 3).slice(0, 3).map(([v, i]) => `${meta.short[i]} ${(v * 100).toFixed(0)}%`).join(' · '); return `<div class="fam"><i style="background:${hueFill[(f.hue | 0) % 360]}"></i><b>${esc(f.clan)}'s line</b><span class="num">${f.n} alive · gen ${f.gen}</span><small>Attack ${(f.mix[14] * 100).toFixed(1)}% · Share ${(f.mix[13] * 100).toFixed(1)}% · Thank ${(f.mix[19] * 100).toFixed(1)}% · most of all: ${top}</small></div>`; }).join('');
   const tot = Object.values(s.deathsBy).reduce((a, b) => a + b, 0) || 1;
   $('deathStack').innerHTML = Object.entries(s.deathsBy).map(([k, v]) => `<i style="width:${v / tot * 100}%;background:${DEATHC[k] || C.dim}"></i>`).join('');
   $('deathKey').innerHTML = Object.entries(s.deathsBy).map(([k, v]) => `<span><i style="background:${DEATHC[k] || C.dim}"></i>${DEATHL[k] || k} <b class="num">${Math.round(v / tot * 100)}%</b></span>`).join('');
@@ -968,7 +974,7 @@ function renderInspector() {
   const hue = m.traits.hue | 0;
   $('iSwatch').style.background = hueFill[hue]; $('iSwatch').style.setProperty('--hue', `hsl(${hue} 72% 66% / .5)`);
   $('iTitle').textContent = m.name || `Yip #${m.id}`;
-  $('iSub').textContent = `#${m.id} · generation ${m.gen} · age ${fmt(m.age)} · ${m.kids} offspring`;
+  $('iSub').textContent = `#${m.id} · ${m.clan ? esc(m.clan) + "'s line · " : ''}generation ${m.gen} · age ${fmt(m.age)} · ${m.kids} offspring`;
   const badges = [];
   badges.push(m.sheltered ? ['Sheltered', 'good'] : ['Exposed', '']);
   if (m.tool > 0) badges.push([`Tool ${m.tool}`, 'good']);
@@ -987,7 +993,12 @@ function renderInspector() {
   if (pane === 'pMind') { drawBrain(m); probBars(m); }
   else if (pane === 'pBody') bodyPane(m);
   else if (pane === 'pSocial') socialPane(m);
+  else if (pane === 'pTime') timePane(m);
   else linePane(m);
+}
+function timePane(m) {
+  const tl = m.timeline || [];
+  $('timeline').innerHTML = tl.length ? tl.map(([t, c, id, nm, tv]) => `<div class="tl"><time>${fmt(t)}</time><span><b>${meta.actions[c]}</b>${id ? ` → ${esc(nm)}` : ''}</span>${id ? `<span class="tv ${tv > .05 ? 'p' : tv < -.05 ? 'n' : 'z'}">${tv > 0 ? '+' : ''}${tv.toFixed(2)}</span>` : '<span></span>'}</div>`).join('') : '<p class="note">Nothing yet. Successful actions other than walking appear here.</p>';
 }
 function meter(k, v, max, label) { $('v' + k).textContent = label; $('m' + k).style.width = clamp(v / max * 100, 0, 100) + '%'; }
 function probBars(m) {

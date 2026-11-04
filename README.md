@@ -12,6 +12,13 @@ An evolution sandbox. A colony of yips, each driven by its own neural network, f
 - **Aquatic upgrades**: Webbed feet (fast, cheap swimming; slower on land) and Blubber (water barely chills it; overheats sooner).
 - **Notifications** setting: All, Important (extinctions only) or Off.
 
+## Reading the colony
+
+- **Who they target** (Stats): every attack, gift, thank-you and befriending is classified by how the actor saw its target at that moment (kin, friend, stranger or enemy). A chart tracks the share aimed at kin and friends over time, so you can see whether affection and violence are separating.
+- **Families** (Stats): the largest living lines (descendants of one founding band), with their action mix.
+- **Timeline** (inspector tab): a yip's last 24 actions with the target and its trust in the target at the time.
+- Every brain is born wired to the relationship senses: trust toward the nearest yip, kinship, gratitude owed, whether it hurt me recently, and its strength versus mine. Yips also feel it when nearby yips dislike them (it adds to loneliness).
+
 ## Islands and Turbo
 
 - **Islands**: up to four separate worlds, each in its own worker on its own CPU core (default: one fewer than the device's cores, at most three). The island you watch follows the speed control; the others run unseen at full speed. The A/B/C chips in the header (or Settings → Islands) switch which one you watch.
