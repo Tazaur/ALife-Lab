@@ -27,6 +27,27 @@ const CODEC = (() => {
     const json = new TextDecoder().decode(new Uint8Array(ab, base + 4, n));
     return JSON.parse(json, (k, v) => v && v.$ta ? new CTOR[v.$ta[0]](ab.slice(base + head + v.$ta[1], base + head + v.$ta[1] + v.$ta[2] * CTOR[v.$ta[0]].BYTES_PER_ELEMENT)) : v);
   }
-  return { encode, decode };
+  // Trim a frame for a remote viewer: yips on (or near) its screen and around its selected yip every frame,
+  // food, wood, stone and buildings on screen about once a second and across the whole map every few seconds,
+  // pheromones only if that viewer shows them. v = { rect:[x0,y0,x1,y1], sel, scent, tI, tIf, tB, tBf, tP } (timers are kept on v).
+  function cull(m, v, now) {
+    const r = v.rect; if (!r) return m;
+    const out = {}; for (const k in m) if (k !== 'A' && k !== 'I' && k !== 'B' && k !== 'P') out[k] = m[k];
+    const pick = (src, stride, keep) => { let n = 0; for (let o = 0; o < src.length; o += stride) if (keep(src, o)) n++; const dst = new Float32Array(n * stride); let p = 0; for (let o = 0; o < src.length; o += stride) if (keep(src, o)) { dst.set(src.subarray(o, o + stride), p); p += stride; } return dst; };
+    const inR = (x, y) => x >= r[0] && x <= r[2] && y >= r[1] && y <= r[3];
+    let sx = NaN, sy = NaN;
+    if (v.sel) for (let o = 0; o < m.A.length; o += 10) if (m.A[o] === v.sel) { sx = m.A[o + 1]; sy = m.A[o + 2]; break; }
+    out.A = pick(m.A, 10, (A, o) => inR(A[o + 1], A[o + 2]) || A[o] === v.sel || (sx === sx && Math.abs(A[o + 1] - sx) < 170 && Math.abs(A[o + 2] - sy) < 170));
+    out.vr = r;
+    if (now - (v.tIf || 0) > 6000) { out.I = m.I; out.fullI = true; v.tIf = v.tI = now; }
+    else if (now - (v.tI || 0) > 1000) { out.I = pick(m.I, 4, (I, o) => inR(I[o + 1], I[o + 2])); v.tI = now; }
+    if (now - (v.tBf || 0) > 6000) { out.B = m.B; out.fullB = true; v.tBf = v.tB = now; }
+    else if (now - (v.tB || 0) > 1000) { out.B = pick(m.B, 9, (B, o) => inR(B[o + 1], B[o + 2])); v.tB = now; }
+    if (m.P && v.scent && now - (v.tP || 0) > 3000) { out.P = m.P; v.tP = now; }
+    return out;
+  }
+  // stats and inspector updates are throttled per remote viewer too
+  function due(v, key, gap, now) { if (now - (v[key] || 0) < gap) return false; v[key] = now; return true; }
+  return { encode, decode, cull, due };
 })();
 if (typeof module !== 'undefined') module.exports = CODEC;

@@ -73,11 +73,12 @@ function fromIsland(i, m) {
     case 'libraryPack': return reply(pendingLib, i, m);
     // a selection belongs to whoever asked for it, so one viewer's picks don't open inspectors on the others
     case 'selected': { const c = isl.picker; isl.picker = null; if (c && clients.has(c) && m.id) { c.sel = m.id; send(c, i, m); return; } break; }
-    case 'inspect': for (const c of clients) if (c.watch === i && c.sel === m.id) send(c, i, m); return;
+    case 'inspect': { const now = Date.now(); for (const c of clients) if (c.watch === i && c.sel === m.id && CODEC.due(c, 'tInsp', 600, now)) send(c, i, m); return; }
     case 'meta': isl.meta = m; break;
   }
-  if (m.type === 'frame') { const now = Date.now(); for (const c of clients) if (c.watch === i && now - c.lastFrame >= c.gap && c.sock.writableLength < 1.5e6) { c.lastFrame = now; send(c, i, m); } return; }
-  for (const c of clients) if (c.watch === i) send(c, i, m);
+  const now = Date.now();
+  if (m.type === 'frame') { for (const c of clients) if (c.watch === i && now - c.lastFrame >= c.gap && c.sock.writableLength < 1.5e6) { c.lastFrame = now; send(c, i, CODEC.cull(m, c, now)); } return; }
+  for (const c of clients) if (c.watch === i && (m.type !== 'stats' || CODEC.due(c, 'tStats', 1500, now))) send(c, i, m);
 }
 function reply(queues, i, m) { const q = queues[i] || []; const c = q.shift(); if (c && clients.has(c)) send(c, i, m); }
 function broadcast(i, m) { for (const c of clients) send(c, i, m); }
@@ -98,12 +99,14 @@ function updateViews() {
 function fromClient(c, data) {
   let o; try { o = JSON.parse(data); } catch { return; }
   if (o.cmd === 'islands') return setCount(o.n);
+  if (o.cmd === 'cam') { c.rect = o.r; c.sel = o.sel || 0; c.scent = !!o.scent; return; }
   if (o.cmd === 'rate') { c.gap = 1000 / Math.max(2, Math.min(40, +o.fps || 15)); return; }
   const i = o.isl, m = o.m; if (!m || !islands[i]) return;
   switch (m.type) {
     case 'view': {
       const was = c.watch;
       if (m.on) c.watch = i; else if (c.watch === i) c.watch = -1;
+      if (c.watch !== was) c.tIf = c.tBf = 0;
       if (m.on && islands[i].viewing) { post(i, { type: 'view', on: true }); }   // re-send meta, frame and stats for the newcomer
       if (was !== c.watch || m.on) updateViews();
       return;

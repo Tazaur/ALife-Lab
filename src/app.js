@@ -65,12 +65,15 @@ function fromIsland(i, m) {
     case 'saved': case 'libraryPack': { const v = (replyQ[m.type][i] || []).shift(); if (v && viewers.has(v)) deliver(v, i, m); return; }
     // a selection belongs to whoever asked for it, so one viewer's picks don't open inspectors on the others
     case 'selected': { const v = st.picker; st.picker = null; if (v && viewers.has(v) && m.id) { v.sel = m.id; deliver(v, i, m); return; } break; }
-    case 'inspect': for (const v of viewers) if (v.watch === i && v.sel === m.id) deliver(v, i, m); return;
+    case 'inspect': { const now = performance.now(); for (const v of viewers) if (v.watch === i && v.sel === m.id && (v.local || CODEC.due(v, 'tInsp', 600, now))) deliver(v, i, m); return; }
   }
   const now = performance.now();
   for (const v of viewers) {
     if (v.watch !== i) continue;
-    if (m.type === 'frame' && !v.local) { if (now - v.lastFrame < v.gap || peerBacklog(v) > 1.5e6) continue; v.lastFrame = now; }
+    if (!v.local) {
+      if (m.type === 'frame') { if (now - v.lastFrame < v.gap || peerBacklog(v) > 1.5e6) continue; v.lastFrame = now; deliver(v, i, CODEC.cull(m, v, now)); continue; }
+      if (m.type === 'stats' && !CODEC.due(v, 'tStats', 1500, now)) continue;
+    }
     deliver(v, i, m);
   }
 }
@@ -78,7 +81,7 @@ function fromViewer(v, i, m) {
   const w = workers[i], st = isl[i]; if (!w) return;
   switch (m.type) {
     case 'init': return;
-    case 'view': { const was = v.watch; if (m.on) v.watch = i; else if (v.watch === i) v.watch = -1; if (m.on && st.viewing && was !== i) w.postMessage(m); hubViews(); return; }
+    case 'view': { const was = v.watch; if (m.on) v.watch = i; else if (v.watch === i) v.watch = -1; if (v.watch !== was) v.tIf = v.tBf = 0; if (m.on && st.viewing && was !== i) w.postMessage(m); hubViews(); return; }
     case 'speed': if (v.watch === i) { v.speed = m; w.postMessage(m); } return;
     case 'select': v.sel = m.id || 0; break;
     case 'pick': st.picker = v; break;
@@ -160,6 +163,7 @@ function addPeerViewer(conn) {
   conn.on('data', reassembler(o => {
     if (o.cmd === 'rate') { v.gap = 1000 / clamp(+o.fps || 15, 2, 40); return; }
     if (o.cmd === 'islands') { setIslandCount(o.n); return; }
+    if (o.cmd === 'cam') { v.rect = o.r; v.sel = o.sel || 0; v.scent = !!o.scent; return; }
     if (o.m) fromViewer(v, o.isl, o.m);
   }));
   const gone = () => { if (!viewers.delete(v)) return; hubViews(); renderHost(); toast('A viewer disconnected', 'info'); };
@@ -236,7 +240,29 @@ function queueFrame(m) {
   lastSched = s; frameQ.push({ s, m });
   if (frameQ.length > 150) frameQ.splice(0, frameQ.length - 150);
 }
-function drainFrames(now) { while (frameQ.length && frameQ[0].s <= now) { const { m } = frameQ.shift(); ingestFrame(m); if (m.P) paintPher(m.P); } }
+function drainFrames(now) { while (frameQ.length && frameQ[0].s <= now) { const { m } = frameQ.shift(); mergeFrame(m); ingestFrame(m); if (m.P) paintPher(m.P); } }
+// remote frames carry only what changed near the screen; keep the rest of the map from earlier updates
+let worldI = new Float32Array(0), worldB = new Float32Array(0);
+function patch(world, part, stride, r) {
+  let keep = 0; for (let o = 0; o < world.length; o += stride) { const x = world[o + 1], y = world[o + 2]; if (!(x >= r[0] && x <= r[2] && y >= r[1] && y <= r[3])) keep++; }
+  const out = new Float32Array(keep * stride + part.length); let p = 0;
+  for (let o = 0; o < world.length; o += stride) { const x = world[o + 1], y = world[o + 2]; if (!(x >= r[0] && x <= r[2] && y >= r[1] && y <= r[3])) { out.set(world.subarray(o, o + stride), p); p += stride; } }
+  out.set(part, p); return out;
+}
+function mergeFrame(m) {
+  if (!m.vr) return;
+  if (m.I) worldI = m.fullI ? m.I : patch(worldI, m.I, 4, m.vr); m.I = worldI;
+  if (m.B) worldB = m.fullB ? m.B : patch(worldB, m.B, 9, m.vr); m.B = worldB;
+}
+// tell the host what this screen shows (with a margin) and which yip is selected, a few times a second at most
+let camSent = '', camT = 0;
+function sendCam(now) {
+  if (now - camT < 250) return;
+  const a = toWorld(0, 0), b = toWorld(cw, ch), mx = (b.x - a.x) * .35 + 40, my = (b.y - a.y) * .35 + 40;
+  const r = [a.x - mx, a.y - my, b.x + mx, b.y + my].map(Math.round), key = r.join() + '|' + selected + '|' + ui.scent;
+  if (key === camSent && now - camT < 3000) return;
+  camSent = key; camT = now; remoteSend({ cmd: 'cam', r, sel: selected, scent: !!ui.scent });
+}
 const netDelay = () => frameQ.length ? Math.max(0, frameQ[frameQ.length - 1].s - performance.now()) : 0;
 if (REMOTE) setInterval(() => { netRate = netBytes; netBytes = 0; }, 1000);
 function updateNetNote() {
@@ -288,7 +314,7 @@ function onSim(m, isl = 0) {
   if (m.type === 'toast' && isl !== watched) return;
   switch (m.type) {
     case 'meta': {
-      const first = !meta; meta = m; W = m.W; H = m.H; if (cw) minZ = Math.min(cw / W, ch / H) * .6; buildTerrain(m);
+      const first = !meta; meta = m; W = m.W; H = m.H; worldI = new Float32Array(0); worldB = new Float32Array(0); frameQ = []; if (cw) minZ = Math.min(cw / W, ch / H) * .6; buildTerrain(m);
       if (first) buildClimate(m.settings); else syncSliders(m.settings);
       rpos.clear(); bpos.clear(); trail = [];
       if (first || !cw) fit(true); else fit(true);
@@ -469,7 +495,7 @@ let lastT = performance.now(), fpsFrames = 0, fpsT = lastT, hoverId = 0, pointer
 const phaseOf = (ticks, len) => len ? (ticks % len) / len : 0;
 const FXC = { 1: [126, 214, 176], 2: [242, 100, 90], 4: [240, 179, 90], 8: [201, 179, 230], 32: [255, 80, 70], 64: [127, 216, 234], 128: [243, 201, 107], 256: [255, 143, 200] };
 function render(t) {
-  if (REMOTE) drainFrames(t);
+  if (REMOTE) { drainFrames(t); if (cw) sendCam(t); }
   const dt = Math.min(.1, (t - lastT) / 1000); lastT = t;
   if (camTarget) { const k = 1 - Math.exp(-dt * 9); cam.x += (camTarget.x - cam.x) * k; cam.y += (camTarget.y - cam.y) * k; cam.z += (camTarget.z - cam.z) * k; if (Math.abs(camTarget.z - cam.z) < .001 && Math.hypot(camTarget.x - cam.x, camTarget.y - cam.y) < .05) { Object.assign(cam, camTarget); camTarget = null; } }
   const k = 1 - Math.exp(-dt * (REMOTE ? clamp(1300 / arriveMean, 5, 16) : 16)), fast = hyper();
@@ -723,7 +749,7 @@ const SEASONS = ['Spring', 'Summer', 'Autumn', 'Winter'];
 const dayLabel = p => p < .06 || p >= .94 ? 'Dawn' : p < .44 ? 'Day' : p < .56 ? 'Dusk' : 'Night';
 function updateHud() {
   if (!F) return;
-  const pop = F.A.length / 10;
+  const pop = REMOTE && pulses[watched] ? pulses[watched].pop : F.A.length / 10;   // remote frames hold only nearby yips
   $('roPop').textContent = pop;
   $('roBeasts').textContent = F.Z.length / 6;
   $('roBuilt').textContent = F.B.length / 9;
