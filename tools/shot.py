@@ -28,6 +28,9 @@ async def main():
             await pg.screenshot(path=f'{OUT}/{name}3.png')
             out.append(f"{name} sel={await pg.evaluate('selected')} z={await pg.evaluate('cam.z.toFixed(2)')} {await pg.evaluate('document.getElementById(\"perf\").textContent')}")
             if name == 'desk':
+                await pg.evaluate("(()=>{ if(!selected) send('pick',{how:'random'}); })()"); await pg.wait_for_timeout(600)
+                await pg.evaluate("document.getElementById('dInspect').classList.contains('open')||openDrawer('dInspect'); document.getElementById('iFollow').click()"); await pg.wait_for_timeout(2500)
+                out.append('follow gap ' + str(await pg.evaluate("(()=>{const p=rpos.get(selected); return p? Math.hypot(wd(p.x-cam.x,W),wd(p.y-cam.y,H)).toFixed(1)+' follow='+follow : 'no sel'})()")))
                 await pg.evaluate("document.getElementById('bMax').click()"); await pg.wait_for_timeout(6000)
                 out.append('desk MAX ' + await pg.evaluate('document.getElementById("perf").textContent'))
                 await pg.screenshot(path=f'{OUT}/desk4.png')

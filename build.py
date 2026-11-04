@@ -2,10 +2,17 @@
 """Inline src/ into a single self-contained page.
 dist/alife-lab.html  — standalone document (open directly in a browser)
 dist/artifact.html   — body fragment for Claude artifact publishing"""
-import pathlib
+import pathlib, subprocess, datetime
 root = pathlib.Path(__file__).parent
 src = root / 'src'
 css, body, sim, app = [(src / f).read_text() for f in ('style.css', 'body.html', 'sim.js', 'app.js')]
+# version is automatic: build number = commits so far (+1 when there are uncommitted changes, i.e. the commit about to be made)
+def git(*a):
+    try: return subprocess.run(['git', *a], cwd=root, capture_output=True, text=True).stdout.strip()
+    except Exception: return ''
+count = int(git('rev-list', '--count', 'HEAD') or 0) + (1 if git('status', '--porcelain', '--', 'src') else 0)
+stamp = datetime.date.today().isoformat()
+body = body.replace('__VERSION_SHORT__', f'build {count}').replace('__VERSION_LONG__', f'build {count} · {stamp}')
 head = '''<title>ALife Lab</title>
 <meta name="theme-color" content="#0a1110">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

@@ -253,7 +253,9 @@ function render(t) {
     }
   }
   const sp = selected && rpos.get(selected);
-  if (follow && sp) { const kk = 1 - Math.exp(-dt * 6); cam.x += wd(sp.x - cam.x, W) * kk; cam.y += wd(sp.y - cam.y, H) * kk; }
+  if (follow && !sp && selected) { follow = false; $('iFollow').classList.remove('on'); }
+  if (follow && sp && camTarget) { camTarget.x = cam.x + wd(sp.x - cam.x, W); camTarget.y = cam.y + wd(sp.y - cam.y, H); }
+  else if (follow && sp) { const kk = 1 - Math.exp(-dt * 6); cam.x += wd(sp.x - cam.x, W) * kk; cam.y += wd(sp.y - cam.y, H) * kk; }
   if (cam.x < 0 || cam.x >= W || cam.y < 0 || cam.y >= H) { const nx = wrapC(cam.x, W) - cam.x, ny = wrapC(cam.y, H) - cam.y; cam.x += nx; cam.y += ny; if (camTarget) { camTarget.x += nx; camTarget.y += ny; } }
   if (sp && ui.trail && !fast) { const lp = trail[trail.length - 1]; if (!lp || Math.hypot(wd(lp.x - sp.x, W), wd(lp.y - sp.y, H)) > 1.5) { trail.push({ x: sp.x, y: sp.y }); if (trail.length > 90) trail.shift(); } }
 
@@ -580,7 +582,7 @@ function revealSelected() {
 }
 document.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => send('pick', { how: b.dataset.pick }));
 $('iFollow').onclick = () => toggleFollow();
-function toggleFollow() { if (!selected) return; follow = !follow; $('iFollow').classList.toggle('on', follow); if (follow && cam.z < 2.2) camTarget = { x: cam.x, y: cam.y, z: 2.6 }; }
+function toggleFollow() { if (!selected) return; follow = !follow; $('iFollow').classList.toggle('on', follow); if (follow) { const p = rpos.get(selected); camTarget = { x: p ? cam.x + wd(p.x - cam.x, W) : cam.x, y: p ? cam.y + wd(p.y - cam.y, H) : cam.y, z: Math.max(cam.z, 2.6) }; } }
 
 /* pointer input on the world */
 const ptrs = new Map(); let gesture = null, lastPaint = 0;
@@ -844,7 +846,7 @@ function renderStats() {
   lineChart($('cPop'), [{ values: h.map(x => x.pop), color: C.good }, { values: h.map(x => x.build), color: C.house }, { values: h.map(x => (x.beasts || 0) * 10), color: C.beast }]);
   lineChart($('cBeh'), [{ values: per100('shares'), color: C.good }, { values: per100('thefts'), color: C.bad }, { values: per100('attacks').map(v => v / 10), color: C.beast + '99' }, { values: per100('hunts'), color: C.warn }, { values: per100('crafts'), color: C.wall }, { values: per100('thanks'), color: C.accent }, { values: per100('loves').map(v => v * 5), color: '#ff8fc8' }]);
   lineChart($('cSocial'), [{ values: h.map(x => x.rep || 0), color: '#ff8fc8' }, { values: h.map(x => (x.lonely || 0) * 5), color: '#9cb6ff' }], { decimals: 1 });
-  $('behFigs').innerHTML = [['Gifts given', ta.shares], ['Food stolen', ta.thefts], ['Thank-yous', ta.thanks], ['Loving thanks', ta.loves], ['Co-parented births', ta.pairings], ['Beasts slain', ta.beastKills], ['Tools made', ta.crafts], ['Holding tools', Math.round(s.tools / Math.max(1, s.pop) * 100) + '%']]
+  $('behFigs').innerHTML = [['Gifts given', ta.shares], ['Food stolen', ta.thefts], ['Thank-yous', ta.thanks], ['Loving thanks', ta.loves], ['Births', ta.pairings], ['Befriendings', ta.befriends], ['Beasts slain', ta.beastKills], ['Tools made', ta.crafts], ['Holding tools', Math.round(s.tools / Math.max(1, s.pop) * 100) + '%']]
     .map(([k, v]) => `<div class="fig"><b>${typeof v === 'number' ? fmt(v) : v}</b><small>${k}</small></div>`).join('');
   lineChart($('cGen'), [{ values: h.map(x => x.gen), color: C.accent }]);
   lineChart($('cBody'), [{ values: h.map(x => x.str), color: C.bad, area: false }, { values: h.map(x => x.spd), color: C.store }, { values: h.map(x => x.sense / 100), color: C.wall }, { values: h.map(x => x.agg || 0), color: C.beast }, { values: h.map(x => (x.neurons || 0) / 50), color: C.accent }], { decimals: 1 });
@@ -861,7 +863,7 @@ function renderStats() {
 }
 
 /* ================= inspector ================= */
-let pane = 'pMind';
+let pane = 'pMind'; const lastName = {};
 document.querySelectorAll('[data-pane]').forEach(b => b.onclick = () => { pane = b.dataset.pane; document.querySelectorAll('[data-pane]').forEach(x => x.classList.toggle('on', x === b)); document.querySelectorAll('.pane').forEach(p => p.hidden = p.id !== pane); renderInspector(); });
 const DIGITS = { lr: 4, sense: 0, budget: 1 };
 function traitRows(keys, vals, avg) {
@@ -894,7 +896,13 @@ function renderInspector() {
   const m = insp; if (!m || !$('dInspect').classList.contains('open')) return;
   const dead = m.none && m.id === selected;
   $('iBody').hidden = dead; $('iEmpty').hidden = !dead;
-  if (dead) { $('iTitle').textContent = `#${m.id}`; $('iSub').textContent = 'No longer alive'; $('iBadges').innerHTML = ''; return; }
+  if (dead) {
+    const g = m.grave, nm = (g && g.name) || lastName[m.id] || `Yip #${m.id}`;
+    const CAUSE = { age: 'of old age', hunger: 'of starvation', thirst: 'of thirst', drowning: 'by drowning', storm: 'in a storm', fire: 'in a fire', beast: 'to a beast', attack: 'at the hands of another yip' };
+    $('iTitle').textContent = nm; $('iSub').textContent = g ? `Died ${CAUSE[g.cause] || ''} at age ${fmt(g.age)} · generation ${g.gen} · ${g.kids} offspring` : 'No longer alive'; $('iBadges').innerHTML = '<span class="badge bad">Dead</span>';
+    $('iEmptyTitle').textContent = `${nm} has died`; return;
+  }
+  lastName[m.id] = m.name;
   if (m.none || m.id !== selected) return;
   const hue = m.traits.hue | 0;
   $('iSwatch').style.background = hueFill[hue]; $('iSwatch').style.setProperty('--hue', `hsl(${hue} 72% 66% / .5)`);
@@ -913,7 +921,7 @@ function renderInspector() {
   $('iBadges').innerHTML = badges.map(([t, c]) => `<span class="badge ${c}">${t}</span>`).join('');
   meter('E', m.energy, (m.ph && m.ph.maxE) || 200, m.energy.toFixed(0)); meter('H', m.health, (m.ph && m.ph.maxH) || 100, m.health.toFixed(0));
   meter('A', m.age, m.lifespan, Math.round(m.age / m.lifespan * 100) + '%'); meter('L', m.load, m.cap, `${m.load.toFixed(1)}/${m.cap.toFixed(1)}`);
-  const DL = { thirst: ['Thirst', '#6fb6e8'], hunger: ['Hunger', C.warn], cold: ['Cold / heat', '#9cc6ff'], injury: ['Injury', C.bad], fatigue: ['Fatigue', C.muted], lonely: ['Loneliness', '#c9b3e6'], insecure: ['Insecurity', C.tree] };
+  const DL = { grief: ['Grief', '#b9a6d6'], thirst: ['Thirst', '#6fb6e8'], hunger: ['Hunger', C.warn], cold: ['Cold / heat', '#9cc6ff'], injury: ['Injury', C.bad], fatigue: ['Fatigue', C.muted], lonely: ['Loneliness', '#c9b3e6'], insecure: ['Insecurity', C.tree] };
   $('driveBars').innerHTML = meta.drives.map(k => { const v = m.drv[k] || 0; return `<div class="drive"><div>${DL[k][0]}<b>${Math.round(v * 100)}</b></div><div class="meter"><i style="width:${v * 100}%;background:${DL[k][1]}"></i></div></div>`; }).join('');
   if (pane === 'pMind') { drawBrain(m); probBars(m); }
   else if (pane === 'pBody') bodyPane(m);
@@ -942,7 +950,7 @@ function bodyPane(m) {
   $('bodyKV').innerHTML = kv.map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join('');
 }
 function socialPane(m) {
-  $('socialKV').innerHTML = [['Popularity', m.rep.toFixed(2)], ['Admirers', m.admirers], ['Thanks received', m.thanksGot], ['Loving thanks', m.lovesGot], ['Co-parented', m.partners], ['Co-parent', m.coparent ? `${esc(m.coparentName || '#' + m.coparent)}${m.coparentAlive ? '' : ' (gone)'}` : 'none'], ['Owes thanks to', m.owed && m.owed.length ? m.owed.filter(o => o[1] > .05).slice(0, 3).map(o => esc(o[0])).join(', ') || 'nobody' : 'nobody']].map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join('');
+  $('socialKV').innerHTML = [['Popularity', m.rep.toFixed(2)], ['Admirers', m.admirers], ['Thanks received', m.thanksGot], ['Loving thanks', m.lovesGot], ['Children had', m.partners], ['Co-parent', m.coparent ? `${esc(m.coparentName || '#' + m.coparent)}${m.coparentAlive ? '' : ' (gone)'}` : 'none'], ['Owes thanks to', m.owed && m.owed.length ? m.owed.filter(o => o[1] > .05).slice(0, 3).map(o => esc(o[0])).join(', ') || 'nobody' : 'nobody']].map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join('');
   $('trustedBy').innerHTML = m.trustedBy.length ? m.trustedBy.map(t => `<button class="chip" data-goto="${t.id}"><i style="background:${hueFill[t.hue | 0]}"></i>${esc(t.name || '#' + t.id)} · ${t.v.toFixed(2)}</button>`).join('') : '<p class="note">Nobody yet. Trust is earned slowly by sharing food or materials, warmth, shelter, repairs and defending others from beasts, and lost fast by attacks and theft.</p>';
   $('trustBars').innerHTML = m.trust.length ? m.trust.map(t => {
     const w = Math.abs(t.v) * 50, left = t.v < 0 ? 50 - w : 50;

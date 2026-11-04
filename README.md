@@ -22,7 +22,12 @@ Rewards come only from inside each yip. It has six needs, each an urgency from 0
 - Trust is also earned by giving food or materials (a yip gives whatever the other needs most), letting others eat, rest or warm up in your house or store, donating to someone's store, repairing their buildings, and fighting off a beast that was hunting them. Bystanders who see help given trust the helper a little more.
 - A yip that is given food or materials, warmed by someone's fire, sheltered in their house or defended from a beast trusts the helper a little more and remembers **gratitude owed** to them. It can sense what it owes the yip nearest to it.
 - **Thank** is an ordinary action. Nothing makes a yip use it. What it does: the thanked yip's loneliness eases (more for altruistic yips), it trusts the thanker a little, and repeating it soon means less. A thank-you from a yip that trusts you a lot is shown as 😍, otherwise "ty".
-- **Popularity** is the total trust other living yips hold in you. Popular yips breed sooner and more often, and an admirer nearby can co-parent: traits blend and compatible upgrades can come from either side.
+- **Birth takes two.** Two fed, nearby yips who both trust each other enough may have a child. Both pay energy, traits blend, compatible upgrades can come from either parent and the brain comes from one of them. Parent and child can never pair; closer kin can, but inbred children live shorter and start weaker. Popular yips find partners more easily.
+- **Trust is part automatic, part chosen.** Help, harm and witnessing move it regardless. Time spent near a yip that has not hurt you slowly builds familiarity. The Befriend action lets a yip choose to trust the nearest yip a little more.
+- **Desperation response** (a mental trait from −1 to +1) decides whether hardship makes a yip trust faster or turn suspicious.
+- **Fear of death** (a mental trait) sets how much seeing a death hurts. Grief is a need: it rises when a yip dies nearby, most for kin and trusted yips, and fades slowly.
+- **The dead are forgotten**: when a yip dies, every other yip's trust in it and gratitude toward it is dropped.
+- **Popularity** is the total trust other living yips hold in you.
 - Curiosity remains as an internal novelty drive: succeeding at something few yips do satisfies it, less with every repeat.
 
 ## Genetics
@@ -44,6 +49,8 @@ Rewards come only from inside each yip. It has six needs, each an urgency from 0
 - **59 possible senses**, including kinship with the nearest agent, its strength, food and tool, beast direction, crowding, the average voice nearby, ground fertility, pain and the agent's own memory.
 - **Default brain**: 18 inputs → 14 → 12 → 21 outputs, mutable up to 6 hidden layers.
 - **Hyperspeed**: speeds up to 256× plus Max, which runs as fast as the device allows and reduces drawing.
+
+The page shows an automatic build number (commit count) in the header and in Settings → About.
 
 **Play:** open `index.html` in any modern browser — desktop or phone, portrait or landscape. No build step or server needed.
 
