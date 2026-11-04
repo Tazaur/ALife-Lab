@@ -1568,6 +1568,9 @@ function onSaved(m) {
 }
 function showSaveInfo() { const m = store.get('alife.saveMeta', null); $('saveInfo').textContent = m ? `Browser save: tick ${fmt(m.ticks)}, ${m.kb} KB, ${new Date(m.at).toLocaleString()}` : ''; }
 showSaveInfo();
+// embedded viewers (e.g. a hosted preview) block file downloads, so only offer it when the page is opened directly
+let embedded = true; try { embedded = window.self !== window.top; } catch {}
+if (embedded) $('sExport').hidden = true;
 
 /* coach mark */
 if (!store.get('alife.coached', false)) { $('coach').hidden = false; }
