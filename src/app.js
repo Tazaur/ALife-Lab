@@ -79,12 +79,14 @@ function preferredShape() { const w = innerWidth, h = innerHeight; return h > w 
 function onSim(m, isl = 0) {
   if (m.type === 'ready') { sims[isl].postMessage({ type: 'init', island: isl, view: isl === watched, settings: currentSettings() }); if (isl !== watched) sims[isl].postMessage({ type: 'speed', speed: 1, max: true }); return; }
   if (m.type === 'pulse') { pulses[isl] = m; renderIslands(); return; }
+  if (m.type === 'saved') { onSaved(m, isl); return; }
+  if (m.type === 'libraryPack') { onLibraryPack(m, isl); return; }
   if (m.type === 'emigrants') { if (sims.length > 1) { let to = Math.floor(Math.random() * (sims.length - 1)); if (to >= isl) to++; sims[to].postMessage({ type: 'immigrants', pack: m.pack, from: isl }); } else sims[isl].postMessage({ type: 'immigrants', pack: m.pack, from: isl }); return; }
   if (isl !== watched && m.type !== 'toast') return;
   if (m.type === 'toast' && isl !== watched) return;
   switch (m.type) {
     case 'meta': {
-      const first = !meta; meta = m; W = m.W; H = m.H; buildTerrain(m);
+      const first = !meta; meta = m; W = m.W; H = m.H; if (cw) minZ = Math.min(cw / W, ch / H) * .6; buildTerrain(m);
       if (first) buildClimate(m.settings); else syncSliders(m.settings);
       rpos.clear(); bpos.clear(); trail = [];
       if (first || !cw) fit(true); else fit(true);
@@ -95,7 +97,7 @@ function onSim(m, isl = 0) {
     case 'inspect': insp = m; if (m.name) names[m.id] = m.name; renderInspector(); break;
     case 'selected': setSelected(m.id, { fromSim: true }); break;
     case 'toast': if (ui.notify === 'all' || (ui.notify === 'important' && m.important)) toast(m.s, m.kind); break;
-    case 'saved': onSaved(m); break;
+
     case 'loaded':
       if (m.ok) { toast('World loaded', 'info'); syncSliders(m.settings); trail = []; rpos.clear(); }
       else toast('Could not load: ' + m.error, 'death');
@@ -141,7 +143,7 @@ function resize() {
   dpr = Math.min(2, window.devicePixelRatio || 1);
   cw = cv.clientWidth; ch = cv.clientHeight;
   cv.width = Math.round(cw * dpr); cv.height = Math.round(ch * dpr);
-  minZ = Math.max(cw, ch) / (W * 2);
+  minZ = Math.min(cw / W, ch / H) * .6;
 }
 const vc = { x: 0, y: 0, tx: 0, ty: 0 };   // screen point the camera centers on, kept clear of open drawers
 function viewRect() {
@@ -186,7 +188,7 @@ function zoomAt(sx, sy, z) {
   cam.z = z; cam.x = p.x - (sx - vc.x) / z; cam.y = p.y - (sy - vc.y) / z;
   clampCam(); camTarget = null;
 }
-function clampCam() { }
+function clampCam() { cam.x = clamp(cam.x, 0, W); cam.y = clamp(cam.y, 0, H); }
 
 /* ================= sprites ================= */
 function sprite(size, draw) { const c = document.createElement('canvas'); c.width = c.height = size; draw(c.getContext('2d'), size); return c; }
@@ -233,7 +235,7 @@ function buildTerrain(m) {
     let R = lerp(52, 30, f), G = lerp(54, 82, f), B = lerp(36, 52, f);
     const ft = clamp((fo - .45) * 2.2, 0, 1); R = lerp(R, 18, ft * .7); G = lerp(G, 58, ft * .7); B = lerp(B, 44, ft * .7);
     const rt = clamp((r - .55) * 2.6, 0, 1); R = lerp(R, 70, rt); G = lerp(G, 70, rt); B = lerp(B, 66, rt);
-    if (water && water[i]) { R = 26; G = 58; B = 84; }
+    if (water && water[i] === 1) { R = 34; G = 78; B = 104; } else if (water && water[i] === 2) { R = 16; G = 40; B = 62; }
     img.data[i * 4] = R; img.data[i * 4 + 1] = G; img.data[i * 4 + 2] = B; img.data[i * 4 + 3] = 255;
   }
   sg.putImageData(img, 0, 0);
@@ -280,7 +282,6 @@ function render(t) {
   if (follow && !sp && selected) { follow = false; $('iFollow').classList.remove('on'); }
   if (follow && sp && camTarget) { camTarget.x = cam.x + wd(sp.x - cam.x, W); camTarget.y = cam.y + wd(sp.y - cam.y, H); }
   else if (follow && sp) { const kk = 1 - Math.exp(-dt * 6); cam.x += wd(sp.x - cam.x, W) * kk; cam.y += wd(sp.y - cam.y, H) * kk; }
-  if (cam.x < 0 || cam.x >= W || cam.y < 0 || cam.y >= H) { const nx = wrapC(cam.x, W) - cam.x, ny = wrapC(cam.y, H) - cam.y; cam.x += nx; cam.y += ny; if (camTarget) { camTarget.x += nx; camTarget.y += ny; } }
   if (sp && ui.trail && !fast) { const lp = trail[trail.length - 1]; if (!lp || Math.hypot(wd(lp.x - sp.x, W), wd(lp.y - sp.y, H)) > 1.5) { trail.push({ x: sp.x, y: sp.y }); if (trail.length > 90) trail.shift(); } }
 
   updateViewCenter(dt);
@@ -291,7 +292,9 @@ function render(t) {
   ctx.setTransform(dpr * z, 0, 0, dpr * z, dpr * (vc.x - cam.x * z), dpr * (vc.y - cam.y * z));
   const vx0 = cam.x - vc.x / z - 12, vx1 = cam.x + (cw - vc.x) / z + 12, vy0 = cam.y - vc.y / z - 12, vy1 = cam.y + (ch - vc.y) / z + 12;
   // the world is a torus: draw one copy per tile the view touches
-  for (let ty = Math.floor(vy0 / H); ty <= Math.floor(vy1 / H); ty++) for (let tx = Math.floor(vx0 / W); tx <= Math.floor(vx1 / W); tx++) drawTile(tx * W, ty * H, z, now, dt, vx0, vx1, vy0, vy1, fast, sp);
+  // each world is an island in open sea: draw it once, with sea beyond its edges
+  ctx.fillStyle = '#10283e'; ctx.fillRect(vx0 - 50, vy0 - 50, vx1 - vx0 + 100, vy1 - vy0 + 100);
+  drawTile(0, 0, z, now, dt, vx0, vx1, vy0, vy1, fast, sp);
   fpsFrames++;
   if (t - fpsT > 500) { renderFps = Math.round(fpsFrames * 1000 / (t - fpsT)); fpsFrames = 0; fpsT = t; updateHud(); }
   requestAnimationFrame(render);
@@ -643,7 +646,7 @@ function agentAt(sx, sy, touch) {
   for (const [id, p] of rpos) { const dx = wd(p.x - w.x, W), dy = wd(p.y - w.y, H), d = dx * dx + dy * dy; if (d < bd) { bd = d; best = id; } }
   return best;
 }
-const inWorld = w => { w.x = wrapC(w.x, W); w.y = wrapC(w.y, H); return true; };
+const inWorld = w => w.x >= 0 && w.y >= 0 && w.x < W && w.y < H;
 function paint(sx, sy) { const w = toWorld(sx, sy); if (!inWorld(w)) return; send('paint', { x: w.x, y: w.y, k: tool, r: ui.brushSize, n: ui.brushAmt }); lastPaint = performance.now(); }
 function wallTo(w) {
   const g = gesture; if (!g.last) { g.last = w; return; }
@@ -830,27 +833,105 @@ $('oLearn').onchange = () => sendAll('settings', { settings: { learning: $('oLea
 const OPTS = { oScent: 'scent', oNight: 'night', oFx: 'fx', oSense: 'sense', oTrail: 'trail', oLegend: 'legend', oPerf: 'perf', oAuto: 'auto', oHidePause: 'hidePause', oWake: 'wake' };
 function applyUi() { document.body.classList.toggle('hidelegend', !ui.legend); document.body.classList.toggle('hideperf', !ui.perf); syncWake(); }
 for (const [id, key] of Object.entries(OPTS)) { $(id).checked = ui[key]; $(id).onchange = () => { ui[key] = $(id).checked; saveUi(); applyUi(); }; }
-$('sSave').onclick = () => send('save', { purpose: 'local' });
-$('sExport').onclick = () => send('save', { purpose: 'file' });
-$('sLoad').onclick = () => { let s = null; try { s = localStorage.getItem('alife.save'); } catch {} if (!s) { toast('No browser save yet', 'info'); return; } send('load', { state: s }); };
+// Saves hold every island. They are gzipped and kept in IndexedDB, which has room for long runs.
+const idb = (() => {
+  let dbp = null;
+  const open = () => dbp || (dbp = new Promise((res, rej) => { try { const r = indexedDB.open('alife', 1); r.onupgradeneeded = () => r.result.createObjectStore('saves'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); } catch (e) { rej(e); } }));
+  const tx = (mode, fn) => open().then(db => new Promise((res, rej) => { const t = db.transaction('saves', mode), st = t.objectStore('saves'); const q = fn(st); t.oncomplete = () => res(q && q.result); t.onerror = () => rej(t.error); }));
+  return { put: (k, v) => tx('readwrite', st => st.put(v, k)), get: k => tx('readonly', st => st.get(k)) };
+})();
+async function pack(obj) { const txt = JSON.stringify(obj); if (typeof CompressionStream === 'undefined') return new Blob([txt], { type: 'application/json' }); return await new Response(new Blob([txt]).stream().pipeThrough(new CompressionStream('gzip'))).blob(); }
+async function unpack(blob) { const head = new Uint8Array(await blob.slice(0, 2).arrayBuffer()); if (head[0] === 0x1f && head[1] === 0x8b) return JSON.parse(await new Response(blob.stream().pipeThrough(new DecompressionStream('gzip'))).text()); return JSON.parse(await blob.text()); }
+let saveJob = null;
+function saveAll(purpose) {
+  if (saveJob) return;
+  saveJob = { purpose, states: new Array(sims.length), left: sims.length };
+  sims.forEach((w, i) => w.postMessage({ type: 'save', purpose }));
+}
+async function finishSave(job) {
+  const bundle = { version: 'islands1', watched, at: Date.now(), islands: job.states };
+  const blob = await pack(bundle), kb = Math.round(blob.size / 1024), ticks = job.states.map(s => s.ticks);
+  if (job.purpose === 'file') {
+    const url = URL.createObjectURL(blob), el = document.createElement('a'); el.href = url; el.download = `alife-${sims.length}-islands-tick-${Math.max(...ticks)}.json${blob.type === 'application/json' ? '' : '.gz'}`; document.body.append(el); el.click(); el.remove(); setTimeout(() => URL.revokeObjectURL(url), 3000);
+    toast(`Exported ${kb} KB (${sims.length} islands)`, 'info'); return;
+  }
+  try {
+    await idb.put(job.purpose === 'auto' ? 'auto' : 'manual', blob);
+    store.set('alife.saveMeta', { at: Date.now(), kb, ticks, islands: sims.length, slot: job.purpose === 'auto' ? 'auto' : 'manual' });
+    showSaveInfo();
+    if (job.purpose !== 'auto') toast(`Saved ${sims.length} island${sims.length > 1 ? 's' : ''} (${kb} KB)`, 'info');
+  } catch { if (job.purpose !== 'auto') toast('Could not save in this browser. Use Download file instead.', 'death'); }
+}
+function onSaved(m, isl) {
+  if (!saveJob) return;
+  saveJob.states[isl] = JSON.parse(m.state); saveJob.left--;
+  if (!saveJob.left) { const job = saveJob; saveJob = null; finishSave(job); }
+}
+function loadBundle(obj) {
+  const list = obj && obj.version === 'islands1' ? obj.islands : [obj];
+  list.slice(0, sims.length).forEach((st, i) => st && sims[i].postMessage({ type: 'load', state: st }));
+  if (list.length > sims.length) toast(`This save has ${list.length} islands; ${sims.length} are running, so the rest were skipped`, 'info');
+  trail = []; rpos.clear(); bpos.clear();
+}
+async function loadSlot() {
+  const meta2 = store.get('alife.saveMeta', null), slot = (meta2 && meta2.slot) || 'manual';
+  try { const blob = await idb.get(slot) || await idb.get(slot === 'auto' ? 'manual' : 'auto'); if (!blob) { toast('No browser save yet', 'info'); return; } loadBundle(await unpack(blob)); }
+  catch (e) { toast('Could not read the browser save', 'death'); }
+}
+/* yip library: genomes kept across runs, stored gzipped in IndexedDB */
+let library = [], libWait = null, libArm = 0;
+idb.get('library').then(b => b ? unpack(b) : []).then(l => { library = Array.isArray(l) ? l : []; renderLibrary(); }).catch(() => renderLibrary());
+const saveLibrary = () => pack(library).then(b => idb.put('library', b)).catch(() => toast('Could not store the library in this browser', 'death'));
+function renderLibrary() {
+  const on = library.filter(g => g.on !== false).length;
+  $('libCount').textContent = library.length ? `${on} of ${library.length} checked` : 'empty';
+  $('libList').innerHTML = library.map((g, i) => `<label class="libi"><input type="checkbox" data-i="${i}"${g.on !== false ? ' checked' : ''}><span class="sw2" style="background:hsl(${g.traits.hue} 70% 60%)"></span><div><b>${esc(g.name)}</b> <small>gen ${g.gen} · ${g.kids} kids · ${g.genes.length} genes · island ${'ABCD'[g.island] || '?'} t${fmt(g.tick)}</small></div><button data-del="${i}" aria-label="Remove ${esc(g.name)}">×</button></label>`).join('');
+  $('lStart').disabled = !on;
+}
+$('libList').onchange = e => { const i = e.target.dataset.i; if (i == null) return; library[+i].on = e.target.checked; saveLibrary(); renderLibrary(); };
+$('libList').onclick = e => { const i = e.target.dataset.del; if (i == null) return; e.preventDefault(); const g = library.splice(+i, 1)[0]; saveLibrary(); renderLibrary(); toast(`${g.name} removed from the library`, 'info'); };
+function addToLibrary(pack) {
+  const key = g => g.name + '|' + g.gen + '|' + g.island + '|' + g.clan;
+  const have = new Map(library.map((g, i) => [key(g), i])); let added = 0;
+  for (const g of pack) { g.on = true; if (have.has(key(g))) library[have.get(key(g))] = g; else { library.push(g); added++; } }
+  saveLibrary(); renderLibrary(); return added;
+}
+function onLibraryPack(m) {
+  if (!libWait) return;
+  libWait.got.push(...m.pack);
+  if (--libWait.left) return;
+  const job = libWait; libWait = null;
+  if (!job.got.length) { toast(job.one ? 'That yip is gone' : 'No yips old enough to keep yet', 'info'); return; }
+  const n = addToLibrary(job.got);
+  toast(job.one ? `${job.got[0].name} kept in the library` : `${job.got.length} yips kept (${n} new) · library holds ${library.length}`, 'birth');
+}
+function askLibrary(targets, msg, one) { if (libWait) return; libWait = { left: targets.length, got: [], one }; targets.forEach(w => w.postMessage({ type: 'library', ...msg })); }
+$('lTop').onclick = () => askLibrary([sims[watched]], { n: 10 });
+$('lAll').onclick = () => askLibrary(sims, { n: 5 });
+$('iKeep').onclick = () => selected && askLibrary([sims[watched]], { id: selected }, true);
+$('lStart').onclick = () => {
+  const seeds = library.filter(g => g.on !== false); if (!seeds.length) return;
+  if (Date.now() - libArm > 4000) { libArm = Date.now(); $('lStart').textContent = `Tap again: replace this run with ${seeds.length} yip${seeds.length > 1 ? 's' : ''}`; setTimeout(() => { $('lStart').textContent = 'New world from library'; }, 4000); return; }
+  libArm = 0; $('lStart').textContent = 'New world from library';
+  if (ui.auto) saveAll('auto');
+  sendAll('reset', { seeds }); trail = []; rpos.clear(); bpos.clear(); setSelected(0);
+  toast(`New islands bred from ${seeds.length} library yip${seeds.length > 1 ? 's' : ''}`, 'birth');
+};
+$('lExport').onclick = async () => { const blob = await pack({ version: 'yiplib1', yips: library }); const url = URL.createObjectURL(blob), el = document.createElement('a'); el.href = url; el.download = `yip-library-${library.length}.json${blob.type === 'application/json' ? '' : '.gz'}`; document.body.append(el); el.click(); el.remove(); setTimeout(() => URL.revokeObjectURL(url), 3000); };
+$('lImport').onclick = () => $('lFile').click();
+$('lFile').onchange = async e => { const f = e.target.files[0]; if (!f) return; try { const o = await unpack(f), list = o.version === 'yiplib1' ? o.yips : Array.isArray(o) ? o : null; if (!list) throw 0; const n = addToLibrary(list); toast(`Imported ${n} new yips`, 'birth'); } catch { toast('That is not a yip library file', 'death'); } e.target.value = ''; };
+$('sSave').onclick = () => saveAll('local');
+$('sExport').onclick = () => saveAll('file');
+$('sLoad').onclick = () => loadSlot();
 $('sImport').onclick = () => $('sFile').click();
-$('sFile').onchange = async e => { const f = e.target.files[0]; if (!f) return; try { send('load', { state: await f.text() }); } catch { toast('Could not read that file', 'death'); } e.target.value = ''; };
+$('sFile').onchange = async e => { const f = e.target.files[0]; if (!f) return; try { loadBundle(await unpack(f)); } catch { toast('Could not read that file', 'death'); } e.target.value = ''; };
 let newShape = 'wide';
 function markShape() { document.querySelectorAll('[data-shape]').forEach(b => b.classList.toggle('on', b.dataset.shape === newShape)); }
 document.querySelectorAll('[data-shape]').forEach(b => b.onclick = () => { newShape = b.dataset.shape; markShape(); });
 $('sReset').onclick = () => { $('modal').hidden = false; $('mOk').focus(); };
 $('mCancel').onclick = () => { $('modal').hidden = true; };
-$('mOk').onclick = () => { $('modal').hidden = true; sendAll('reset', {}); trail = []; rpos.clear(); bpos.clear(); setSelected(0); toast('New world: 120 founders released', 'birth'); };
-function onSaved(m) {
-  const kb = (m.state.length / 1024).toFixed(0), writeLocal = () => { localStorage.setItem('alife.save', m.state); localStorage.setItem('alife.saveMeta', JSON.stringify({ ticks: m.ticks, at: Date.now(), kb })); showSaveInfo(); };
-  if (m.purpose === 'auto') { try { writeLocal(); } catch {} return; }
-  if (m.purpose === 'local') { try { writeLocal(); toast(`Saved at tick ${fmt(m.ticks)}`, 'info'); } catch { toast('Browser storage is full or blocked. Use Download file instead.', 'death'); } return; }
-  const url = URL.createObjectURL(new Blob([m.state], { type: 'application/json' }));
-  const a = document.createElement('a'); a.href = url; a.download = `alife-tick-${m.ticks}.json`; document.body.append(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 2000);
-  toast(`Exported ${kb} KB snapshot`, 'info');
-}
-function showSaveInfo() { const m = store.get('alife.saveMeta', null); $('saveInfo').textContent = m ? `Browser save: tick ${fmt(m.ticks)}, ${m.kb} KB, ${new Date(m.at).toLocaleString()}` : ''; }
+$('mOk').onclick = () => { $('modal').hidden = true; sendAll('reset', {}); trail = []; rpos.clear(); bpos.clear(); setSelected(0); toast('New islands: 300 founders each', 'birth'); };
+function showSaveInfo() { const m = store.get('alife.saveMeta', null); $('saveInfo').textContent = m && m.ticks ? `Browser save: ${m.islands || 1} island${(m.islands || 1) > 1 ? 's' : ''} at tick ${[].concat(m.ticks).map(fmt).join(' / ')}, ${m.kb} KB, ${new Date(m.at).toLocaleString()}` : ''; }
 showSaveInfo();
 // embedded viewers block file downloads, so only offer it when the page is opened directly
 let embedded = true; try { embedded = window.self !== window.top; } catch {}
@@ -911,7 +992,7 @@ function renderStats() {
     .map(([k, v]) => `<div class="fig"><b>${typeof v === 'number' ? fmt(v) : v}</b><small>${k}</small></div>`).join('');
   lineChart($('cGen'), [{ values: h.map(x => x.gen), color: C.accent }]);
   lineChart($('cBody'), [{ values: h.map(x => x.str), color: C.bad, area: false }, { values: h.map(x => x.spd), color: C.store }, { values: h.map(x => x.sense / 100), color: C.wall }, { values: h.map(x => x.agg || 0), color: C.beast }, { values: h.map(x => (x.neurons || 0) / 50), color: C.accent }], { decimals: 1 });
-  if (s.perkUse) $('perkBars').innerHTML = s.perkUse.slice().sort((x, y) => y[1] - x[1]).map(([id, v]) => { const p = meta.perks.find(q => q.id === id); return `<div class="bar"><div class="bt"><i style="width:${v * 100}%"></i><span>${esc(p.name)} · ${p.tree}</span></div><b>${Math.round(v * 100)}%</b></div>`; }).join('');
+  if (s.geneUse) $('perkBars').innerHTML = s.geneUse.length ? s.geneUse.map(g => `<div class="generow"><div class="bar"><div class="bt"><i style="width:${g.share * 100}%"></i><span>${esc(g.name)} · ${CONDL[g.cond] || g.cond}</span></div><b>${Math.round(g.share * 100)}%</b></div><p>${fxText(g.fx)}</p></div>`).join('') : '<p class="note">No genes in the population yet.</p>';
   $('mentAvg').innerHTML = traitRows(meta.ment, s.traits, null);
   // who each social act is aimed at
   const RELC = ['#7ed6b0', '#f3c96b', '#93a8a0', '#f2836f'], RELN = { attack: 'Attacks', share: 'Gifts', thank: 'Thanks', befriend: 'Befriends' };
@@ -940,25 +1021,14 @@ function traitRows(keys, vals, avg) {
     return `<div class="trait"><span title="${esc(info)}">${label}</span><div class="tr"><i style="width:${f * 100}%"></i>${a != null ? `<u style="left:${a * 100}%"></u>` : ''}</div><b>${v.toFixed(d)}</b></div>`;
   }).join('');
 }
-let perkSel = null;
-function perkState(perks, p) {
-  if (perks.includes(p.id)) return 'own';
-  if (meta.clash.some(([x, y]) => (x === p.id && perks.includes(y)) || (y === p.id && perks.includes(x)))) return 'clash';
-  if (p.req && !perks.includes(p.req)) return 'lock';
-  return 'open';
+// describe a gene by what it does to the body, using the simulation's own dial definitions
+function fxText(fx) {
+  return Object.entries(fx).map(([d, v]) => { const D = meta.dials[d]; if (!D) return ''; const good = v * D.good > 0, val = D.kind === 'mul' ? `${v > 0 ? '+' : '−'}${Math.abs(v * 100).toFixed(0)}%` : `${v > 0 ? '+' : '−'}${Math.abs(v) < 1 ? Math.abs(v).toFixed(3) : Math.abs(v).toFixed(0)}`; return `<span class="${good ? 'g' : 'x'}">${val} ${D.label}</span>`; }).join(' · ');
 }
-function perkDepth(p) { let d = 1, q = p; while (q.req) { d++; q = meta.perks.find(x => x.id === q.req); } return d; }
-function renderTrees(perks) {
-  const trees = [...new Set(meta.perks.map(p => p.tree))];
-  $('perkTrees').innerHTML = trees.map(t => `<div class="tree"><b>${t}</b>${meta.perks.filter(p => p.tree === t).map(p => { const st = perkState(perks, p); return `<button class="perk t${perkDepth(p)} ${st}${perkSel === p.id ? ' sel' : ''}" data-perk="${p.id}"><i></i><span>${esc(p.name)}</span></button>`; }).join('')}</div>`).join('');
-  if (perkSel) {
-    const p = meta.perks.find(x => x.id === perkSel), st = perkState(perks, p);
-    const clash = meta.clash.filter(c => c.includes(p.id)).map(c => meta.perks.find(x => x.id === (c[0] === p.id ? c[1] : c[0])).name);
-    const req = p.req ? meta.perks.find(x => x.id === p.req).name : null;
-    $('perkInfo').innerHTML = `<b>${esc(p.name)}</b> · ${{ own: 'carried by this yip', open: 'can evolve next', lock: `needs ${esc(req)} first`, clash: 'blocked by a clash' }[st]}<br><span class="g">+ ${esc(p.good)}</span><br><span class="x">− ${esc(p.bad)}</span><br>Budget cost ${p.cost}${clash.length ? ` · incompatible with ${clash.map(esc).join(', ')}` : ''}`;
-  }
+const CONDL = { always: 'always', cold: 'when cold', hot: 'when hot', night: 'at night', day: 'by day', young: 'while young', old: 'when old', starving: 'when starving', fed: 'when well fed', swimming: 'while swimming', hurt: 'when badly hurt' };
+function renderGenes(genes) {
+  $('geneList').innerHTML = genes.length ? genes.map(g => `<div class="gene${g.on ? ' on' : ''}"><div><b>${esc(g.name)}</b><span class="badge${g.cond === 'always' ? '' : g.on ? ' good' : ''}">${CONDL[g.cond] || g.cond}${g.cond !== 'always' ? (g.on ? ' · on' : ' · off') : ''}</span><em class="num">${g.cost >= 0 ? 'costs ' + g.cost.toFixed(2) : 'frees ' + (-g.cost).toFixed(2)} budget</em></div><p>${fxText(g.fx)}</p></div>`).join('') : '<p class="note">No genes: this yip runs on its base traits alone.</p>';
 }
-$('perkTrees').addEventListener('click', e => { const b = e.target.closest('[data-perk]'); if (!b) return; perkSel = perkSel === b.dataset.perk ? null : b.dataset.perk; if (insp && !insp.none) renderTrees(insp.perks); });
 function renderInspector() {
   const m = insp; if (!m || !$('dInspect').classList.contains('open')) return;
   const dead = m.none && m.id === selected;
@@ -1013,7 +1083,7 @@ function bodyPane(m) {
   $('mentList').innerHTML = traitRows(meta.ment, m.traits, avg);
   const budget = m.traits.budget, cost = m.cost, over = cost > budget, pct = v => clamp(v / Math.max(budget, cost) * 100, 0, 100);
   $('budgetBar').innerHTML = `<div class="row2"><span>Body budget used</span><b>${cost.toFixed(1)} / ${budget.toFixed(1)}${over ? ' · over budget' : ''}</b></div><div class="bb"><i style="width:${pct(cost)}%;background:${over ? 'var(--bad)' : 'var(--good)'};opacity:.7"></i><u style="left:${pct(budget)}%"></u></div><span>Going over the budget raises metabolism. Upgrades and strong physical traits use it up.</span>`;
-  renderTrees(m.perks || []);
+  renderGenes(m.genes || []);
   const d = m.deeds;
   $('deedKV').innerHTML = [['Gifts given', d.shared], ['Food stolen', d.stolen], ['Attacks', d.attacks], ['Yips killed', d.kills], ['Beast hits', d.hunts], ['Beasts slain', d.beastKills], ['Tools made', d.crafts], ['Items stored', d.deposits], ['Built', d.builds], ['Harvested', m.success]]
     .map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join('');
@@ -1114,11 +1184,11 @@ async function syncWake() {
 addEventListener('pointerdown', syncWake, { once: true });
 let hiddenPaused = false;
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') { if (ui.hidePause && running) { hiddenPaused = true; running = false; sendAll('play', { running: false }); paintPlay(); } if (ui.auto) send('save', { purpose: 'auto' }); }
+  if (document.visibilityState === 'hidden') { if (ui.hidePause && running) { hiddenPaused = true; running = false; sendAll('play', { running: false }); paintPlay(); } if (ui.auto) saveAll('auto'); }
   else if (hiddenPaused) { hiddenPaused = false; setRunning(true); }
   syncWake();
 });
-setInterval(() => { if (ui.auto && running && F && F.ticks > 200) send('save', { purpose: 'auto' }); }, 120000);
+setInterval(() => { if (ui.auto && running && (pulses[watched] || {}).ticks > 200) saveAll('auto'); }, 120000);
 document.querySelectorAll('[name=notify]').forEach(r => { r.checked = r.value === ui.notify; r.onchange = () => { if (r.checked) { ui.notify = r.value; saveUi(); } }; });
 applyUi();
 
@@ -1130,7 +1200,7 @@ $('coachOk').onclick = () => { $('coach').hidden = true; store.set('alife.coache
   const m = store.get('alife.saveMeta', null);
   if (!m || !m.ticks) return;
   $('coach').hidden = false;
-  $('coachText').innerHTML = `<b>Saved world found</b> · tick ${fmt(m.ticks)} from ${new Date(m.at).toLocaleDateString()}`;
+  $('coachText').innerHTML = `<b>Saved run found</b> · ${m.islands || 1} island${(m.islands || 1) > 1 ? 's' : ''}, tick ${[].concat(m.ticks).map(fmt).join(' / ')} from ${new Date(m.at).toLocaleDateString()}`;
   $('coachResume').hidden = false;
   $('coachResume').onclick = () => { $('sLoad').click(); $('coach').hidden = true; };
 })();

@@ -23,6 +23,7 @@ An evolution sandbox. A colony of yips, each driven by its own neural network, f
 
 - **Islands**: up to four separate worlds, each in its own worker on its own CPU core (default: one fewer than the device's cores, at most three). The island you watch follows the speed control; the others run unseen at full speed. The A/B/C chips in the header (or Settings → Islands) switch which one you watch.
 - **Migration**: every few thousand ticks (World → Migration interval, Migrants per trip) an island sends a few of its most successful yips to another island, where they arrive together as a band.
+- **Real islands**: each world is an island ringed by salt sea. Yips can swim the sea but can't drink it and it chills them faster; fresh lakes inland are where they drink.
 - **Turbo** (`T`): stops all drawing, stats and inspector updates and runs every island flat out, showing only live counters per island.
 
 ## Learning (current)
@@ -51,11 +52,16 @@ Rewards come only from inside each yip. It has six needs, each an urgency from 0
 - **Popularity** is the total trust other living yips hold in you.
 - Curiosity remains as an internal novelty drive: succeeding at something few yips do satisfies it, less with every repeat.
 
+## Saves and the yip library
+
+- **Saves** hold every island (yips, brains, genes, resources, settings), gzipped into the browser's IndexedDB. Autosave runs every 2 minutes; Settings has save, load, download and import. Old single-world files still load.
+- **Yip library** (Settings): keep the top yips from an island, from every island, or one yip from the inspector (Keep). A library entry stores genes, traits and the brain with everything it learned. *New world from library* starts fresh islands with one exact copy of each checked yip and fills the 300 founders with their mutated offspring. Libraries download and import as files.
+
 ## Genetics
 
 - **Physical traits** (body budget, strength, speed, thermal tolerance, sensing, rest efficiency, regeneration) mutate rarely and in small steps, and draw heavily on the body budget. Going over budget raises metabolism.
 - **Mental traits** (learning rate, impulsiveness, curiosity, aggression, sociability, altruism, greed, caution) mutate quickly and cost almost nothing.
-- **Upgrade trees**: 16 physical upgrades in six trees (Might, Swift, Endurance, Senses, Climate, Gut). Each has a benefit and a drawback and a budget cost, some require an earlier one, and physically opposed pairs can't coexist (Juggernaut vs Sprinter, Thick hide vs Lean frame, Fur coat vs Sweat glands, Fat reserves vs Lean frame, Hibernator vs Sprinter).
+- **Open-ended genes**: a body is a list of genes, each a bundle of effects on physical dials (speed, damage, armor, carry, metabolism, sensing, energy, health, regeneration, rest, swimming, chill, cold/heat tolerance, food yield, beast damage, fertility, brain cost, lifespan) plus an expression condition (always, cold, hot, night, day, young, old, starving, fed, swimming, hurt). Genes arise de novo, duplicate, mutate, gain or lose effects, change their condition and disappear; nobody designs them. Each costs body budget priced by what it does; impairments refund part of it, and conditional genes cost less. Children inherit genes from both parents by gene id. The old upgrades seed the founders as a starting library.
 - **Houses insulate**: inside, temperature is pulled most of the way to 20°C, and resting restores energy and health fastest there.
 
 ## The world (1.1)

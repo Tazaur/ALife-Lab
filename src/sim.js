@@ -61,10 +61,17 @@ function makeFields(s){
   rock=mix(noiseField(r,10),noiseField(r,2.5),.65);
   // lakes sit in the lowest ground; land near water is the most fertile
   const elev=mix(noiseField(r,7),noiseField(r,2.6),.7);
-  water=new Uint8Array(FW*FH); for (let i=0;i<elev.length;i++) water[i]=elev[i]<.2?1:0;
+  // each world is an island: open sea (salt water, 2) all round the edges with a ragged coast, fresh lakes (1) inland
+  const coast=noiseField(r,4);
+  water=new Uint8Array(FW*FH);
+  for (let y=0;y<FH;y++) for (let x=0;x<FW;x++){
+    const i=x+y*FW, ex=Math.min(x+.5,FW-x-.5)/FW, ey=Math.min(y+.5,FH-y-.5)/FH, edge=Math.min(ex,ey);   // 0 at the border, .5 at the centre
+    if (edge<.045+.075*coast[i]) water[i]=2; else if (elev[i]<.2) water[i]=1;
+  }
   buildWaterDistance();
   for (let i=0;i<fert.length;i++){
     const near=1-Math.min(1,waterDist[i]/8);
+    if (water[i]===2){ fert[i]=0; forest[i]=0; rock[i]=0; continue; }
     fert[i]=water[i]?0:clamp((fert[i]*.7+.45*near)*(1-.55*rock[i]),0,1); forest[i]=water[i]?0:clamp(forest[i]*(1-.6*rock[i]),0,1); rock[i]=water[i]?0:rock[i];
   }
 }
@@ -73,12 +80,13 @@ let water=new Uint8Array(0), waterDist=new Float32Array(0), waterNear=new Int32A
 function buildWaterDistance(){
   const n=FW*FH; waterDist=new Float32Array(n).fill(1e9); waterNear=new Int32Array(n).fill(-1);
   const q=new Int32Array(n); let h=0, t=0;
-  for (let i=0;i<n;i++) if (water[i]){ waterDist[i]=0; waterNear[i]=i; q[t++]=i; }
+  for (let i=0;i<n;i++) if (water[i]===1){ waterDist[i]=0; waterNear[i]=i; q[t++]=i; }
   while (h<t){ const i=q[h++], x=i%FW, y=(i/FW)|0;
     for (const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){ const nx=(x+dx+FW)%FW, ny=(y+dy+FH)%FH, j=nx+ny*FW; if (waterDist[j]>waterDist[i]+1){ waterDist[j]=waterDist[i]+1; waterNear[j]=waterNear[i]; q[t++]=j; } } }
 }
 const cellIdx = (x,y) => (Math.floor(wrapX(x)/FC)%FW)+(Math.floor(wrapY(y)/FC)%FH)*FW;
-const isWater = (x,y) => water[cellIdx(x,y)]===1;
+const isWater = (x,y) => water[cellIdx(x,y)]>0;
+const isSea = (x,y) => water[cellIdx(x,y)]===2;
 // offset from (x,y) to the centre of the nearest water cell, by the shortest way around
 function waterVec(x,y,out){ const j=waterNear[cellIdx(x,y)]; if (j<0){ out.dx=0; out.dy=0; out.d=1e9; return out; } const cx=(j%FW+.5)*FC, cy=(((j/FW)|0)+.5)*FC; out.dx=wd(cx-x,W); out.dy=wd(cy-y,H); out.d=Math.hypot(out.dx,out.dy); return out; }
 const fieldAt = (f,x,y) => f[cellIdx(x,y)];
@@ -169,6 +177,7 @@ const SENSOR_DEFS = [
   ['grief','Grief',0,a=>a.drv.grief],
   ['urge','Urge to reproduce',0,a=>a.drv.urge],
   ['inWater','Swimming',0,a=>a.inWater?1:0],
+  ['atSea','In salt water',0,a=>isSea(a.x,a.y)?1:0],
   ['waterX','Water direction X',0,a=>{ const v=waterVec(a.x,a.y,_wv); return v.d>1?v.dx/v.d:0; }],
   ['waterY','Water direction Y',0,a=>{ const v=waterVec(a.x,a.y,_wv); return v.d>1?v.dy/v.d:0; }],
   ['waterNear','Water proximity',0,a=>{ const v=waterVec(a.x,a.y,_wv); return Math.max(0,1-v.d/a._r); }],
@@ -401,65 +410,99 @@ const TB = {budget:[2,15],strength:[.2,3],speed:[.2,3],thermal:[.2,2.5],sense:[3
 function freshTraits(){ return {budget:rnd(6.5,9),strength:rnd(.8,1.5),speed:rnd(.8,1.6),thermal:rnd(.6,1.4),sense:rnd(60,130),rest:rnd(.7,1.3),regen:rnd(.7,1.3),
   lr:rnd(.004,.03),explore:rnd(.12,1.2),curiosity:rnd(.2,1.2),aggression:rnd(.2,1),social:rnd(.3,1.4),trustful:rnd(.5,1.2),despTrust:rnd(-.3,.3),dread:rnd(.3,1),altruism:rnd(0,.6),greed:rnd(0,.6),caution:rnd(.5,1.5),hue:rnd(0,360)}; }
 
-// Physical upgrade trees. Each perk has a benefit and a drawback; some are physically incompatible.
-const PERKS = [
-  {id:'muscle',tree:'Might',req:null,cost:1,name:'Dense muscle',good:'+25% attack and hunt damage',bad:'+6% metabolism'},
-  {id:'hide',tree:'Might',req:'muscle',cost:1.2,name:'Thick hide',good:'Takes 30% less damage',bad:'−10% speed'},
-  {id:'jugg',tree:'Might',req:'hide',cost:1.5,name:'Juggernaut',good:'+3 carry capacity; beast bites halved',bad:'−15% speed, +8% metabolism'},
-  {id:'legs',tree:'Swift',req:null,cost:1,name:'Long legs',good:'+15% speed',bad:'−1 carry capacity'},
-  {id:'sprint',tree:'Swift',req:'legs',cost:1.2,name:'Sprinter',good:'+20% speed while energy is above 60',bad:'+6% metabolism'},
-  {id:'lean',tree:'Swift',req:'legs',cost:.8,name:'Lean frame',good:'−12% metabolism',bad:'Max health 80'},
-  {id:'sleeper',tree:'Endurance',req:null,cost:.8,name:'Deep sleeper',good:'Resting restores 60% more energy',bad:'−10% sensing range'},
-  {id:'healer',tree:'Endurance',req:'sleeper',cost:1.2,name:'Fast healer',good:'Heals steadily even while hungry',bad:'+5% metabolism'},
-  {id:'hibernate',tree:'Endurance',req:'sleeper',cost:1,name:'Hibernator',good:'−30% metabolism below 10°C',bad:'−10% speed'},
-  {id:'eyes',tree:'Senses',req:null,cost:1,name:'Keen eyes',good:'+30 sensing range',bad:'+4% metabolism'},
-  {id:'night',tree:'Senses',req:'eyes',cost:1,name:'Night vision',good:'Full sensing range at night',bad:'Overheats 4°C sooner'},
-  {id:'tremor',tree:'Senses',req:'eyes',cost:1,name:'Tremor sense',good:'Detects beasts from 1.6× as far',bad:'−5% speed'},
-  {id:'fur',tree:'Climate',req:null,cost:1,name:'Fur coat',good:'Comfortable down to 5°C',bad:'Overheats above 26°C'},
-  {id:'sweat',tree:'Climate',req:null,cost:1,name:'Sweat glands',good:'Comfortable up to 39°C',bad:'Chills below 18°C'},
-  {id:'webbed',tree:'Aquatic',req:null,cost:1,name:'Webbed feet',good:'Swims 70% faster at half the energy',bad:'−6% speed on land'},
-  {id:'blubber',tree:'Aquatic',req:'webbed',cost:1.2,name:'Blubber',good:'Water barely chills it',bad:'Overheats 4°C sooner, +5% metabolism'},
-  {id:'gut',tree:'Gut',req:null,cost:1,name:'Efficient gut',good:'Food gives 25% more energy',bad:'Max energy 175'},
-  {id:'fat',tree:'Gut',req:'gut',cost:1.2,name:'Fat reserves',good:'Max energy 260',bad:'−8% speed'},
-];
-const PERK = Object.fromEntries(PERKS.map(p=>[p.id,p]));
-const CLASH = [['blubber','sweat'],['blubber','lean'],['jugg','sprint'],['hide','lean'],['fur','sweat'],['fat','lean'],['hibernate','sprint']];
-const clashes = (perks,id) => CLASH.some(([x,y])=>(x===id&&perks.includes(y))||(y===id&&perks.includes(x)));
-function perkAvailable(perks,p){ return !perks.includes(p.id)&&(!p.req||perks.includes(p.req))&&!clashes(perks,p.id); }
-function mutatePerks(src){
-  const perks=[...src], mu=settings.mutation;
-  if (Math.random()<.07*mu){ const opts=PERKS.filter(p=>perkAvailable(perks,p)); if (opts.length) perks.push(pick(opts).id); }
-  if (Math.random()<.035*mu&&perks.length){ const leaves=perks.filter(id=>!perks.some(o=>PERK[o].req===id)); if (leaves.length) perks.splice(perks.indexOf(pick(leaves)),1); }
-  return perks;
+// ---------- genes ----------
+// A genome is a list of genes. Each gene nudges a few body dials, optionally only under one condition
+// (cold, night, young, starving, swimming...). Genes duplicate, mutate, gain and lose effects, change condition,
+// appear from nothing and disappear, all by chance. Nothing here says which genes are good: physics prices every
+// dial, so an improvement costs body budget and an impairment gives some of it back, and selection does the rest.
+const DIALS = {
+  speed:   {kind:'mul',lo:-.4, hi:.6, cost:3,   good:1,  label:'speed'},
+  dmg:     {kind:'mul',lo:-.4, hi:.8, cost:2,   good:1,  label:'hit power'},
+  armor:   {kind:'mul',lo:-.5, hi:.5, cost:2.5, good:-1, label:'damage taken'},
+  carry:   {kind:'add',lo:-3,  hi:4,  cost:.3,  good:1,  label:'carry capacity'},
+  metab:   {kind:'mul',lo:-.35,hi:.4, cost:4,   good:-1, label:'metabolism'},
+  sense:   {kind:'add',lo:-40, hi:60, cost:.02, good:1,  label:'sensing range'},
+  maxE:    {kind:'add',lo:-60, hi:80, cost:.008,good:1,  label:'max energy'},
+  maxH:    {kind:'add',lo:-40, hi:50, cost:.015,good:1,  label:'max health'},
+  regen:   {kind:'add',lo:-.004,hi:.03,cost:40, good:1,  label:'healing'},
+  rest:    {kind:'mul',lo:-.5, hi:1,  cost:1,   good:1,  label:'rest recovery'},
+  swim:    {kind:'mul',lo:-.3, hi:1.2,cost:.8,  good:1,  label:'swimming'},
+  chill:   {kind:'mul',lo:-.8, hi:1,  cost:.8,  good:-1, label:'chill in water'},
+  coldT:   {kind:'add',lo:-12, hi:8,  cost:.08, good:-1, label:'feels cold below (°C)'},
+  hotT:    {kind:'add',lo:-8,  hi:12, cost:.08, good:1,  label:'overheats above (°C)'},
+  food:    {kind:'mul',lo:-.2, hi:.4, cost:3,   good:1,  label:'energy from food'},
+  predMul: {kind:'mul',lo:-.3, hi:1,  cost:.8,  good:1,  label:'beast detection'},
+  fertility:{kind:'mul',lo:-.5,hi:.8, cost:1.2, good:1,  label:'fertility'},
+  brain:   {kind:'mul',lo:-.4, hi:.4, cost:1.5, good:-1, label:'brain upkeep'},
+  lifespan:{kind:'mul',lo:-.3, hi:.3, cost:3,   good:1,  label:'lifespan'},
+};
+const DIAL_KEYS = Object.keys(DIALS);
+// a conditional gene is only switched on part of the time, so it costs proportionally less
+const CONDS = {always:1, cold:.5, hot:.5, night:.5, day:.5, young:.3, old:.3, starving:.3, fed:.6, swimming:.3, hurt:.3};
+const COND_KEYS = Object.keys(CONDS);
+const condOn = (a,c) => c==='always'||(c==='cold'&&a._t<12)||(c==='hot'&&a._t>28)||(c==='night'&&dayS<-.15)||(c==='day'&&dayS>.15)||(c==='young'&&a.age<600)||(c==='old'&&a.age>a.lifespan*.7)||(c==='starving'&&a.energy<40)||(c==='fed'&&a.energy>100)||(c==='swimming'&&a.inWater)||(c==='hurt'&&a.health<a.phBase.maxH*.5);
+function geneCost(g){
+  let c=.05;   // every gene costs a little to carry
+  for (const [d,v] of Object.entries(g.fx)){ const D=DIALS[d]; if (!D) continue; const benefit=v*D.good*D.cost; c+=benefit>0?benefit:benefit*.6; }
+  return c*CONDS[g.cond];
 }
-const perkCost = perks => perks.reduce((s,id)=>s+(PERK[id]?PERK[id].cost:0),0);
-const traitCost = (t,perks=[]) => t.strength*1.7+t.speed*1.5+t.thermal*.8+t.sense/95+t.rest*.6+t.regen*.7+perkCost(perks)+(t.social+t.aggression)*.12;
-const traitMetab = (t,perks=[]) => { const c=traitCost(t,perks); return .7+.12*t.budget+.13*Math.max(0,c-t.budget)+.025*c; };
-// derived physiology: what the traits and perks add up to, cached on the agent
+let nextGene=1;
+const geneName = () => { const n=makeName(); return n.length<3?n+VOW[Math.floor(Math.random()*5)]+CON[Math.floor(Math.random()*CON.length)]:n; };
+function newGene(fx,cond='always',name){ return {id:nextGene++,name:name||geneName(),cond,fx}; }
+function randomEffect(g){ const free=DIAL_KEYS.filter(d=>!(d in g.fx)); if (!free.length) return; const d=pick(free), D=DIALS[d]; g.fx[d]=+(rnd(D.lo,D.hi)*.35).toFixed(4); }
+// the old upgrades survive as a starting library of ordinary genes
+const GENE_LIBRARY = [
+  ['Dense muscle','always',{dmg:.25,metab:.06}], ['Thick hide','always',{armor:-.3,speed:-.1}], ['Long legs','always',{speed:.15,carry:-1}],
+  ['Lean frame','always',{metab:-.12,maxH:-20}], ['Deep sleeper','always',{rest:.6,sense:-10}], ['Fast healer','always',{regen:.025,metab:.05}],
+  ['Hibernator','cold',{metab:-.3,speed:-.1}], ['Keen eyes','always',{sense:30,metab:.04}], ['Night vision','night',{sense:30,hotT:-4}],
+  ['Tremor sense','always',{predMul:.6,speed:-.05}], ['Fur coat','always',{coldT:-10,hotT:-5}], ['Sweat glands','always',{hotT:8,coldT:3}],
+  ['Webbed feet','always',{swim:.7,speed:-.06}], ['Blubber','always',{chill:-.8,hotT:-4,metab:.05}], ['Efficient gut','always',{food:.25,maxE:-25}],
+  ['Fat reserves','always',{maxE:60,speed:-.08}], ['Sprinter','fed',{speed:.2,metab:.06}], ['Juggernaut','always',{carry:3,armor:-.2,speed:-.15,metab:.08}],
+];
+const PERK_TO_GENE = {muscle:0,hide:1,legs:2,lean:3,sleeper:4,healer:5,hibernate:6,eyes:7,night:8,tremor:9,fur:10,sweat:11,webbed:12,blubber:13,gut:14,fat:15,sprint:16,jugg:17};
+const libGene = i => { const [n,c,fx]=GENE_LIBRARY[i]; return newGene({...fx},c,n); };
+function founderGenes(){ const g=[]; const k=Math.floor(Math.random()*3); for (let i=0;i<k;i++) g.push(libGene(Math.floor(Math.random()*GENE_LIBRARY.length))); if (Math.random()<.5){ const x=newGene({},Math.random()<.7?'always':pick(COND_KEYS)); randomEffect(x); g.push(x); } return g; }
+function mutateGenes(src){
+  const mu=settings.mutation, out=[];
+  for (const s0 of src){
+    const g={id:s0.id,name:s0.name,cond:s0.cond,fx:{...s0.fx}}, keys=Object.keys(g.fx);
+    if (keys.length&&Math.random()<.25*mu){ const d=pick(keys), D=DIALS[d], span=D.hi-D.lo; g.fx[d]=+clamp(g.fx[d]+rnd(-1,1)*span*.08,D.lo,D.hi).toFixed(4); }
+    if (Math.random()<.04*mu) randomEffect(g);
+    if (keys.length>1&&Math.random()<.04*mu) delete g.fx[pick(keys)];
+    if (Math.random()<.02*mu) g.cond=Math.random()<.5?'always':pick(COND_KEYS);
+    if (Object.keys(g.fx).length) out.push(g);
+  }
+  if (out.length&&Math.random()<.05*mu&&out.length<14){ const p=pick(out), d={...newGene({...p.fx},p.cond)}; const k=pick(Object.keys(d.fx)), D=DIALS[k]; d.fx[k]=+clamp(d.fx[k]+rnd(-1,1)*(D.hi-D.lo)*.1,D.lo,D.hi).toFixed(4); out.push(d); }   // duplication
+  if (out.length&&Math.random()<.03*mu) out.splice(Math.floor(Math.random()*out.length),1);   // loss
+  if (Math.random()<.04*mu&&out.length<14){ const g=newGene({},Math.random()<.7?'always':pick(COND_KEYS)); randomEffect(g); if (Math.random()<.4) randomEffect(g); out.push(g); }   // a new gene from nothing
+  return out;
+}
+function mixGenes(x,y){
+  // shared genes (same lineage) come from either parent; a gene only one parent carries is inherited half the time
+  const byId=new Map(); for (const g of x) byId.set(g.id,[g]); for (const g of y){ const e=byId.get(g.id); if (e) e.push(g); else byId.set(g.id,[g]); }
+  const out=[]; for (const v of byId.values()){ if (v.length===2) out.push(pick(v)); else if (Math.random()<.5) out.push(v[0]); }
+  return out.slice(0,14);
+}
+const genesCost = genes => genes.reduce((s,g)=>s+geneCost(g),0);
+const traitCost = (t,genes=[]) => t.strength*1.7+t.speed*1.5+t.thermal*.8+t.sense/95+t.rest*.6+t.regen*.7+genesCost(genes)+(t.social+t.aggression)*.12;
+const traitMetab = (t,genes=[]) => { const c=traitCost(t,genes); return .7+.12*t.budget+.13*Math.max(0,c-t.budget)+.025*c; };
+function applyFx(ph,fx){ for (const d in fx){ const D=DIALS[d]; if (!D) continue; if (D.kind==='mul') ph[d]*=1+fx[d]; else ph[d]+=fx[d]; } }
+function clampPh(ph){ ph.speed=Math.max(.3,ph.speed); ph.dmg=Math.max(.3,ph.dmg); ph.armor=Math.max(.3,ph.armor); ph.metab=Math.max(.5,ph.metab); ph.maxE=Math.max(80,ph.maxE); ph.maxH=Math.max(40,ph.maxH); ph.regen=Math.max(0,ph.regen); ph.rest=Math.max(.2,ph.rest); ph.swim=Math.max(.3,ph.swim); ph.chill=Math.max(0,ph.chill); ph.food=Math.max(.5,ph.food); ph.predMul=Math.max(.5,ph.predMul); ph.sense=Math.max(20,ph.sense); ph.brain=Math.max(.4,ph.brain); ph.fertility=Math.max(.2,ph.fertility); }
+// derived physiology: traits plus always-on genes are fixed at birth; conditional genes are layered on each tick
 function derive(a){
-  const t=a.traits, has=id=>a.perks.includes(id);
-  const ph={speed:1,dmg:1,armor:1,beastArmor:1,carry:0,metab:1,senseAdd:0,senseMul:1,coldT:15,hotT:31,food:1,maxE:200,maxH:100,rest:t.rest,regen:.004*t.regen,predMul:1,night:false,hib:false,sprint:false,swim:1,chill:1};
-  if (has('muscle')){ ph.dmg*=1.25; ph.metab*=1.06; }
-  if (has('hide')){ ph.armor*=.7; ph.speed*=.9; }
-  if (has('jugg')){ ph.carry+=3; ph.beastArmor*=.5; ph.speed*=.85; ph.metab*=1.08; }
-  if (has('legs')){ ph.speed*=1.15; ph.carry-=1; }
-  if (has('sprint')){ ph.sprint=true; ph.metab*=1.06; }
-  if (has('lean')){ ph.metab*=.88; ph.maxH=80; }
-  if (has('sleeper')){ ph.rest*=1.6; ph.senseMul*=.9; }
-  if (has('healer')){ ph.regen+=.025; ph.metab*=1.05; }
-  if (has('hibernate')){ ph.hib=true; ph.speed*=.9; }
-  if (has('eyes')){ ph.senseAdd+=30; ph.metab*=1.04; }
-  if (has('night')){ ph.night=true; ph.hotT-=4; }
-  if (has('tremor')){ ph.predMul=1.6; ph.speed*=.95; }
-  if (has('fur')){ ph.coldT=5; ph.hotT=Math.min(ph.hotT,26); }
-  if (has('sweat')){ ph.hotT+=8; ph.coldT=18; }
-  if (has('webbed')){ ph.swim=1.7; ph.speed*=.94; }
-  if (has('blubber')){ ph.chill=.2; ph.hotT-=4; ph.metab*=1.05; }
-  if (has('gut')){ ph.food=1.25; ph.maxE=175; }
-  if (has('fat')){ ph.maxE=260; ph.speed*=.92; }
-  ph.sense=(t.sense+ph.senseAdd)*ph.senseMul;
-  ph.baseMetab=traitMetab(t,a.perks);
-  a.ph=ph; a.health=Math.min(a.health,ph.maxH);
+  const t=a.traits;
+  const ph={speed:1,dmg:1,armor:1,beastArmor:1,carry:0,metab:1,coldT:15,hotT:31,food:1,maxE:200,maxH:100,rest:t.rest,regen:.004*t.regen,predMul:1,swim:1,chill:1,sense:t.sense,fertility:1,brain:1,lifespan:1};
+  a.condGenes=[];
+  for (const g of a.genes){ if (g.cond==='always') applyFx(ph,g.fx); else a.condGenes.push(g); }
+  clampPh(ph);
+  ph.baseMetab=traitMetab(t,a.genes);
+  a.phBase=ph; a.ph=ph; a.health=Math.min(a.health,ph.maxH);
+}
+function expressGenes(a){
+  if (!a.condGenes.length) { a.ph=a.phBase; return; }
+  let ph=null;
+  for (const g of a.condGenes) if (condOn(a,g.cond)){ if (!ph) ph={...a.phBase}; applyFx(ph,g.fx); }
+  if (ph){ clampPh(ph); a.ph=ph; } else a.ph=a.phBase;
 }
 function mutateTraits(src){
   const t={}, mu=Math.sqrt(settings.mutation), sP=.07*mu, sM=.2*mu;
@@ -480,14 +523,14 @@ function makeName(){
   if (Math.random()<.5) n=[...n].reverse().join('');
   return n[0].toUpperCase()+n.slice(1);
 }
-function makeAgent(x,y,brain=freshBrain(),gen=0,parent=null,traits=freshTraits(),energy=90,lineage=[],perks=[]){
+function makeAgent(x,y,brain=freshBrain(),gen=0,parent=null,traits=freshTraits(),energy=90,lineage=[],genes=null){
   const a={id:nextId++,name:makeName(),x,y,vx:0,vy:0,hd:rnd(0,6.283),brain,gen,parent,lineage,traits,energy,health:100,prevHealth:100,lastBirth:-1e9,lastHurtBy:0,lastHurtAt:-1e9,clan:null,history:[],age:0,lifespan:rnd(3600,5100),
     inv:{food:0,wood:0,stone:0},tool:0,memory:0,memA:0,memB:0,signal:0,pain:0,trust:new Map(),lastChoice:O-1,probs:new Float32Array(O),
     builds:0,success:0,kids:0,shared:0,stolen:0,attacks:0,kills:0,hunts:0,beastKills:0,crafts:0,deposits:0,
-    actionCounts:new Uint32Array(O),okCounts:new Uint32Array(O),stash:0,shareHeat:0,phi:0,baseline:0,
+    genes:[],condGenes:[],actionCounts:new Uint32Array(O),okCounts:new Uint32Array(O),stash:0,shareHeat:0,phi:0,baseline:0,
     drv:{urge:0,grief:0,hunger:0,thirst:.2,cold:0,injury:0,fatigue:.1,lonely:.2,insecure:.8},owed:new Map(),inWater:false,thanked:new Map(),thanksGot:0,lovesGot:0,coparent:null,partners:0,sheltered:false,harm:'hunger',fx:0,_t:20};
   for (const k of [...PHYS,...MENT]) if (a.traits[k]==null) a.traits[k]=freshTraits()[k];
-  a.perks=perks.filter(id=>PERK[id]); derive(a); updateDrives(a,20,false,0,0); a.phi=wellbeing(a);
+  a.genes=genes||founderGenes(); derive(a); a.lifespan*=a.phBase.lifespan; updateDrives(a,20,false,0,0); a.phi=wellbeing(a);
   compileBrain(a); if (gen>maxGen) maxGen=gen; return a;
 }
 // using another yip's store or house with its owner's trust: the guest feels grateful
@@ -532,19 +575,18 @@ function child(a,mate){
   if (!mate) return soloChild(a);
   const lineage=[{id:a.id,name:a.name,gen:a.gen,hue:a.traits.hue},...a.lineage].slice(0,12);
   // traits blend, compatible upgrades can come from either parent, and the brain comes from one of them
-  const traits=blendTraits(a.traits,mate.traits), perks=[...a.perks];
-  for (const id of mate.perks) if (Math.random()<.5&&perkAvailable(perks,PERK[id])) perks.push(id);
+  const traits=blendTraits(a.traits,mate.traits), genes=mixGenes(a.genes,mate.genes);
   mate.drv.lonely=Math.max(0,mate.drv.lonely-.25); a.drv.lonely=Math.max(0,a.drv.lonely-.25);
   a.partners++; mate.partners++; tally.pairings++;
   const brain=Math.random()<.5?a.brain:mate.brain;
-  const c=makeAgent(wrapX((a.x+wd(mate.x-a.x,W)/2)+rnd(-6,6)),wrapY((a.y+wd(mate.y-a.y,H)/2)+rnd(-6,6)),mutateBrain(brain),Math.max(a.gen,mate.gen)+1,a.id,mutateTraits(traits),80,lineage,mutatePerks(perks));
+  const c=makeAgent(wrapX((a.x+wd(mate.x-a.x,W)/2)+rnd(-6,6)),wrapY((a.y+wd(mate.y-a.y,H)/2)+rnd(-6,6)),mutateBrain(brain),Math.max(a.gen,mate.gen)+1,a.id,mutateTraits(traits),80,lineage,mutateGenes(genes));
   c.coparent=mate.id; c.clan=a.clan||mate.clan||a.name;
   const inbred=kinship(a,mate); if (inbred>0){ c.lifespan*=1-.35*inbred; c.health=c.ph.maxH*(1-.3*inbred); c.inbred=inbred; }
   setTrust(c,a.id,.5); setTrust(a,c.id,.5); setTrust(c,mate.id,.5); setTrust(mate,c.id,.5);
   a.kids++; mate.kids++; return c;
 }
 function soloChild(a){   // only used when reseeding from the archive
-  const c=makeAgent(wrapX(a.x+rnd(-13,13)),wrapY(a.y+rnd(-13,13)),mutateBrain(a.brain),a.gen+1,a.id,mutateTraits(a.traits),80,[{id:a.id,name:a.name,gen:a.gen,hue:a.traits.hue},...a.lineage].slice(0,12),mutatePerks(a.perks));
+  const c=makeAgent(wrapX(a.x+rnd(-13,13)),wrapY(a.y+rnd(-13,13)),mutateBrain(a.brain),a.gen+1,a.id,mutateTraits(a.traits),80,[{id:a.id,name:a.name,gen:a.gen,hue:a.traits.hue},...a.lineage].slice(0,12),mutateGenes(a.genes));
   a.kids++; return c;
 }
 const load = a => a.inv.food+a.inv.wood*1.4+a.inv.stone*2;
@@ -698,12 +740,13 @@ function inside(a){
 function tempAt(a){
   let t=baseTemp; for (const b of fires) if (b.hp>0){ const dx=wd(a.x-b.x,W), dy=wd(a.y-b.y,H); if (dx*dx+dy*dy<4225) t+=22*(1-Math.sqrt(dx*dx+dy*dy)/65); }
   const s=inside(a); if (s) t=20+(t-20)*(s.type==='house'?.2:.55);   // houses insulate: interiors stay near 20°C
-  if (isWater(a.x,a.y)) t=Math.min(t,baseTemp*.8)-6*a.ph.chill;      // water is colder than the air and steals body heat
+  if (isWater(a.x,a.y)) t=Math.min(t,baseTemp*.8)-(isSea(a.x,a.y)?9:6)*a.ph.chill;      // water is colder than the air and steals body heat
   return t;
 }
 const env = {friend:{},food:{},tree:{},stone:{},shelter:{},fire:{},storm:{},other:{},pred:{},crowd:{n:0,sig:0},wall:30};
 function sense(a){
-  const r=a.ph.sense*(dayS<-.15&&!a.ph.night?.75:1), m=a.qmask; a._r=r;
+  expressGenes(a);
+  const r=a.ph.sense*(dayS<-.15?.75:1), m=a.qmask; a._r=r;
   if (m&Q.FOOD) nearestIn(gFood,a,r,env.food);
   if (m&Q.TREE) nearestIn(gTree,a,r,env.tree);
   if (m&Q.STONE) nearestIn(gStone,a,r,env.stone);
@@ -727,7 +770,7 @@ function act(a,choice,e){
   switch (choice){
     case 0: case 1: case 2: case 3: {
       const swim=a.inWater?.45*a.ph.swim:1;
-      const sp=(.7+a.traits.speed*1.7)*a.ph.speed*(a.ph.sprint&&a.energy>60?1.2:1)*swim/(1+load(a)/(capacity(a)*1.2));
+      const sp=(.7+a.traits.speed*1.7)*a.ph.speed*swim/(1+load(a)/(capacity(a)*1.2));
       a.vx=a.vx*.35+DX[choice]*sp*.65; a.vy=a.vy*.35+DY[choice]*sp*.65; a.energy-=.008*sp*(a.inWater?2.5/a.ph.swim:1); moved=true; break;
     }
     case A_.HARVEST: {
@@ -805,7 +848,7 @@ function act(a,choice,e){
     case A_.DRINK: {
       // drinking works in the water or right at its edge
       const v=waterVec(a.x,a.y,_wv);
-      if (a.inWater||v.d<FC*.9){ a.drv.thirst=Math.max(0,a.drv.thirst-.35); ok=true; }
+      if ((a.inWater&&!isSea(a.x,a.y))||v.d<FC*.9){ a.drv.thirst=Math.max(0,a.drv.thirst-.35); ok=true; }
       break;
     }
     case A_.THANK:
@@ -839,7 +882,7 @@ function sendStorm(){ storms.push({x:rnd(0,W),y:rnd(50,H-50),w:rnd(90,170),h:rnd
 function archive(a){
   const score=a.age+a.kids*350+a.builds*60+a.success*2+a.beastKills*200+a.shared*20;
   if (elite.length<24||score>elite[elite.length-1].score){
-    elite.push({score,gen:a.gen,id:a.id,name:a.name,traits:{...a.traits},perks:[...a.perks],brain:copyBrain(a.brain)});
+    elite.push({score,gen:a.gen,id:a.id,name:a.name,traits:{...a.traits},genes:a.genes.map(g=>({...g,fx:{...g.fx}})),brain:copyBrain(a.brain)});
     elite.sort((x,y)=>y.score-x.score); if (elite.length>24) elite.length=24;
   }
 }
@@ -849,7 +892,7 @@ function reseed(){
   for (let i=0;i<n;i++){
     if (i%5===0){ for (const p of band) for (const q of band) if (p!==q) setTrust(p,q.id,.3); band=[]; [bx,by]=spawnPoint(fert,1); }
     const src=elite.length?pick(elite):null, x=wrapX(bx+rnd(-25,25)), y=wrapY(by+rnd(-25,25));
-    const nb=src?makeAgent(x,y,mutateBrain(src.brain),src.gen+1,null,mutateTraits(src.traits),90,[{id:src.id,name:src.name,gen:src.gen,hue:src.traits.hue}],mutatePerks(src.perks||[])):makeAgent(x,y); agents.push(nb); band.push(nb); if (band.length===1) band.clanName=nb.name; nb.clan=band.clanName;
+    const nb=src?makeAgent(x,y,mutateBrain(src.brain),src.gen+1,null,mutateTraits(src.traits),90,[{id:src.id,name:src.name,gen:src.gen,hue:src.traits.hue}],mutateGenes(src.genes||[])):makeAgent(x,y); agents.push(nb); band.push(nb); if (band.length===1) band.clanName=nb.name; nb.clan=band.clanName;
   }
   for (const p of band) for (const q of band) if (p!==q) setTrust(p,q.id,.3);
   log(`Extinction. ${n} colonists reseeded from ${elite.length?elite.length+' archived genomes':'scratch'}`,'death');
@@ -892,7 +935,7 @@ function tick(){
     const preDrv=a.drv.cold, choice=a.lastChoice, bonus=act(a,choice,env);
     const sheltered=inside(a), storm=stormAt(a), lt=tempAt(a), ph=a.ph, cold=Math.max(0,ph.coldT-lt), hot=Math.max(0,lt-ph.hotT), thermal=(cold+hot)/(16*a.traits.thermal); a._t=lt;
     a.sheltered=!!sheltered; a.inWater=isWater(a.x,a.y);
-    a.energy-=drainK*ph.baseMetab*ph.metab*(ph.hib&&lt<10?.7:1)+a.brainCost+thermal*(sheltered?.006:.045);
+    a.energy-=drainK*ph.baseMetab*ph.metab+a.brainCost*ph.brain+thermal*(sheltered?.006:.045);
     if (a.energy>40||ph.regen>.02) a.health=Math.min(ph.maxH,a.health+ph.regen);
     if (storm&&!sheltered){ const wb=nearestWall(a,12)<12?.4:1; a.health-=.15*settings.storm*wb; a.energy-=.12*settings.storm*wb; a.harm='storm'; }
     for (const b of fires){ const dx=wd(a.x-b.x,W), dy=wd(a.y-b.y,H); if (dx*dx+dy*dy<(b.r+2)*(b.r+2)){ a.health-=.4; a.energy-=.1; a.harm='fire'; } }
@@ -958,27 +1001,49 @@ function pushHistory(){
   }
 }
 
-function reset(newShape){
+// ---------- yip library: genomes kept between runs ----------
+const yipScore=a=>a.age+a.kids*350+a.builds*60+a.success*2+a.beastKills*200+a.shared*20;
+// a genome is what a yip passes on plus what it learned: its effective brain (inherited + learned weights folded together)
+function genomeOf(a){
+  const b=a.brain, w=b.w.map((f,l)=>{ const d=a.learned[l], o=new Array(f.length); for (let i=0;i<f.length;i++) o[i]=r4(f[i]+d[i]); return o; });
+  return {name:a.name,gen:a.gen,clan:a.clan,score:Math.round(yipScore(a)),kids:a.kids,age:a.age|0,island,tick:ticks,traits:{...a.traits},genes:a.genes.map(g=>({...g,fx:{...g.fx}})),brain:{inputs:b.inputs,sizes:b.sizes,w}};
+}
+function libraryPack(m){
+  if (m.id){ const a=agents.find(x=>x.id===m.id); return a?[genomeOf(a)]:[]; }
+  return agents.filter(a=>a.age>200).sort((x,y)=>yipScore(y)-yipScore(x)).slice(0,m.n||10).map(genomeOf);
+}
+function reset(newShape,seeds){
   if (newShape) setSize(newShape);
   seed=(Math.random()*2**31)|0; makeFields(seed);
   agents=[]; items=[]; buildings=[]; storms=[]; beasts=[]; events=[]; history=[]; elite=[]; repMap.clear();
   ticks=0; nextId=1; nextBid=1; births=0; deaths=0; maxGen=0; peakPop=0; lastMilestone=0;
   deathsBy={age:0,hunger:0,thirst:0,drowning:0,storm:0,fire:0,beast:0,attack:0}; for (const k in tally) tally[k]=0; lastTally={...tally}; for (const k in relTally) relTally[k]=[0,0,0,0];
   // founders arrive in bands of five who already trust each other a little
+  // with library seeds: one exact copy of each, the rest are mutated offspring of them
+  const lib=(seeds||[]).map(g=>({...g,brain:deBrain(g.brain)})); let k=0;
+  const founder=(x,y)=>{
+    if (!lib.length) return makeAgent(x,y);
+    const src=lib[k%lib.length], exact=k<lib.length; k++;
+    const lin=[{id:0,name:src.name,gen:src.gen,hue:src.traits.hue}];
+    const a=exact?makeAgent(x,y,copyBrain(src.brain),src.gen,null,{...src.traits},90,lin,src.genes.map(g=>({...g,fx:{...g.fx}})))
+                 :makeAgent(x,y,mutateBrain(src.brain),src.gen+1,null,mutateTraits(src.traits),90,lin,mutateGenes(src.genes||[]));
+    if (exact) a.name=src.name;
+    return a;
+  };
   for (let b=0;b<60;b++){ const [bx,by]=spawnPoint(fert,1), band=[];
-    for (let i=0;i<5;i++){ let x=wrapX(bx+rnd(-25,25)), y=wrapY(by+rnd(-25,25)); if (isWater(x,y)){ x=bx; y=by; } const a=makeAgent(x,y); band.push(a); agents.push(a); }
+    for (let i=0;i<5;i++){ let x=wrapX(bx+rnd(-25,25)), y=wrapY(by+rnd(-25,25)); if (isWater(x,y)){ x=bx; y=by; } const a=founder(x,y); band.push(a); agents.push(a); }
     for (const a of band) a.clan=band[0].name;
     for (const a of band) for (const o of band) if (a!==o) setTrust(a,o.id,.3); }
   for (let i=0;i<1100;i++) addItem('food'); for (let i=0;i<420;i++) addItem('tree'); for (let i=0;i<320;i++) addItem('stone');
   for (let i=0;i<settings.beasts;i++) spawnBeast();
-  selected=0; log(`Island ${'ABCD'[island]||island+1}: 300 founders released in 60 bands. Fertile valleys, forests and rocky ground are spread across the map.`,'birth');
+  selected=0; if (lib.length) log(`Island ${'ABCD'[island]||island+1}: 300 founders bred from ${lib.length} library yip${lib.length>1?'s':''}: ${lib.slice(0,8).map(g=>g.name).join(', ')}${lib.length>8?'…':''}`,'birth'); else log(`Island ${'ABCD'[island]||island+1}: 300 founders released in 60 bands. Fertile valleys, forests and rocky ground are spread across the map.`,'birth');
   if (viewing) postMeta();
 }
 
 // ---------- serialization ----------
 const r4 = v => Math.round(v*1e4)/1e4, r2 = v => Math.round(v*100)/100;
 const serBrain = b => ({inputs:b.inputs,sizes:b.sizes,w:b.w.map(f=>Array.from(f,r4))});
-const AGENT_KEYS=['clan','history','lastHurtBy','lastHurtAt','name','gen','parent','lineage','traits','perks','stash','thanksGot','lovesGot','coparent','partners','age','lifespan','inv','tool','builds','success','kids','shared','stolen','attacks','kills','hunts','beastKills','crafts','deposits'];
+const AGENT_KEYS=['clan','history','lastHurtBy','lastHurtAt','name','gen','parent','lineage','traits','genes','stash','thanksGot','lovesGot','coparent','partners','age','lifespan','inv','tool','builds','success','kids','shared','stolen','attacks','kills','hunts','beastKills','crafts','deposits'];
 function serAgent(a){
   const o={drv:a.drv,owed:[...a.owed],id:a.id,x:r2(a.x),y:r2(a.y),hd:r2(a.hd),energy:r2(a.energy),health:r2(a.health),memory:r4(a.memory),memA:r4(a.memA),memB:r4(a.memB),baseline:r4(a.baseline),
     trust:[...a.trust].map(([k,v])=>[k,r4(v)]),actionCounts:Array.from(a.actionCounts),brain:serBrain(a.brain),learned:a.learned.map(f=>Array.from(f,r4))};
@@ -1013,9 +1078,11 @@ function deserialize(s){
 }
 function deAgent(o,sx=1,sy=1,old=false,reg={}){
     const brain=deBrain(o.brain);
-    const a=makeAgent(o.x*sx,o.y*sy,brain,o.gen||0,o.parent??null,{...freshTraits(),...o.traits},o.energy,[],o.perks||[]);
+    const genes=o.genes||(o.perks||[]).filter(p=>p in PERK_TO_GENE).map(p=>libGene(PERK_TO_GENE[p]));
+    for (const g of genes) if (g.id>=nextGene) nextGene=g.id+1;
+    const a=makeAgent(o.x*sx,o.y*sy,brain,o.gen||0,o.parent??null,{...freshTraits(),...o.traits},o.energy,[],genes);
     a.id=o.id;
-    for (const k of AGENT_KEYS) if (o[k]!==undefined&&k!=='traits'&&k!=='gen'&&k!=='parent') a[k]=o[k];
+    for (const k of AGENT_KEYS) if (o[k]!==undefined&&k!=='traits'&&k!=='gen'&&k!=='parent'&&k!=='genes') a[k]=o[k];
     Object.assign(a,{health:o.health,prevHealth:o.health,memory:o.memory||0,memA:o.memA||0,memB:o.memB||0,baseline:o.baseline||0,hd:o.hd||0,lifespan:o.lifespan||rnd(3600,5100),inv:o.inv||{food:0,wood:0,stone:0}});
     a.trust=new Map(Array.isArray(o.trust)?o.trust:Object.entries(o.trust||{}).map(([k,v])=>[+k,v])); a.owed=new Map(o.owed||[]);
     if (o.actionCounts&&o.actionCounts.length===O) a.actionCounts=Uint32Array.from(o.actionCounts);
@@ -1034,7 +1101,7 @@ function restOfDeserialize(s,A,sx,sy,old){
   nextBid=Math.max(nextBid,...buildings.map(b=>b.id+1),1);
   storms=(s.storms||[]).map(x=>({max:650,...x})); beasts=(s.beasts||[]).map(z=>({...z,target:null}));
   events=(s.events||[]).map(e=>typeof e==='string'?{t:0,s:e,kind:'info'}:e); history=Array.isArray(s.history)&&!old?s.history:[];
-  elite=(s.elite||[]).map(e=>({...e,brain:deBrain(e.brain)}));
+  elite=(s.elite||[]).map(e=>({...e,genes:e.genes||[],brain:deBrain(e.brain)}));
   Object.assign(settings,s.settings||{}); selected=s.selected||0; lastMilestone=maxGen-maxGen%10;
   log(old?'Older snapshot loaded and moved onto the new 1.5 world':'Snapshot loaded','info');
   if (viewing) postMeta();
@@ -1042,7 +1109,7 @@ function restOfDeserialize(s,A,sx,sy,old){
 
 // ---------- reporting ----------
 let lastPulse=0, sendPher=false, started=false, running=true, speed=3, maxMode=false, last=performance.now(), acc=0, stepsWin=0, tps=0, lastMetrics=last, lastFrame=0, lastStats=0, lastInspect=0, inspecting=false;
-function postMeta(){ self.postMessage({type:'meta',water,drives:DRIVES,bounds:TB,perks:PERKS,clash:CLASH,phys:PHYS,ment:MENT,traitInfo:TRAIT_INFO,senses:SENSES,actions:ACTIONS,short:SHORT,cont:CONT,W,H,FW,FH,FC,shape,settings,fert,forest,rock,seed}); }
+function postMeta(){ self.postMessage({type:'meta',water,drives:DRIVES,bounds:TB,dials:DIALS,conds:CONDS,phys:PHYS,ment:MENT,traitInfo:TRAIT_INFO,senses:SENSES,actions:ACTIONS,short:SHORT,cont:CONT,W,H,FW,FH,FC,shape,settings,fert,forest,rock,seed}); }
 function postFrame(){
   const na=agents.length, A=new Float32Array(na*10);
   for (let i=0,o=0;i<na;i++,o+=10){ const a=agents[i]; A[o]=a.id; A[o+1]=a.x; A[o+2]=a.y; A[o+3]=a.traits.hue; A[o+4]=a.hd; A[o+5]=a.energy/200; A[o+6]=a.health/100;
@@ -1059,6 +1126,11 @@ function postFrame(){
   const P=sendPher?Uint8Array.from(pher,v=>Math.min(255,v*40)):null; sendPher=false;
   self.postMessage({type:'frame',P,ticks,tps,running,maxMode,temp:baseTemp,day:settings.day,season:settings.season,A,I,B,S,Z},[A.buffer,I.buffer,B.buffer,S.buffer,Z.buffer]);
 }
+function topGenes(){
+  const m=new Map();
+  for (const a of agents) for (const g of a.genes){ const e=m.get(g.id); if (e) e.n++; else m.set(g.id,{n:1,g}); }
+  return [...m.values()].sort((x,y)=>y.n-x.n).slice(0,12).map(({n,g})=>({id:g.id,name:g.name,cond:g.cond,fx:g.fx,share:n/Math.max(1,agents.length)}));
+}
 function postStats(withHistory){
   const n=agents.length||1, sensUse={}, act=new Float64Array(O), byType={house:0,store:0,wall:0,fire:0};
   let layers=0, neurons=0, inputs=0, tools=0, stocked=0;
@@ -1071,7 +1143,7 @@ function postStats(withHistory){
   for (const a of agents){ const k=a.clan||a.name; let f=fam.get(k); if (!f){ f={clan:k,n:0,gen:0,act:new Float64Array(O),hue:0}; fam.set(k,f); } f.n++; f.gen=Math.max(f.gen,a.gen); f.hue+=a.traits.hue; let tot=0; for (let i=0;i<O;i++) tot+=a.actionCounts[i]; if (tot) for (let i=0;i<O;i++) f.act[i]+=a.actionCounts[i]/tot; }
   const families=[...fam.values()].sort((x,y)=>y.n-x.n).slice(0,10).map(f=>({clan:f.clan,n:f.n,gen:f.gen,hue:f.hue/f.n,mix:Array.from(f.act,v=>v/f.n)}));
   self.postMessage({type:'stats',families,relTally,names,ticks,pop:agents.length,peakPop,births,deaths,deathsBy,tally,maxGen,avgGen:avg(a=>a.gen),byType,counts,temp:baseTemp,beasts:beasts.length,tools,stocked,
-    traits:Object.fromEntries([...PHYS,...MENT].map(k=>[k,t(k)])),perkUse:PERKS.map(p=>[p.id,agents.filter(a=>a.perks.includes(p.id)).length/n]),
+    traits:Object.fromEntries([...PHYS,...MENT].map(k=>[k,t(k)])),geneUse:topGenes(),
     brain:{layers:layers/n,neurons:neurons/n,inputs:inputs/n},sensUse:Object.entries(sensUse).sort((a,b)=>b[1]-a[1]).map(([k,v])=>[k,v/n]),
     actMix:Array.from(act,v=>v/n),events,eliteTop:elite.slice(0,6).map(e=>({id:e.id,name:e.name||('#'+e.id),gen:e.gen,score:e.score|0,hue:e.traits.hue})),history:withHistory?history:null,settings});
 }
@@ -1086,7 +1158,7 @@ function postInspect(){
     builds:a.builds,success:a.success,kids:a.kids,livingKids:kids,sheltered:a.sheltered,temp:a._t,lastChoice:a.lastChoice,probs:Array.from(a.probs),inputs:b.inputs,sizes:b.sizes,ws,
     acts:a.acts.map(x=>Array.from(x)),trust:[...a.trust].sort((x,y)=>Math.abs(y[1])-Math.abs(x[1])).slice(0,10).map(([id,v])=>({id,v,name:nm(id),alive:alive.has(id)})),
     trustedBy:agents.filter(x=>(x.trust.get(a.id)||0)>.3).map(x=>({id:x.id,name:x.name,v:x.trust.get(a.id),hue:x.traits.hue})).sort((p,q)=>q.v-p.v).slice(0,12),coparentAlive:alive.has(a.coparent),
-    lineage:a.lineage.map(l=>({...l,alive:alive.has(l.id)})),lastBirth:a.lastBirth,parent:a.parent,cost:traitCost(a.traits,a.perks),metab:a.ph.baseMetab*a.ph.metab,perks:a.perks,ph:{maxE:a.ph.maxE,maxH:a.ph.maxH,speed:a.ph.speed,dmg:a.ph.dmg,armor:a.ph.armor,coldT:a.ph.coldT,hotT:a.ph.hotT,sense:a.ph.sense},brainCost:a.brainCost,
+    lineage:a.lineage.map(l=>({...l,alive:alive.has(l.id)})),lastBirth:a.lastBirth,parent:a.parent,cost:traitCost(a.traits,a.genes),genes:a.genes.map(g=>({...g,cost:+geneCost(g).toFixed(2),on:condOn(a,g.cond)})),metab:a.ph.baseMetab*a.ph.metab,perks:a.perks,ph:{maxE:a.ph.maxE,maxH:a.ph.maxH,speed:a.ph.speed,dmg:a.ph.dmg,armor:a.ph.armor,coldT:a.ph.coldT,hotT:a.ph.hotT,sense:a.ph.sense},brainCost:a.brainCost,
     deeds:{shared:a.shared,stolen:a.stolen,attacks:a.attacks,kills:a.kills,hunts:a.hunts,beastKills:a.beastKills,crafts:a.crafts,deposits:a.deposits,builds:a.builds},
     actionCounts:Array.from(a.actionCounts),owed:[...a.owed].sort((x,y)=>y[1]-x[1]).slice(0,6).map(([id,v])=>[nm(id)||('#'+id),v]),inWater:a.inWater,drv:a.drv,rep:repOf(a.id),admirers:agents.filter(x=>(x.trust.get(a.id)||0)>.5).length,thanksGot:a.thanksGot,lovesGot:a.lovesGot,coparent:a.coparent,partners:a.partners,wellbeing:a.phi,rewardAvg:a.lastReward||0,curiosityGain:a.lastBonus||0,memory:a.memory,memA:a.memA,memB:a.memB,signal:a.signal,pain:a.pain});
 }
@@ -1174,10 +1246,11 @@ self.onmessage=e=>{
     case 'speed': speed=m.speed; maxMode=!!m.max; break;
     case 'settings': Object.assign(settings,m.settings); break;
     case 'step': for (let i=0;i<(m.n||100);i++) tick(); postFrame(); postStats(true); break;
-    case 'init': if (!started){ island=m.island||0; viewing=m.view!==false; if (m.settings) Object.assign(settings,m.settings); started=true; reset(m.shape); if (viewing){ postFrame(); postStats(true); } } break;
+    case 'init': if (!started){ island=m.island||0; nextGene=island*10000000+1; viewing=m.view!==false; if (m.settings) Object.assign(settings,m.settings); started=true; reset(m.shape); if (viewing){ postFrame(); postStats(true); } } break;
     case 'view': viewing=m.on; if (viewing){ postMeta(); postFrame(); postStats(true); if (selected) postInspect(); } break;
     case 'immigrants': importMigrants(m.pack,m.from); break;
-    case 'reset': reset(m.shape||shape); started=true; if (viewing){ postFrame(); postStats(true); self.postMessage({type:'selected',id:0}); } break;
+    case 'library': self.postMessage({type:'libraryPack',pack:libraryPack(m),req:m.req}); break;
+    case 'reset': reset(m.shape||shape,m.seeds); started=true; if (viewing){ postFrame(); postStats(true); self.postMessage({type:'selected',id:0}); } break;
     case 'storm': sendStorm(); break;
     case 'cold': settings.temperature=clamp(settings.temperature-12,-20,50); log('Cold snap: average temperature down 12°C','cold'); postStats(false); break;
     case 'heat': settings.temperature=clamp(settings.temperature+12,-20,50); log('Heatwave: average temperature up 12°C','heat'); postStats(false); break;

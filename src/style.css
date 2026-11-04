@@ -323,6 +323,25 @@ button.chip:hover{border-color:var(--line-hi);background:rgba(255,255,255,.05)}
 .tl .tv.p{color:var(--good)}.tl .tv.n{color:var(--bad)}.tl .tv.z{color:var(--dim)}
 .tabs{flex-wrap:wrap}
 
+.genes{display:flex;flex-direction:column;gap:6px}
+.gene{border:1px solid var(--line);border-radius:var(--r-sm);padding:8px 10px;display:flex;flex-direction:column;gap:4px;font-size:12px}
+.gene.on{border-color:rgba(126,214,176,.35)}
+.gene>div{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.gene em{font-style:normal;margin-left:auto;color:var(--dim);font-size:11px}
+.gene p,.generow p{margin:0;font-size:11.5px;line-height:1.45}
+.generow{display:flex;flex-direction:column;gap:3px;margin-bottom:4px}
+.genes .g{color:var(--good)}.genes .x{color:var(--bad)}
+
+.lib{display:flex;flex-direction:column;gap:4px;max-height:280px;overflow-y:auto}
+.lib:empty{display:none}
+.libi{display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--line);border-radius:var(--r-sm);font-size:12px}
+.libi input{accent-color:var(--accent);width:16px;height:16px;flex:none}
+.libi .sw2{width:10px;height:10px;border-radius:50%;flex:none}
+.libi div{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.libi small{color:var(--dim)}
+.libi button{color:var(--dim);padding:2px 6px;font-size:14px}
+.libi button:hover{color:var(--bad)}
+
 /* ---------- overlays ---------- */
 .legend{position:absolute;right:var(--gut);top:72px;display:flex;gap:10px;padding:7px 11px;font-size:11px;color:var(--muted);z-index:4;pointer-events:none;transition:opacity .2s}
 .legend span{display:flex;align-items:center;gap:5px;white-space:nowrap}

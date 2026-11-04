@@ -55,7 +55,7 @@
       <section class="sec"><h3>Average generation</h3><canvas class="chart" id="cGen"></canvas></section>
       <section class="sec"><h3>Body &amp; temperament drift</h3><canvas class="chart" id="cBody"></canvas><div class="key"><span><i style="background:#f2836f"></i>Strength</span><span><i style="background:#7fd8ea"></i>Speed</span><span><i style="background:#c9b3e6"></i>Sense ÷ 100</span><span><i style="background:#e26d5a"></i>Aggression</span><span><i style="background:#f3c96b"></i>Brain size ÷ 50</span></div></section>
       <section class="sec"><h3>Social life</h3><canvas class="chart" id="cSocial"></canvas><div class="key"><span><i style="background:#ff8fc8"></i>Avg popularity</span><span><i style="background:#9cb6ff"></i>Avg loneliness × 5</span></div></section>
-      <section class="sec"><h3>Physical upgrades <span>share of yips carrying each</span></h3><div class="bars" id="perkBars"></div></section>
+      <section class="sec"><h3>Most common genes <span>share of yips carrying each</span></h3><div class="genes" id="perkBars"></div></section>
       <section class="sec"><h3>Temperament <span>population average</span></h3><div class="sec" id="mentAvg" style="gap:7px"></div></section>
       <section class="sec"><h3>How they died</h3><div class="stack" id="deathStack"></div><div class="key" id="deathKey"></div></section>
       <section class="sec"><h3>What they sense <span>share of brains wired to it</span></h3><div class="bars" id="sensBars"></div></section>
@@ -113,7 +113,7 @@
         <div class="slider"><label for="islandCount">Number of islands</label><output></output><select id="islandCount" class="sel"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></div>
         <div class="islands" id="islands2" style="height:auto;padding:0"></div>
         <p class="note" id="coreNote"></p>
-        <p class="note">Each island is a separate world on its own CPU core. The others run unseen at full speed, and every few thousand ticks a few of an island's most successful yips migrate to another. Migration timing is under World. Saves and the inspector cover the island you are watching.</p>
+        <p class="note">Each island is a separate world on its own CPU core. The others run unseen at full speed, and every few thousand ticks a few of an island's most successful yips migrate to another. Migration timing is under World. Saves cover every island; the inspector covers the one you are watching.</p>
       </section>
       <section class="sec"><h3>Running</h3>
         <label class="toggle"><span>Autosave<small>Saves to this browser every 2 minutes while running</small></span><span class="sw"><input type="checkbox" id="oAuto" checked><i></i></span></label>
@@ -121,7 +121,7 @@
         <label class="toggle"><span>Keep screen awake<small>Stops a phone from dimming while the colony runs</small></span><span class="sw"><input type="checkbox" id="oWake" checked><i></i></span></label>
       </section>
       <section class="sec"><h3>Saves</h3>
-        <p class="note">Browser saves stay on this device. Files include every yip, brain, resource and setting, and also load 0.6–1.0 snapshots.</p>
+        <p class="note">Saves hold every island: all yips, brains, genes, resources and settings, compressed and kept in this browser's database. Autosave keeps the latest run safe. Files also load older single-world snapshots.</p>
         <div class="row">
           <button class="btn" id="sSave">Save in browser</button>
           <button class="btn" id="sLoad">Load browser save</button>
@@ -133,6 +133,22 @@
         </div>
         <p class="note" id="saveInfo"></p>
         <div class="row"><button class="btn danger" id="sReset">Start a new world</button></div>
+      </section>
+      <section class="sec"><h3>Yip library <span id="libCount"></span></h3>
+        <p class="note">Keep your best yips between runs: their genes, traits and everything their brains learned. A fresh world bred from the library starts with one exact copy of each checked yip, and the rest of the 300 founders are their mutated offspring.</p>
+        <div class="row">
+          <button class="btn" id="lTop">Add top 10 here</button>
+          <button class="btn" id="lAll">Add top 5 per island</button>
+        </div>
+        <div class="lib" id="libList"></div>
+        <div class="row">
+          <button class="btn pri" id="lStart">New world from library</button>
+        </div>
+        <div class="row">
+          <button class="btn" id="lExport">Download library</button>
+          <button class="btn" id="lImport">Import library</button>
+          <input type="file" id="lFile" accept="application/json,.json,.gz" hidden>
+        </div>
       </section>
       <section class="sec"><h3>About</h3><p class="note">ALife Lab __VERSION_LONG__</p></section>
       <section class="sec"><h3>Shortcuts</h3>
@@ -161,6 +177,7 @@
         <div class="swatch" id="iSwatch"></div>
         <h2><span id="iTitle">Yip</span><small id="iSub"></small><div class="badges" id="iBadges"></div></h2>
       </div>
+      <button class="ib" id="iKeep" data-tip="Keep this yip in the library"><svg class="i" viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4z"/></svg><span class="lbl">Keep</span></button>
       <button class="ib" id="iFollow" data-tip="Follow with the camera" data-key="F"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg><span class="lbl">Follow</span></button>
       <button class="ib" data-close="dInspect" aria-label="Close"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
     </div>
@@ -204,9 +221,9 @@
         <h3>Physical <span>slow to evolve · heavy on the body budget</span></h3>
         <div class="sec" id="physList" style="gap:7px"></div>
         <div class="budget" id="budgetBar"></div>
-        <h3>Upgrade trees <span>tap a node for details</span></h3>
-        <div class="trees" id="perkTrees"></div>
-        <div class="perkinfo" id="perkInfo">Owned upgrades are filled. Outlined ones can still evolve; struck-through ones clash with something this yip already has.</div>
+        <h3>Genes <span>what each does to the body · its budget cost</span></h3>
+        <div class="genes" id="geneList"></div>
+        <p class="note">Genes arise, duplicate, mutate and disappear on their own. Conditional genes only switch on in their situation.</p>
         <h3>Mental <span>fast to evolve · nearly free</span></h3>
         <div class="sec" id="mentList" style="gap:7px"></div>
         <h3>Lifetime deeds</h3>
