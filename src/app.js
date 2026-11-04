@@ -935,7 +935,7 @@ function showSaveInfo() { const m = store.get('alife.saveMeta', null); $('saveIn
 showSaveInfo();
 // embedded viewers block file downloads, so only offer it when the page is opened directly
 let embedded = true; try { embedded = window.self !== window.top; } catch {}
-if (embedded) $('sExport').hidden = true;
+if (embedded) { $('sExport').hidden = true; $('lExport').hidden = true; }
 
 /* ================= charts ================= */
 function setupCanvas(c) {

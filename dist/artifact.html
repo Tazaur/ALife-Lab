@@ -462,7 +462,7 @@ button.chip:hover{border-color:var(--line-hi);background:rgba(255,255,255,.05)}
   <header class="top">
     <div class="brand glass">
       <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14" fill="none" stroke="#f3c96b" stroke-width="1.5" opacity=".5"/><circle cx="16" cy="16" r="9" fill="none" stroke="#7ed6b0" stroke-width="1.2" stroke-dasharray="2 3"/><circle cx="16" cy="16" r="4" fill="#f3c96b"/><circle cx="25" cy="10" r="2" fill="#8fd67a"/><circle cx="8" cy="22" r="1.6" fill="#7fd8ea"/></svg>
-      <h1>ALife <span>Lab</span><small id="ver">build 14</small></h1>
+      <h1>ALife <span>Lab</span><small id="ver">build 15</small></h1>
     </div>
     <div class="readouts glass" role="status">
       <div class="ro"><small><span class="lg">Living</span><span class="sh">Pop</span></small><b id="roPop">0</b></div>
@@ -607,7 +607,7 @@ button.chip:hover{border-color:var(--line-hi);background:rgba(255,255,255,.05)}
           <input type="file" id="lFile" accept="application/json,.json,.gz" hidden>
         </div>
       </section>
-      <section class="sec"><h3>About</h3><p class="note">ALife Lab build 14 · 2026-11-05</p></section>
+      <section class="sec"><h3>About</h3><p class="note">ALife Lab build 15 · 2026-11-05</p></section>
       <section class="sec"><h3>Shortcuts</h3>
         <div class="keys">
           <kbd>Space</kbd><span>Pause or resume</span>
@@ -2989,7 +2989,7 @@ function showSaveInfo() { const m = store.get('alife.saveMeta', null); $('saveIn
 showSaveInfo();
 // embedded viewers block file downloads, so only offer it when the page is opened directly
 let embedded = true; try { embedded = window.self !== window.top; } catch {}
-if (embedded) $('sExport').hidden = true;
+if (embedded) { $('sExport').hidden = true; $('lExport').hidden = true; }
 
 /* ================= charts ================= */
 function setupCanvas(c) {
