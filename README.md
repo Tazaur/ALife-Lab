@@ -12,6 +12,12 @@ An evolution sandbox. A colony of yips, each driven by its own neural network, f
 - **Aquatic upgrades**: Webbed feet (fast, cheap swimming; slower on land) and Blubber (water barely chills it; overheats sooner).
 - **Notifications** setting: All, Important (extinctions only) or Off.
 
+## Learning (current)
+
+Lifetime learning is a policy gradient with **eligibility traces**: every tick the gradient of the chosen action is added to a fading trace, and each reward updates the weights along it, so relief that comes later (eating) also credits the steps that led to it (walking to food, harvesting). Action preferences are linear outputs so a brain can become decisive. The first (sensory) layer is left to evolution; learning adjusts the deeper layers.
+
+Pairing is helped along by a **mating scent** that yips ready to breed give off automatically (it spreads and fades, and yips can sense its gradient), a stronger need for company, and **loving thank-yous**, which sometimes produce a child. Fights hurt both sides.
+
 ## How yips learn (1.3)
 
 Rewards come only from inside each yip. It has six needs, each an urgency from 0 to 1: **hunger, cold/heat, injury, fatigue, loneliness and insecurity** (few supplies). Wellbeing is minus the weighted sum of the squared urgencies, and the learning signal is the change in wellbeing. Squaring gives diminishing returns: relief is worth the most when a need is desperate and almost nothing once it is met, so sitting by a fire pays less every tick, while a slowly growing chill builds the desire back up. Because it is a potential over the yip's own state, no loop can farm it. Traits set the weights (caution for injury, sociability for loneliness, greed for insecurity).
