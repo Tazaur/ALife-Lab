@@ -37,10 +37,11 @@ let sim = null, usingWorker = true;
 const send = (type, rest = {}) => sim.postMessage({ type, ...rest });
 
 /* ================= app state ================= */
-let F = null, stats = null, insp = null;
+let F = null, stats = null, insp = null, names = {};
+const nameOf = id => names[id] || `#${id}`;
 let selected = 0, follow = false, running = true, tool = 'select', maxMode = false;
 const SPEEDS = [1, 2, 4, 8, 16, 32, 64, 128, 256];
-const ui = Object.assign({ night: true, fx: true, sense: true, trail: true, legend: true, perf: true, auto: true, hidePause: true, wake: true, speedIdx: 2, brushSize: 22, brushAmt: 1 }, store.get('alife.ui', {}));
+const ui = Object.assign({ notify: 'important', scent: false, night: true, fx: true, sense: true, trail: true, legend: true, perf: true, auto: true, hidePause: true, wake: true, speedIdx: 2, brushSize: 22, brushAmt: 1 }, store.get('alife.ui', {}));
 ui.speedIdx = clamp(ui.speedIdx | 0, 0, SPEEDS.length - 1);
 let speedIdx = ui.speedIdx;
 const saveUi = () => store.set('alife.ui', ui);
@@ -50,12 +51,14 @@ const rpos = new Map();       // id -> smoothed render position
 const bpos = new Map();       // beast id -> smoothed render position
 let trail = [], fx = [];
 let simTps = 0, renderFps = 0;
+const wd = (d, L) => d > L / 2 ? d - L : d < -L / 2 ? d + L : d;
+const wrapC = (v, L) => ((v % L) + L) % L;
 const hyper = () => maxMode || SPEEDS[speedIdx] >= 64;
 
 function preferredShape() { const w = innerWidth, h = innerHeight; return h > w * 1.15 ? 'tall' : w > h * 1.15 ? 'wide' : 'square'; }
 function onSim(m) {
   switch (m.type) {
-    case 'ready': send('init', { shape: preferredShape() }); break;
+    case 'ready': send('init', {}); break;
     case 'meta': {
       const first = !meta; meta = m; W = m.W; H = m.H; buildTerrain(m);
       if (first) buildClimate(m.settings); else syncSliders(m.settings);
@@ -63,17 +66,24 @@ function onSim(m) {
       if (first || !cw) fit(true); else fit(true);
       break;
     }
-    case 'frame': ingestFrame(m); break;
-    case 'stats': stats = m; renderStats(); break;
-    case 'inspect': insp = m; renderInspector(); break;
+    case 'frame': ingestFrame(m); if (m.P) paintPher(m.P); break;
+    case 'stats': stats = m; if (m.names) names = m.names; renderStats(); break;
+    case 'inspect': insp = m; if (m.name) names[m.id] = m.name; renderInspector(); break;
     case 'selected': setSelected(m.id, { fromSim: true }); break;
-    case 'toast': toast(m.s, m.kind); break;
+    case 'toast': if (ui.notify === 'all' || (ui.notify === 'important' && m.important)) toast(m.s, m.kind); break;
     case 'saved': onSaved(m); break;
     case 'loaded':
       if (m.ok) { toast('World loaded', 'info'); syncSliders(m.settings); trail = []; rpos.clear(); }
       else toast('Could not load: ' + m.error, 'death');
       break;
   }
+}
+let pherCanvas = null, pherImg = null;
+function paintPher(P) {
+  if (!meta) return;
+  if (!pherCanvas) { pherCanvas = document.createElement('canvas'); pherCanvas.width = meta.FW; pherCanvas.height = meta.FH; pherImg = pherCanvas.getContext('2d').createImageData(meta.FW, meta.FH); }
+  const d = pherImg.data; for (let i = 0; i < P.length; i++) { const v = P[i]; d[i * 4] = 220; d[i * 4 + 1] = 120; d[i * 4 + 2] = 255; d[i * 4 + 3] = v; }
+  pherCanvas.getContext('2d').putImageData(pherImg, 0, 0);
 }
 function ingestFrame(m) {
   F = m; simTps = m.tps;
@@ -107,7 +117,7 @@ function resize() {
   dpr = Math.min(2, window.devicePixelRatio || 1);
   cw = cv.clientWidth; ch = cv.clientHeight;
   cv.width = Math.round(cw * dpr); cv.height = Math.round(ch * dpr);
-  minZ = Math.min(cw / W, ch / H) * .45;
+  minZ = Math.max(cw, ch) / (W * 2);
 }
 const vc = { x: 0, y: 0, tx: 0, ty: 0 };   // screen point the camera centers on, kept clear of open drawers
 function viewRect() {
@@ -129,14 +139,14 @@ function updateViewCenter(dt) {
   const k = 1 - Math.exp(-dt * 8); vc.x += (vc.tx - vc.x) * k; vc.y += (vc.ty - vc.y) * k;
 }
 const toWorld = (sx, sy) => ({ x: (sx - vc.x) / cam.z + cam.x, y: (sy - vc.y) / cam.z + cam.y });
-const toScreen = (wx, wy) => ({ x: (wx - cam.x) * cam.z + vc.x, y: (wy - cam.y) * cam.z + vc.y });
+const toScreen = (wx, wy) => ({ x: wd(wx - cam.x, W) * cam.z + vc.x, y: wd(wy - cam.y, H) * cam.z + vc.y });
 function chrome() {
   const top = document.querySelector('.top').getBoundingClientRect(), bot = $('bottom').getBoundingClientRect(), cr = cv.getBoundingClientRect();
   const t = top.bottom - cr.top + 8, b = bot.top - cr.top - (cw < 760 ? 8 : 10);
   return { t, b: Math.max(t + 80, b) };
 }
 // fit = the whole map visible in the band between the top bar and the dock
-function fitZoom() { const c = chrome(), side = cw < 760 ? 8 : 24; return clamp(Math.min((cw - side * 2) / W, (c.b - c.t) / H), .05, 9); }
+function fitZoom() { const c = chrome(), side = cw < 760 ? 8 : 24; return clamp(Math.min((cw - side * 2) / W, (c.b - c.t) / H), minZ, 9); }
 function fit(instant) {
   if (!cw) return;
   const c = chrome(), z = fitZoom(); lastFitZ = z;
@@ -152,7 +162,7 @@ function zoomAt(sx, sy, z) {
   cam.z = z; cam.x = p.x - (sx - vc.x) / z; cam.y = p.y - (sy - vc.y) / z;
   clampCam(); camTarget = null;
 }
-function clampCam() { cam.x = clamp(cam.x, -W * .25, W * 1.25); cam.y = clamp(cam.y, -H * .25, H * 1.25); }
+function clampCam() { }
 
 /* ================= sprites ================= */
 function sprite(size, draw) { const c = document.createElement('canvas'); c.width = c.height = size; draw(c.getContext('2d'), size); return c; }
@@ -189,7 +199,7 @@ const glowFire = sprGlow('rgba(255,150,70,1)'), glowHouse = sprGlow('rgba(255,21
 /* terrain: painted from the simulation's biome fields (fertile valleys, forest, rock) */
 let terrain = null;
 function buildTerrain(m) {
-  const { FW, FH, FC, fert, forest, rock, seed } = m;
+  const { FW, FH, FC, fert, forest, rock, seed, water } = m;
   const small = document.createElement('canvas'); small.width = FW; small.height = FH;
   const sg = small.getContext('2d'), img = sg.createImageData(FW, FH);
   const lerp = (a, b, t) => a + (b - a) * t;
@@ -199,12 +209,14 @@ function buildTerrain(m) {
     let R = lerp(52, 30, f), G = lerp(54, 82, f), B = lerp(36, 52, f);
     const ft = clamp((fo - .45) * 2.2, 0, 1); R = lerp(R, 18, ft * .7); G = lerp(G, 58, ft * .7); B = lerp(B, 44, ft * .7);
     const rt = clamp((r - .55) * 2.6, 0, 1); R = lerp(R, 70, rt); G = lerp(G, 70, rt); B = lerp(B, 66, rt);
+    if (water && water[i]) { R = 26; G = 58; B = 84; }
     img.data[i * 4] = R; img.data[i * 4 + 1] = G; img.data[i * 4 + 2] = B; img.data[i * 4 + 3] = 255;
   }
   sg.putImageData(img, 0, 0);
-  const S = 2, t = document.createElement('canvas'); t.width = W * S; t.height = H * S;
+  const S = innerWidth < 760 ? 1 : 1.5, t = document.createElement('canvas'); t.width = W * S; t.height = H * S;
   const g = t.getContext('2d'); g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
-  g.drawImage(small, 0, 0, FW * FC * S, FH * FC * S);
+  // draw the small map three times wide and tall so smoothing blends across the wrap, then keep the centre
+  for (let yy = -1; yy <= 1; yy++) for (let xx = -1; xx <= 1; xx++) g.drawImage(small, xx * W * S, yy * H * S, FW * FC * S, FH * FC * S);
   let sd = seed || 7; const rr = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
   for (let i = 0; i < 360; i++) {
     const x = rr() * t.width, y = rr() * t.height, rad = (16 + rr() * 80) * S;
@@ -216,6 +228,7 @@ function buildTerrain(m) {
     g.fillStyle = rk > .6 && rr() < .5 ? 'rgba(200,200,190,.08)' : rr() < .5 ? 'rgba(170,220,170,.05)' : 'rgba(0,0,0,.14)';
     g.fillRect(x * S, y * S, S * (1 + rr()), S * (1 + rr()));
   }
+  if (water) { g.strokeStyle = 'rgba(160,210,240,.10)'; g.lineWidth = 1; for (let i = 0; i < 2200; i++) { const x = rr() * W, y = rr() * H; if (water[clamp(x / FC | 0, 0, FW - 1) + clamp(y / FC | 0, 0, FH - 1) * FW]) { g.beginPath(); g.moveTo(x * S, y * S); g.lineTo((x + 3 + rr() * 4) * S, y * S); g.stroke(); } } }
   g.fillStyle = 'rgba(0,0,0,.22)'; g.fillRect(0, 0, t.width, t.height);
   g.strokeStyle = 'rgba(190,230,210,.04)'; g.lineWidth = 1;
   for (let x = 40; x < W; x += 40) { g.beginPath(); g.moveTo(x * S, 0); g.lineTo(x * S, t.height); g.stroke(); }
@@ -234,14 +247,15 @@ function render(t) {
   if (!fast) {
     for (const map of [rpos, bpos]) for (const p of map.values()) {
       if (p.tx === undefined) continue;
-      const dx = p.tx - p.x, dy = p.ty - p.y;
-      if (dx * dx + dy * dy > 1600) { p.x = p.tx; p.y = p.ty; } else { p.x += dx * k; p.y += dy * k; }
+      const dx = wd(p.tx - p.x, W), dy = wd(p.ty - p.y, H);
+      if (dx * dx + dy * dy > 1600) { p.x = p.tx; p.y = p.ty; } else { p.x = wrapC(p.x + dx * k, W); p.y = wrapC(p.y + dy * k, H); }
       let dh = p.thd - p.hd; dh = Math.atan2(Math.sin(dh), Math.cos(dh)); p.hd += dh * Math.min(1, k * 1.4);
     }
   }
   const sp = selected && rpos.get(selected);
-  if (follow && sp) { const kk = 1 - Math.exp(-dt * 6); cam.x += (sp.x - cam.x) * kk; cam.y += (sp.y - cam.y) * kk; }
-  if (sp && ui.trail && !fast) { const lp = trail[trail.length - 1]; if (!lp || Math.hypot(lp.x - sp.x, lp.y - sp.y) > 1.5) { trail.push({ x: sp.x, y: sp.y }); if (trail.length > 90) trail.shift(); } }
+  if (follow && sp) { const kk = 1 - Math.exp(-dt * 6); cam.x += wd(sp.x - cam.x, W) * kk; cam.y += wd(sp.y - cam.y, H) * kk; }
+  if (cam.x < 0 || cam.x >= W || cam.y < 0 || cam.y >= H) { const nx = wrapC(cam.x, W) - cam.x, ny = wrapC(cam.y, H) - cam.y; cam.x += nx; cam.y += ny; if (camTarget) { camTarget.x += nx; camTarget.y += ny; } }
+  if (sp && ui.trail && !fast) { const lp = trail[trail.length - 1]; if (!lp || Math.hypot(wd(lp.x - sp.x, W), wd(lp.y - sp.y, H)) > 1.5) { trail.push({ x: sp.x, y: sp.y }); if (trail.length > 90) trail.shift(); } }
 
   updateViewCenter(dt);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -250,17 +264,28 @@ function render(t) {
   const z = cam.z, now = t / 1000;
   ctx.setTransform(dpr * z, 0, 0, dpr * z, dpr * (vc.x - cam.x * z), dpr * (vc.y - cam.y * z));
   const vx0 = cam.x - vc.x / z - 12, vx1 = cam.x + (cw - vc.x) / z + 12, vy0 = cam.y - vc.y / z - 12, vy1 = cam.y + (ch - vc.y) / z + 12;
-  const inView = (x, y) => x > vx0 && x < vx1 && y > vy0 && y < vy1;
-
-  ctx.fillStyle = 'rgba(0,0,0,.4)'; ctx.fillRect(-4, -4, W + 8, H + 10);
+  // the world is a torus: draw one copy per tile the view touches
+  for (let ty = Math.floor(vy0 / H); ty <= Math.floor(vy1 / H); ty++) for (let tx = Math.floor(vx0 / W); tx <= Math.floor(vx1 / W); tx++) drawTile(tx * W, ty * H, z, now, dt, vx0, vx1, vy0, vy1, fast, sp);
+  fpsFrames++;
+  if (t - fpsT > 500) { renderFps = Math.round(fpsFrames * 1000 / (t - fpsT)); fpsFrames = 0; fpsT = t; updateHud(); }
+  requestAnimationFrame(render);
+}
+function drawTile(ox, oy, z, now, dt, vx0, vx1, vy0, vy1, fast, sp) {
+  const inView = (x, y) => x + ox > vx0 && x + ox < vx1 && y + oy > vy0 && y + oy < vy1;
+  const t = now * 1000;
+  ctx.save(); ctx.translate(ox, oy);
   ctx.drawImage(terrain, 0, 0, W, H);
+  if (ui.scent && pherCanvas) { ctx.globalAlpha = .55; ctx.imageSmoothingEnabled = true; ctx.drawImage(pherCanvas, 0, 0, W, H); ctx.globalAlpha = 1; }
   const temp = F.temp;
   if (temp < 10) { ctx.fillStyle = `rgba(170,205,255,${clamp((10 - temp) / 30, 0, 1) * .3})`; ctx.fillRect(0, 0, W, H); }
   else if (temp > 27) { ctx.fillStyle = `rgba(255,190,110,${clamp((temp - 27) / 23, 0, 1) * .2})`; ctx.fillRect(0, 0, W, H); }
 
   // resources
   const I = F.I;
-  for (let o = 0; o < I.length; o += 4) {
+  if (z < .7) {
+    const s = 1.4 / Math.max(.25, z) * .9, cols = [C.food, C.tree, C.stone];
+    for (let ty = 0; ty < 3; ty++) { ctx.fillStyle = cols[ty]; for (let o = 0; o < I.length; o += 4) { if (I[o] !== ty) continue; const x = I[o + 1], y = I[o + 2]; if (inView(x, y)) ctx.fillRect(x - s / 2, y - s / 2, s, s); } }
+  } else for (let o = 0; o < I.length; o += 4) {
     const x = I[o + 1], y = I[o + 2]; if (!inView(x, y)) continue;
     const [img, r0] = ISPR[I[o]], life = I[o + 3];
     const r = fast ? r0 : r0 * (life > .985 ? .4 + (1 - life) / .015 * .6 : 1);
@@ -350,6 +375,9 @@ function render(t) {
     ctx.fillStyle = hueFill[(A[o + 3] | 0) % 360]; ctx.beginPath(); ctx.arc(p.x, p.y, R, 0, TAU); ctx.fill();
   }
   ctx.globalAlpha = 1;
+  ctx.strokeStyle = 'rgba(170,215,255,.7)'; ctx.lineWidth = .6; ctx.beginPath();
+  for (let i = 0; i < list.length; i += 2) { const o = list[i], p = list[i + 1]; if (!(A[o + 7] & 16)) continue; const rr = R + 2.5 + Math.sin(now * 5 + p.x) * .8; ctx.moveTo(p.x + rr, p.y); ctx.arc(p.x, p.y, rr, 0, TAU); }
+  ctx.stroke();
   ctx.strokeStyle = 'rgba(255,143,200,.8)'; ctx.lineWidth = .8; ctx.beginPath();
   for (let i = 0; i < list.length; i += 2) { const o = list[i], p = list[i + 1]; if (!(A[o + 7] & 8)) continue; ctx.moveTo(p.x + R + 1.8, p.y); ctx.arc(p.x, p.y, R + 1.8, 0, TAU); }
   ctx.stroke();
@@ -401,7 +429,7 @@ function render(t) {
   if (sp) {
     if (ui.trail && trail.length > 1 && !fast) {
       ctx.lineWidth = 1.2; ctx.lineCap = 'round';
-      for (let i = 1; i < trail.length; i++) { ctx.strokeStyle = `rgba(243,201,107,${(i / trail.length) * .55})`; ctx.beginPath(); ctx.moveTo(trail[i - 1].x, trail[i - 1].y); ctx.lineTo(trail[i].x, trail[i].y); ctx.stroke(); }
+      for (let i = 1; i < trail.length; i++) { if (Math.abs(trail[i].x - trail[i - 1].x) > W / 2 || Math.abs(trail[i].y - trail[i - 1].y) > H / 2) continue; ctx.strokeStyle = `rgba(243,201,107,${(i / trail.length) * .55})`; ctx.beginPath(); ctx.moveTo(trail[i - 1].x, trail[i - 1].y); ctx.lineTo(trail[i].x, trail[i].y); ctx.stroke(); }
     }
     const sense = A[sp.i + 8] || 0;
     if (ui.sense && sense) { ctx.strokeStyle = 'rgba(243,201,107,.4)'; ctx.fillStyle = 'rgba(243,201,107,.035)'; ctx.lineWidth = 1 / z; ctx.setLineDash([5 / z, 5 / z]); ctx.beginPath(); ctx.arc(sp.x, sp.y, sense, 0, TAU); ctx.fill(); ctx.stroke(); ctx.setLineDash([]); }
@@ -410,16 +438,12 @@ function render(t) {
     ctx.fillStyle = C.accent; ctx.beginPath(); ctx.arc(sp.x, sp.y, R * .55, 0, TAU); ctx.fill();
   }
   if (hoverId && hoverId !== selected) { const hp = rpos.get(hoverId); if (hp) { ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.lineWidth = 1.5 / z; ctx.beginPath(); ctx.arc(hp.x, hp.y, 6.5, 0, TAU); ctx.stroke(); } }
-  if (pointerWorld && tool !== 'select') {
+  if (pointerWorld && tool !== 'select' && ox === 0 && oy === 0) {
     const col = { food: C.food, tree: C.tree, stone: C.stone, wall: C.wall, fire: C.fire, beast: C.beast, erase: C.fg }[tool];
     const r = tool === 'fire' ? 12 : tool === 'beast' ? 8 : tool === 'wall' ? 15 : ui.brushSize;
-    ctx.strokeStyle = col; ctx.lineWidth = 1.2 / z; ctx.setLineDash([4 / z, 3 / z]); ctx.beginPath(); ctx.arc(pointerWorld.x, pointerWorld.y, r, 0, TAU); ctx.stroke(); ctx.setLineDash([]);
+    ctx.strokeStyle = col; ctx.lineWidth = 1.2 / z; ctx.setLineDash([4 / z, 3 / z]); ctx.beginPath(); ctx.arc(pointerWorld.x - ox, pointerWorld.y - oy, r, 0, TAU); ctx.stroke(); ctx.setLineDash([]);
   }
-  ctx.strokeStyle = 'rgba(190,230,210,.18)'; ctx.lineWidth = 1 / z; ctx.strokeRect(0, 0, W, H);
-
-  fpsFrames++;
-  if (t - fpsT > 500) { renderFps = Math.round(fpsFrames * 1000 / (t - fpsT)); fpsFrames = 0; fpsT = t; updateHud(); }
-  requestAnimationFrame(render);
+  ctx.restore();
 }
 function roundRect(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
 requestAnimationFrame(render);
@@ -552,7 +576,7 @@ function setSelected(id, { fromSim = false, open = true } = {}) {
 function revealSelected() {
   const p = rpos.get(selected); if (!p) return;
   const v = viewRect(), c = chrome(), s = toScreen(p.x, p.y), m = 40;
-  if (s.x < v.l + m || s.x > v.r - m || s.y < Math.max(v.t, c.t) + 20 || s.y > Math.min(v.b, c.b) - 20) camTarget = { x: p.x, y: p.y, z: Math.max(cam.z, fitZoom() * (cw < 760 ? 1.8 : 1)) };
+  if (s.x < v.l + m || s.x > v.r - m || s.y < Math.max(v.t, c.t) + 20 || s.y > Math.min(v.b, c.b) - 20) camTarget = { x: cam.x + wd(p.x - cam.x, W), y: cam.y + wd(p.y - cam.y, H), z: Math.max(cam.z, fitZoom() * (cw < 760 ? 1.8 : 1)) };
 }
 document.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => send('pick', { how: b.dataset.pick }));
 $('iFollow').onclick = () => toggleFollow();
@@ -562,10 +586,10 @@ function toggleFollow() { if (!selected) return; follow = !follow; $('iFollow').
 const ptrs = new Map(); let gesture = null, lastPaint = 0;
 function agentAt(sx, sy, touch) {
   const w = toWorld(sx, sy), r = Math.max(7, (touch ? 26 : 14) / cam.z); let best = 0, bd = r * r;
-  for (const [id, p] of rpos) { const dx = p.x - w.x, dy = p.y - w.y, d = dx * dx + dy * dy; if (d < bd) { bd = d; best = id; } }
+  for (const [id, p] of rpos) { const dx = wd(p.x - w.x, W), dy = wd(p.y - w.y, H), d = dx * dx + dy * dy; if (d < bd) { bd = d; best = id; } }
   return best;
 }
-const inWorld = w => w.x >= 0 && w.y >= 0 && w.x <= W && w.y <= H;
+const inWorld = w => { w.x = wrapC(w.x, W); w.y = wrapC(w.y, H); return true; };
 function paint(sx, sy) { const w = toWorld(sx, sy); if (!inWorld(w)) return; send('paint', { x: w.x, y: w.y, k: tool, r: ui.brushSize, n: ui.brushAmt }); lastPaint = performance.now(); }
 function wallTo(w) {
   const g = gesture; if (!g.last) { g.last = w; return; }
@@ -573,8 +597,8 @@ function wallTo(w) {
   if (d < 26) return;
   const ang = Math.atan2(dy, dx), steps = Math.floor(d / 28);
   for (let i = 0; i < steps; i++) {
-    const cx = g.last.x + Math.cos(ang) * 14, cy = g.last.y + Math.sin(ang) * 14;
-    if (inWorld({ x: cx, y: cy })) send('paint', { x: cx, y: cy, k: 'wall', ang });
+    const cx = wrapC(g.last.x + Math.cos(ang) * 14, W), cy = wrapC(g.last.y + Math.sin(ang) * 14, H);
+    send('paint', { x: cx, y: cy, k: 'wall', ang });
     g.last = { x: g.last.x + Math.cos(ang) * 28, y: g.last.y + Math.sin(ang) * 28 }; g.placed = true;
   }
 }
@@ -631,7 +655,7 @@ function showHover(id, x, y) {
   if (!id || !F) { el.classList.remove('show'); return; }
   const p = rpos.get(id); if (!p) return;
   const o = p.i, A = F.A;
-  el.innerHTML = `#${id} · energy ${Math.round(A[o + 5] * 200)} · health ${Math.round(A[o + 6] * 100)}${A[o + 7] & 4 ? ' · tool' : ''}`;
+  el.innerHTML = `${esc(nameOf(id))} · energy ${Math.round(A[o + 5] * 200)} · health ${Math.round(A[o + 6] * 100)}${A[o + 7] & 4 ? ' · tool' : ''}`;
   el.style.left = Math.min(x + 14, innerWidth - 220) + 'px'; el.style.top = (y + 12) + 'px'; el.classList.add('show');
 }
 
@@ -686,9 +710,9 @@ function toast(s, kind = 'info') {
 /* ================= world settings ================= */
 const SLIDERS = [
   ['temperature', 'Average temperature', -20, 50, 1, v => `${v}°C`],
-  ['food', 'Food growth', 0, 9, .25, v => `${(+v).toFixed(2)} / tick`],
-  ['trees', 'Tree growth', 0, .5, .01, v => `${Math.round(v * 1000)} / 1k ticks`],
-  ['stone', 'Stone emergence', 0, .4, .01, v => `${Math.round(v * 1000)} / 1k ticks`],
+  ['food', 'Food growth', 0, 24, .25, v => `${(+v).toFixed(2)} / tick`],
+  ['trees', 'Tree growth', 0, 1.5, .01, v => `${Math.round(v * 1000)} / 1k ticks`],
+  ['stone', 'Stone emergence', 0, 1.2, .01, v => `${Math.round(v * 1000)} / 1k ticks`],
   ['drain', 'Metabolic pressure', .3, 3, .1, v => `${(+v).toFixed(1)}×`],
   ['decay', 'Decay speed', 0, 4, .1, v => `${(+v).toFixed(1)}×`],
   ['storm', 'Storm severity', 0, 4, .1, v => `${(+v).toFixed(1)}×`],
@@ -696,19 +720,19 @@ const SLIDERS = [
   ['season', 'Year length', 0, 6000, 100, v => +v ? `${v} ticks` : 'No seasons'],
 ];
 const SLIDERS2 = [
-  ['beasts', 'Beasts roaming', 0, 20, 1, v => +v ? `${v}` : 'None'],
+  ['beasts', 'Beasts roaming', 0, 40, 1, v => +v ? `${v}` : 'None'],
   ['beastPower', 'Beast ferocity', .3, 3, .1, v => `${(+v).toFixed(1)}×`],
-  ['popCap', 'Population cap', 40, 400, 10, v => `${v} yips`],
+  ['popCap', 'Population cap', 40, 600, 10, v => `${v} yips`],
   ['mutation', 'Mutation rate', 0, 4, .1, v => `${(+v).toFixed(1)}×`],
 ];
 const ALLS = [...SLIDERS, ...SLIDERS2];
 const PRESETS = [
-  ['Temperate', 'Balanced defaults', { food: 3, trees: .12, stone: .08, drain: 1, decay: 1, storm: 1, temperature: 19, day: 500, season: 2600, beasts: 2, beastPower: 1 }],
-  ['Abundance', 'Rich and mild', { food: 5.5, trees: .2, stone: .14, drain: .8, decay: 1, storm: .5, temperature: 21, day: 500, season: 2600, beasts: 1, beastPower: .8 }],
-  ['Scarcity', 'Lean and hungry', { food: 1.4, trees: .07, stone: .05, drain: 1.3, decay: 1.2, storm: 1, temperature: 18, day: 500, season: 2600, beasts: 2, beastPower: 1 }],
-  ['Long winter', 'Hoard or starve', { food: 2.4, trees: .12, stone: .08, drain: 1.1, decay: 1, storm: 1.5, temperature: 4, day: 600, season: 4200, beasts: 2, beastPower: 1.1 }],
-  ['Predators', 'Hunted every day', { food: 3, trees: .14, stone: .1, drain: 1, decay: 1, storm: .8, temperature: 19, day: 500, season: 2600, beasts: 6, beastPower: 1.4 }],
-  ['Tempest', 'Storm season', { food: 3.2, trees: .14, stone: .1, drain: 1, decay: 1.6, storm: 3, temperature: 15, day: 500, season: 2000, beasts: 2, beastPower: 1 }],
+  ['Temperate', 'Balanced defaults', { food: 7.5, trees: .3, stone: .2, drain: 1, decay: 1, storm: 1, temperature: 19, day: 500, season: 2600, beasts: 6, beastPower: 1 }],
+  ['Abundance', 'Rich and mild', { food: 13, trees: .5, stone: .35, drain: .8, decay: 1, storm: .5, temperature: 21, day: 500, season: 2600, beasts: 3, beastPower: .8 }],
+  ['Scarcity', 'Lean and hungry', { food: 3.5, trees: .17, stone: .12, drain: 1.3, decay: 1.2, storm: 1, temperature: 18, day: 500, season: 2600, beasts: 6, beastPower: 1 }],
+  ['Long winter', 'Hoard or starve', { food: 6, trees: .3, stone: .2, drain: 1.1, decay: 1, storm: 1.5, temperature: 4, day: 600, season: 4200, beasts: 6, beastPower: 1.1 }],
+  ['Predators', 'Hunted every day', { food: 7.5, trees: .35, stone: .25, drain: 1, decay: 1, storm: .8, temperature: 19, day: 500, season: 2600, beasts: 18, beastPower: 1.4 }],
+  ['Tempest', 'Storm season', { food: 8, trees: .35, stone: .25, drain: 1, decay: 1.6, storm: 3, temperature: 15, day: 500, season: 2000, beasts: 6, beastPower: 1 }],
 ];
 function paintSlider(el) { const p = (el.value - el.min) / (el.max - el.min) * 100; el.style.setProperty('--p', p + '%'); const s = ALLS.find(x => x[0] === el.id); $(el.id + 'v').textContent = s[5](el.value); }
 function buildClimate(settings) {
@@ -740,7 +764,7 @@ $('oReseed').onchange = () => send('settings', { settings: { autoReseed: $('oRes
 $('oLearn').onchange = () => send('settings', { settings: { learning: $('oLearn').checked } });
 
 /* ================= settings ================= */
-const OPTS = { oNight: 'night', oFx: 'fx', oSense: 'sense', oTrail: 'trail', oLegend: 'legend', oPerf: 'perf', oAuto: 'auto', oHidePause: 'hidePause', oWake: 'wake' };
+const OPTS = { oScent: 'scent', oNight: 'night', oFx: 'fx', oSense: 'sense', oTrail: 'trail', oLegend: 'legend', oPerf: 'perf', oAuto: 'auto', oHidePause: 'hidePause', oWake: 'wake' };
 function applyUi() { document.body.classList.toggle('hidelegend', !ui.legend); document.body.classList.toggle('hideperf', !ui.perf); syncWake(); }
 for (const [id, key] of Object.entries(OPTS)) { $(id).checked = ui[key]; $(id).onchange = () => { ui[key] = $(id).checked; saveUi(); applyUi(); }; }
 $('sSave').onclick = () => send('save', { purpose: 'local' });
@@ -751,9 +775,9 @@ $('sFile').onchange = async e => { const f = e.target.files[0]; if (!f) return; 
 let newShape = 'wide';
 function markShape() { document.querySelectorAll('[data-shape]').forEach(b => b.classList.toggle('on', b.dataset.shape === newShape)); }
 document.querySelectorAll('[data-shape]').forEach(b => b.onclick = () => { newShape = b.dataset.shape; markShape(); });
-$('sReset').onclick = () => { newShape = preferredShape(); markShape(); $('modal').hidden = false; $('mOk').focus(); };
+$('sReset').onclick = () => { $('modal').hidden = false; $('mOk').focus(); };
 $('mCancel').onclick = () => { $('modal').hidden = true; };
-$('mOk').onclick = () => { $('modal').hidden = true; send('reset', { shape: newShape }); trail = []; rpos.clear(); bpos.clear(); setSelected(0); toast('New world: 120 founders released', 'birth'); };
+$('mOk').onclick = () => { $('modal').hidden = true; send('reset', {}); trail = []; rpos.clear(); bpos.clear(); setSelected(0); toast('New world: 120 founders released', 'birth'); };
 function onSaved(m) {
   const kb = (m.state.length / 1024).toFixed(0), writeLocal = () => { localStorage.setItem('alife.save', m.state); localStorage.setItem('alife.saveMeta', JSON.stringify({ ticks: m.ticks, at: Date.now(), kb })); showSaveInfo(); };
   if (m.purpose === 'auto') { try { writeLocal(); } catch {} return; }
@@ -801,8 +825,8 @@ function lineChart(c, series, { min = 0, decimals = 'auto' } = {}) {
 const smooth = (a, k = 4) => a.map((_, i) => { let s = 0, n = 0; for (let j = Math.max(0, i - k); j <= i; j++) { s += a[j]; n++; } return s / n; });
 
 /* ================= stats drawer ================= */
-const DEATHC = { age: C.muted, hunger: C.warn, storm: C.storm, fire: C.fire, beast: C.beast, attack: '#b04a8a' };
-const DEATHL = { age: 'Old age', hunger: 'Starvation', storm: 'Storms', fire: 'Burns', beast: 'Beasts', attack: 'Killed by yips' };
+const DEATHC = { thirst: '#6fb6e8', drowning: '#3f7fb5', age: C.muted, hunger: C.warn, storm: C.storm, fire: C.fire, beast: C.beast, attack: '#b04a8a' };
+const DEATHL = { thirst: 'Thirst', drowning: 'Drowning', age: 'Old age', hunger: 'Starvation', storm: 'Storms', fire: 'Burns', beast: 'Beasts', attack: 'Killed by yips' };
 function renderStats() {
   if (!stats) return;
   updateHud();
@@ -832,7 +856,7 @@ function renderStats() {
   $('sensBars').innerHTML = s.sensUse.filter(([k]) => k !== 'bias').slice(0, 12).map(([k, v]) => `<div class="bar"><div class="bt"><i style="width:${v * 100}%"></i><span>${esc(meta.senses[k] || k)}</span></div><b>${Math.round(v * 100)}%</b></div>`).join('');
   const mxA = Math.max(...s.actMix, 1e-9);
   $('actBars').innerHTML = s.actMix.map((v, i) => [v, i]).sort((a, b) => b[0] - a[0]).map(([v, i]) => `<div class="bar${v === mxA ? ' hl' : ''}"><div class="bt"><i style="width:${v / mxA * 100}%"></i><span>${meta.actions[i]}</span></div><b>${(v * 100).toFixed(1)}%</b></div>`).join('');
-  $('elite').innerHTML = s.eliteTop.length ? s.eliteTop.map(e => `<span class="chip dead" title="Score ${e.score}"><i style="background:hsl(${e.hue | 0} 72% 66%)"></i>#${e.id} · gen ${e.gen}</span>`).join('') : '<span class="note">Filled as yips die.</span>';
+  $('elite').innerHTML = s.eliteTop.length ? s.eliteTop.map(e => `<span class="chip dead" title="Score ${e.score}"><i style="background:hsl(${e.hue | 0} 72% 66%)"></i>${esc(e.name)} · gen ${e.gen}</span>`).join('') : '<span class="note">Filled as yips die.</span>';
   $('log').innerHTML = s.events.slice(0, 30).map(e => `<div><time>${fmt(e.t)}</time><i style="background:${KCOL[e.kind] || C.muted}"></i><span>${esc(e.s)}</span></div>`).join('');
 }
 
@@ -874,8 +898,8 @@ function renderInspector() {
   if (m.none || m.id !== selected) return;
   const hue = m.traits.hue | 0;
   $('iSwatch').style.background = hueFill[hue]; $('iSwatch').style.setProperty('--hue', `hsl(${hue} 72% 66% / .5)`);
-  $('iTitle').textContent = `Yip #${m.id}`;
-  $('iSub').textContent = `Generation ${m.gen} · age ${fmt(m.age)} · ${m.kids} offspring`;
+  $('iTitle').textContent = m.name || `Yip #${m.id}`;
+  $('iSub').textContent = `#${m.id} · generation ${m.gen} · age ${fmt(m.age)} · ${m.kids} offspring`;
   const badges = [];
   badges.push(m.sheltered ? ['Sheltered', 'good'] : ['Exposed', '']);
   if (m.tool > 0) badges.push([`Tool ${m.tool}`, 'good']);
@@ -883,11 +907,13 @@ function renderInspector() {
   if (m.health < 40) badges.push(['Injured', 'bad']);
   if (m.pain > .3) badges.push(['Under attack', 'bad']);
   if (m.rep > 3) badges.push(['Popular', 'good']);
+  if (m.inWater) badges.push(['Swimming', '']);
+  if (m.drv.thirst > .7) badges.push(['Parched', 'bad']);
   if (m.temp < 10) badges.push([`Cold ${m.temp.toFixed(0)}°`, 'warn']); else if (m.temp > 31) badges.push([`Hot ${m.temp.toFixed(0)}°`, 'warn']);
   $('iBadges').innerHTML = badges.map(([t, c]) => `<span class="badge ${c}">${t}</span>`).join('');
   meter('E', m.energy, (m.ph && m.ph.maxE) || 200, m.energy.toFixed(0)); meter('H', m.health, (m.ph && m.ph.maxH) || 100, m.health.toFixed(0));
   meter('A', m.age, m.lifespan, Math.round(m.age / m.lifespan * 100) + '%'); meter('L', m.load, m.cap, `${m.load.toFixed(1)}/${m.cap.toFixed(1)}`);
-  const DL = { hunger: ['Hunger', C.warn], cold: ['Cold / heat', '#9cc6ff'], injury: ['Injury', C.bad], fatigue: ['Fatigue', C.muted], lonely: ['Loneliness', '#c9b3e6'], insecure: ['Insecurity', C.tree] };
+  const DL = { thirst: ['Thirst', '#6fb6e8'], hunger: ['Hunger', C.warn], cold: ['Cold / heat', '#9cc6ff'], injury: ['Injury', C.bad], fatigue: ['Fatigue', C.muted], lonely: ['Loneliness', '#c9b3e6'], insecure: ['Insecurity', C.tree] };
   $('driveBars').innerHTML = meta.drives.map(k => { const v = m.drv[k] || 0; return `<div class="drive"><div>${DL[k][0]}<b>${Math.round(v * 100)}</b></div><div class="meter"><i style="width:${v * 100}%;background:${DL[k][1]}"></i></div></div>`; }).join('');
   if (pane === 'pMind') { drawBrain(m); probBars(m); }
   else if (pane === 'pBody') bodyPane(m);
@@ -899,7 +925,7 @@ function probBars(m) {
   const order = m.probs.map((p, i) => [p, i]).sort((a, b) => b[0] - a[0]).slice(0, 6), mx = order[0][0];
   $('probBars').innerHTML = order.map(([p, i]) => `<div class="bar${i === m.lastChoice ? ' hl' : ''}"><div class="bt"><i style="width:${p / mx * 100}%"></i><span>${meta.actions[i]}${i === m.lastChoice ? ' · chosen' : ''}</span></div><b>${(p * 100).toFixed(1)}%</b></div>`).join('');
   $('iLayers').textContent = m.sizes.join(' → ');
-  $('contKV').innerHTML = [['Voice', m.signal], ['Memory A', m.memA], ['Memory B', m.memB]].map(([k, v]) => `<div><span>${k}</span><b>${v >= 0 ? '+' : ''}${v.toFixed(2)}</b></div>`).join('');
+  $('contKV').innerHTML = [['Voice', m.signal], ['Memory A', m.memA], ['Memory B', m.memB], ['Scent laid', m.acts[m.acts.length - 1][meta.short.length + 3] || 0]].map(([k, v]) => `<div><span>${k}</span><b>${v >= 0 ? '+' : ''}${v.toFixed(2)}</b></div>`).join('');
 }
 function bodyPane(m) {
   const avg = stats ? stats.traits : null;
@@ -916,17 +942,17 @@ function bodyPane(m) {
   $('bodyKV').innerHTML = kv.map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join('');
 }
 function socialPane(m) {
-  $('socialKV').innerHTML = [['Popularity', m.rep.toFixed(2)], ['Admirers', m.admirers], ['Thanks received', m.thanksGot], ['Loving thanks', m.lovesGot], ['Co-parented', m.partners], ['Co-parent', m.coparent ? `#${m.coparent}${m.coparentAlive ? '' : ' (gone)'}` : 'none']].map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join('');
-  $('trustedBy').innerHTML = m.trustedBy.length ? m.trustedBy.map(t => `<button class="chip" data-goto="${t.id}"><i style="background:${hueFill[t.hue | 0]}"></i>#${t.id} · ${t.v.toFixed(2)}</button>`).join('') : '<p class="note">Nobody yet. Trust is earned slowly by sharing food or materials, warmth, shelter, repairs and defending others from beasts, and lost fast by attacks and theft.</p>';
+  $('socialKV').innerHTML = [['Popularity', m.rep.toFixed(2)], ['Admirers', m.admirers], ['Thanks received', m.thanksGot], ['Loving thanks', m.lovesGot], ['Co-parented', m.partners], ['Co-parent', m.coparent ? `${esc(m.coparentName || '#' + m.coparent)}${m.coparentAlive ? '' : ' (gone)'}` : 'none'], ['Owes thanks to', m.owed && m.owed.length ? m.owed.filter(o => o[1] > .05).slice(0, 3).map(o => esc(o[0])).join(', ') || 'nobody' : 'nobody']].map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join('');
+  $('trustedBy').innerHTML = m.trustedBy.length ? m.trustedBy.map(t => `<button class="chip" data-goto="${t.id}"><i style="background:${hueFill[t.hue | 0]}"></i>${esc(t.name || '#' + t.id)} · ${t.v.toFixed(2)}</button>`).join('') : '<p class="note">Nobody yet. Trust is earned slowly by sharing food or materials, warmth, shelter, repairs and defending others from beasts, and lost fast by attacks and theft.</p>';
   $('trustBars').innerHTML = m.trust.length ? m.trust.map(t => {
     const w = Math.abs(t.v) * 50, left = t.v < 0 ? 50 - w : 50;
-    return `<div class="bar"><div class="bt" style="cursor:${t.alive ? 'pointer' : 'default'}" ${t.alive ? `data-goto="${t.id}"` : ''}><i style="left:${left}%;width:${w}%;background:${t.v < 0 ? 'rgba(242,131,111,.4)' : 'rgba(126,214,176,.35)'}"></i><span style="${t.alive ? '' : 'color:var(--dim)'}">#${t.id}${t.alive ? '' : ' · gone'}</span></div><b>${t.v > 0 ? '+' : ''}${t.v.toFixed(2)}</b></div>`;
+    return `<div class="bar"><div class="bt" style="cursor:${t.alive ? 'pointer' : 'default'}" ${t.alive ? `data-goto="${t.id}"` : ''}><i style="left:${left}%;width:${w}%;background:${t.v < 0 ? 'rgba(242,131,111,.4)' : 'rgba(126,214,176,.35)'}"></i><span style="${t.alive ? '' : 'color:var(--dim)'}">${esc(t.name || '#' + t.id)}${t.alive ? '' : ' · gone'}</span></div><b>${t.v > 0 ? '+' : ''}${t.v.toFixed(2)}</b></div>`;
   }).join('') : '<p class="note">No relationships yet. Trust rises when food is shared and falls after attacks or theft.</p>';
-  $('kidChips').innerHTML = m.livingKids.length ? m.livingKids.map(k => `<button class="chip" data-goto="${k.id}"><i style="background:${hueFill[k.hue | 0]}"></i>#${k.id}</button>`).join('') : '<p class="note">None alive right now.</p>';
+  $('kidChips').innerHTML = m.livingKids.length ? m.livingKids.map(k => `<button class="chip" data-goto="${k.id}"><i style="background:${hueFill[k.hue | 0]}"></i>${esc(k.name || '#' + k.id)}</button>`).join('') : '<p class="note">None alive right now.</p>';
 }
 function linePane(m) {
-  const rows = [`<div><i class="nd" style="background:${hueFill[m.traits.hue | 0]};box-shadow:0 0 0 2px var(--accent)"></i><span>#${m.id} <b>this yip</b></span><small>gen ${m.gen}</small></div>`]
-    .concat(m.lineage.map(l => l.alive ? `<button data-goto="${l.id}"><i class="nd" style="background:${hueFill[(l.hue | 0) % 360]}"></i><span>#${l.id} · alive</span><small>gen ${l.gen}</small></button>` : `<div><i class="nd" style="background:${l.hue ? hueFill[(l.hue | 0) % 360] : C.dim};opacity:.4"></i><span style="color:var(--muted)">#${l.id}</span><small>gen ${l.gen}</small></div>`));
+  const rows = [`<div><i class="nd" style="background:${hueFill[m.traits.hue | 0]};box-shadow:0 0 0 2px var(--accent)"></i><span>${esc(m.name || '#' + m.id)} <b>this yip</b></span><small>gen ${m.gen}</small></div>`]
+    .concat(m.lineage.map(l => l.alive ? `<button data-goto="${l.id}"><i class="nd" style="background:${hueFill[(l.hue | 0) % 360]}"></i><span>${esc(l.name || '#' + l.id)} · alive</span><small>gen ${l.gen}</small></button>` : `<div><i class="nd" style="background:${l.hue ? hueFill[(l.hue | 0) % 360] : C.dim};opacity:.4"></i><span style="color:var(--muted)">${esc(l.name || '#' + l.id)}</span><small>gen ${l.gen}</small></div>`));
   if (!m.lineage.length) rows.push('<p class="note">A founder: no recorded ancestors.</p>');
   $('chain').innerHTML = rows.join('');
 }
@@ -1013,6 +1039,7 @@ document.addEventListener('visibilitychange', () => {
   syncWake();
 });
 setInterval(() => { if (ui.auto && running && F && F.ticks > 200) send('save', { purpose: 'auto' }); }, 120000);
+document.querySelectorAll('[name=notify]').forEach(r => { r.checked = r.value === ui.notify; r.onchange = () => { if (r.checked) { ui.notify = r.value; saveUi(); } }; });
 applyUi();
 
 /* coach mark & resume prompt */

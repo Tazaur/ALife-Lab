@@ -81,8 +81,17 @@
   <aside class="drawer left glass" id="dSettings" aria-label="Settings">
     <div class="dh"><h2>Settings<small>View options, saves and shortcuts</small></h2><button class="ib" data-close="dSettings" aria-label="Close"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
     <div class="db">
+      <section class="sec"><h3>Notifications</h3>
+        <div class="seg" role="radiogroup">
+          <label><input type="radio" name="notify" value="all"><span>All</span></label>
+          <label><input type="radio" name="notify" value="important"><span>Important</span></label>
+          <label><input type="radio" name="notify" value="off"><span>Off</span></label>
+        </div>
+        <p class="note">Important shows only extinctions. Messages from your own actions, like saving, always show.</p>
+      </section>
       <section class="sec"><h3>Display</h3>
         <div>
+          <label class="toggle"><span>Scent trails<small>Shows the pheromones yips lay down</small></span><span class="sw"><input type="checkbox" id="oScent"><i></i></span></label>
           <label class="toggle"><span>Day and night lighting<small>Darkens the map at night; fires glow</small></span><span class="sw"><input type="checkbox" id="oNight" checked><i></i></span></label>
           <label class="toggle"><span>Action effects<small>Flashes for sharing, attacks, hunts and crafting</small></span><span class="sw"><input type="checkbox" id="oFx" checked><i></i></span></label>
           <label class="toggle"><span>Sensing radius<small>Ring around the selected yip</small></span><span class="sw"><input type="checkbox" id="oSense" checked><i></i></span></label>
@@ -213,6 +222,7 @@
     <span><i class="sq" style="background:var(--wall)"></i>Wall</span>
     <span><i style="background:var(--fire)"></i>Fire</span>
     <span><i style="background:var(--beast)"></i>Beast</span>
+    <span><i class="sq" style="background:#1a3a54"></i>Water</span>
   </div>
   <div class="perf" id="perf">Starting…</div>
   <div class="coach glass" id="coach" hidden><span id="coachText"><b>Tap a yip</b> to read its mind · <b>scroll</b> to zoom · <b>drag</b> to pan · pick a brush to paint</span><div class="row"><button class="btn sm pri" id="coachResume" hidden>Resume</button><button class="btn sm" id="coachOk">Got it</button></div></div>
@@ -255,5 +265,5 @@
 
   <div class="hover" id="hover"></div>
   <div class="tipbox" id="tip"></div>
-  <div class="modal" id="modal" hidden><div class="glass"><h2>Start a new world?</h2><p>The current colony, its brains and its history will be replaced by 120 fresh founders on a newly generated map. Save first if you want to keep it.</p><div class="sec" style="gap:7px"><h3>Map shape</h3><div class="presets"><button class="preset" data-shape="wide"><b>Wide</b><small>Desktop, landscape</small></button><button class="preset" data-shape="tall"><b>Tall</b><small>Phone in portrait</small></button><button class="preset" data-shape="square"><b>Square</b><small>Either way</small></button></div></div><div class="row" style="justify-content:flex-end"><button class="btn" id="mCancel">Keep this world</button><button class="btn pri" id="mOk">Start new world</button></div></div></div>
+  <div class="modal" id="modal" hidden><div class="glass"><h2>Start a new world?</h2><p>The current colony, its brains and its history will be replaced by 150 fresh founders on a newly generated map. Save first if you want to keep it.</p><div class="row" style="justify-content:flex-end"><button class="btn" id="mCancel">Keep this world</button><button class="btn pri" id="mOk">Start new world</button></div></div></div>
 </div>

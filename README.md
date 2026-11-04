@@ -2,6 +2,16 @@
 
 An evolution sandbox. A colony of yips, each driven by its own neural network, forages, hoards, builds, shares, steals, fights, hunts beasts, crafts tools and breeds. Brains mutate between generations (senses, layers and neurons are added and removed) and also learn within a lifetime through a policy-gradient update. Nothing social is scripted: sharing, theft, kin loyalty and group hunting only happen if evolution finds them worth it.
 
+## The world (1.5)
+
+- **One square torus**, about 3× the area of 1.1 (1344 × 1344). Walk off any edge and you come in on the opposite side; every sense, distance and grid lookup takes the shortest way around, and the map is drawn seamlessly repeating.
+- **Lakes** fill the lowest ground, and land next to water is the most fertile. Yips can swim, slowly and at an extra energy cost, and water is colder than the air. A yip that runs out of energy in the water drowns. Beasts cannot swim, so water is also a refuge.
+- **Thirst** is a need that grows faster in the heat. Only the Drink action (in the water or at its edge) lowers it much; food holds a little moisture.
+- **Pheromones**: a continuous Scent output lays scent where a yip stands. It spreads to neighbouring ground and fades. Yips can sense the scent level and its gradient; Settings can show the trails.
+- **Names**: every yip gets a name of 1–4 vowel-consonant syllables, written backwards half the time (Alaboj, Jobala).
+- **Aquatic upgrades**: Webbed feet (fast, cheap swimming; slower on land) and Blubber (water barely chills it; overheats sooner).
+- **Notifications** setting: All, Important (extinctions only) or Off.
+
 ## How yips learn (1.3)
 
 Rewards come only from inside each yip. It has six needs, each an urgency from 0 to 1: **hunger, cold/heat, injury, fatigue, loneliness and insecurity** (few supplies). Wellbeing is minus the weighted sum of the squared urgencies, and the learning signal is the change in wellbeing. Squaring gives diminishing returns: relief is worth the most when a need is desperate and almost nothing once it is met, so sitting by a fire pays less every tick, while a slowly growing chill builds the desire back up. Because it is a potential over the yip's own state, no loop can farm it. Traits set the weights (caution for injury, sociability for loneliness, greed for insecurity).
@@ -10,8 +20,8 @@ Rewards come only from inside each yip. It has six needs, each an urgency from 0
 - Trust is slow to earn and fast to lose. Gains shrink as trust nears 1, scaled by the **trustfulness** trait; attacks and theft cut it sharply.
 - Bystanders judge an attack by how they feel about both sides: hurting their kin or friend costs the attacker a lot, hurting a stranger costs a little, and hurting someone they distrust earns a small amount of trust. A trustful witness gives a yip it already trusts the benefit of the doubt, unless its own kin was the victim.
 - Trust is also earned by giving food or materials (a yip gives whatever the other needs most), letting others eat, rest or warm up in your house or store, donating to someone's store, repairing their buildings, and fighting off a beast that was hunting them. Bystanders who see help given trust the helper a little more.
-- A yip warmed by someone else's fire, sheltered in someone else's house, or given food trusts the provider a little more and may **thank** them (shown as a "ty" bubble). A yip that already trusts the provider and is well satisfied thanks with love (😍).
-- Being thanked relieves the provider's loneliness; the warm glow scales with altruism. That is the only payoff for helping.
+- A yip that is given food or materials, warmed by someone's fire, sheltered in their house or defended from a beast trusts the helper a little more and remembers **gratitude owed** to them. It can sense what it owes the yip nearest to it.
+- **Thank** is an ordinary action. Nothing makes a yip use it. What it does: the thanked yip's loneliness eases (more for altruistic yips), it trusts the thanker a little, and repeating it soon means less. A thank-you from a yip that trusts you a lot is shown as 😍, otherwise "ty".
 - **Popularity** is the total trust other living yips hold in you. Popular yips breed sooner and more often, and an admirer nearby can co-parent: traits blend and compatible upgrades can come from either side.
 - Curiosity remains as an internal novelty drive: succeeding at something few yips do satisfies it, less with every repeat.
 

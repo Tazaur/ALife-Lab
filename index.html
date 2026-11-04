@@ -285,6 +285,13 @@ button.chip:hover{border-color:var(--line-hi);background:rgba(255,255,255,.05)}
 .drive .meter{height:5px}
 @media (max-width:420px){ .drives{grid-template-columns:repeat(2,minmax(0,1fr))} }
 
+.seg{display:flex;gap:2px;padding:3px;border-radius:9px;background:rgba(255,255,255,.04)}
+.seg label{flex:1;position:relative;cursor:pointer}
+.seg input{position:absolute;opacity:0;inset:0;margin:0;cursor:pointer}
+.seg span{display:block;text-align:center;padding:7px 0;border-radius:7px;font-weight:600;font-size:12px;color:var(--muted)}
+.seg input:checked+span{background:var(--glass-hi);color:var(--fg);box-shadow:0 0 0 1px var(--line-hi)}
+.seg input:focus-visible+span{outline:2px solid var(--accent)}
+
 /* ---------- overlays ---------- */
 .legend{position:absolute;right:var(--gut);top:72px;display:flex;gap:10px;padding:7px 11px;font-size:11px;color:var(--muted);z-index:4;pointer-events:none;transition:opacity .2s}
 .legend span{display:flex;align-items:center;gap:5px;white-space:nowrap}
@@ -478,8 +485,17 @@ button.chip:hover{border-color:var(--line-hi);background:rgba(255,255,255,.05)}
   <aside class="drawer left glass" id="dSettings" aria-label="Settings">
     <div class="dh"><h2>Settings<small>View options, saves and shortcuts</small></h2><button class="ib" data-close="dSettings" aria-label="Close"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
     <div class="db">
+      <section class="sec"><h3>Notifications</h3>
+        <div class="seg" role="radiogroup">
+          <label><input type="radio" name="notify" value="all"><span>All</span></label>
+          <label><input type="radio" name="notify" value="important"><span>Important</span></label>
+          <label><input type="radio" name="notify" value="off"><span>Off</span></label>
+        </div>
+        <p class="note">Important shows only extinctions. Messages from your own actions, like saving, always show.</p>
+      </section>
       <section class="sec"><h3>Display</h3>
         <div>
+          <label class="toggle"><span>Scent trails<small>Shows the pheromones yips lay down</small></span><span class="sw"><input type="checkbox" id="oScent"><i></i></span></label>
           <label class="toggle"><span>Day and night lighting<small>Darkens the map at night; fires glow</small></span><span class="sw"><input type="checkbox" id="oNight" checked><i></i></span></label>
           <label class="toggle"><span>Action effects<small>Flashes for sharing, attacks, hunts and crafting</small></span><span class="sw"><input type="checkbox" id="oFx" checked><i></i></span></label>
           <label class="toggle"><span>Sensing radius<small>Ring around the selected yip</small></span><span class="sw"><input type="checkbox" id="oSense" checked><i></i></span></label>
@@ -610,6 +626,7 @@ button.chip:hover{border-color:var(--line-hi);background:rgba(255,255,255,.05)}
     <span><i class="sq" style="background:var(--wall)"></i>Wall</span>
     <span><i style="background:var(--fire)"></i>Fire</span>
     <span><i style="background:var(--beast)"></i>Beast</span>
+    <span><i class="sq" style="background:#1a3a54"></i>Water</span>
   </div>
   <div class="perf" id="perf">Starting…</div>
   <div class="coach glass" id="coach" hidden><span id="coachText"><b>Tap a yip</b> to read its mind · <b>scroll</b> to zoom · <b>drag</b> to pan · pick a brush to paint</span><div class="row"><button class="btn sm pri" id="coachResume" hidden>Resume</button><button class="btn sm" id="coachOk">Got it</button></div></div>
@@ -652,7 +669,7 @@ button.chip:hover{border-color:var(--line-hi);background:rgba(255,255,255,.05)}
 
   <div class="hover" id="hover"></div>
   <div class="tipbox" id="tip"></div>
-  <div class="modal" id="modal" hidden><div class="glass"><h2>Start a new world?</h2><p>The current colony, its brains and its history will be replaced by 120 fresh founders on a newly generated map. Save first if you want to keep it.</p><div class="sec" style="gap:7px"><h3>Map shape</h3><div class="presets"><button class="preset" data-shape="wide"><b>Wide</b><small>Desktop, landscape</small></button><button class="preset" data-shape="tall"><b>Tall</b><small>Phone in portrait</small></button><button class="preset" data-shape="square"><b>Square</b><small>Either way</small></button></div></div><div class="row" style="justify-content:flex-end"><button class="btn" id="mCancel">Keep this world</button><button class="btn pri" id="mOk">Start new world</button></div></div></div>
+  <div class="modal" id="modal" hidden><div class="glass"><h2>Start a new world?</h2><p>The current colony, its brains and its history will be replaced by 150 fresh founders on a newly generated map. Save first if you want to keep it.</p><div class="row" style="justify-content:flex-end"><button class="btn" id="mCancel">Keep this world</button><button class="btn pri" id="mOk">Start new world</button></div></div></div>
 </div>
 
 <script id="simSource" type="text/plain">
@@ -660,35 +677,40 @@ button.chip:hover{border-color:var(--line-hi);background:rgba(255,255,255,.05)}
 // ALife Lab simulation core. Runs inside a Web Worker (or a main-thread shim).
 // Hot paths: flat Float32Array weights, per-type spatial grids, compiled sensor codes,
 // lazy environment queries (an agent only pays for the senses its brain is wired to).
-// world size is chosen per world (wide, tall or square) so phones in portrait get a portrait map
+// The world is a square torus about 3x the area of 1.1: walking off one edge brings you in at the opposite one,
+// and every sense, grid query and distance uses the shortest way around.
 const CELL = 32, FC = 16;
-const SHAPES = {wide:[960,600], tall:[600,960], square:[780,780]};
-let W = 960, H = 600, GC, GR, FW, FH, shape='wide';
+let W = 1344, H = 1344, GC, GR, FW, FH, shape='square';
 
 const rnd = (a,b) => a + Math.random()*(b-a);
 const clamp = (x,a,b) => x < a ? a : x > b ? b : x;
 const pick = a => a[Math.floor(Math.random()*a.length)];
+const wrapX = x => x<0?x+W:x>=W?x-W:x, wrapY = y => y<0?y+H:y>=H?y-H:y;
+const wd = (d,L) => d>L/2?d-L:d<-L/2?d+L:d;            // shortest signed offset on a ring
+const ddx = (a,b) => wd(b.x-a.x,W), ddy = (a,b) => wd(b.y-a.y,H);
+const wdist = (a,b) => Math.hypot(ddx(a,b),ddy(a,b));
+const wdistXY = (x1,y1,x2,y2) => Math.hypot(wd(x2-x1,W),wd(y2-y1,H));
 
 // ---------- actions ----------
-const ACTIONS = ['Move north','Move east','Move south','Move west','Harvest','Eat','Deposit in store','Withdraw from store','Build house','Build storehouse','Build wall','Build fire','Repair','Share food','Attack yip','Fight beast','Craft tool','Rest'];
-const SHORT   = ['N','E','S','W','Harvest','Eat','Deposit','Withdraw','House','Store','Wall','Fire','Repair','Share','Attack','Hunt','Craft','Rest'];
+const ACTIONS = ['Move north','Move east','Move south','Move west','Harvest','Eat','Deposit in store','Withdraw from store','Build house','Build storehouse','Build wall','Build fire','Repair','Share food','Attack yip','Fight beast','Craft tool','Rest','Drink','Thank nearest yip'];
+const SHORT   = ['N','E','S','W','Harvest','Eat','Deposit','Withdraw','House','Store','Wall','Fire','Repair','Share','Attack','Hunt','Craft','Rest','Drink','Thank'];
 const O = ACTIONS.length;            // discrete, softmax-sampled
-const CONT = ['Voice','Memory A','Memory B'];   // continuous tanh outputs
+const CONT = ['Voice','Memory A','Memory B','Scent'];   // continuous tanh outputs
 const NOUT = O + CONT.length;
-const A_ = Object.fromEntries(['N','E','S','W','HARVEST','EAT','DEPOSIT','WITHDRAW','HOUSE','STORE','WALL','FIRE','REPAIR','SHARE','ATTACK','HUNT','CRAFT','REST'].map((k,i)=>[k,i]));
+const A_ = Object.fromEntries(['N','E','S','W','HARVEST','EAT','DEPOSIT','WITHDRAW','HOUSE','STORE','WALL','FIRE','REPAIR','SHARE','ATTACK','HUNT','CRAFT','REST','DRINK','THANK'].map((k,i)=>[k,i]));
 const ITYPES = ['food','tree','stone'];
 const BTYPES = ['house','store','wall','fire'];
 const SPECS = {house:{wood:3,stone:1,hp:450,r:16},store:{wood:5,stone:4,hp:720,r:23},wall:{wood:2,stone:1,hp:420,r:15},fire:{wood:2,stone:0,hp:180,r:12}};
 const LIMITS = {layers:6, neurons:24, inputs:32};
 const DX = [0,1,0,-1], DY = [-1,0,1,0];
-const settings = {food:3,trees:.12,stone:.08,drain:1,decay:1,storm:1,temperature:19,day:500,season:2600,beasts:2,beastPower:1,popCap:260,mutation:1,learning:true,autoReseed:true};
+const settings = {food:7.5,trees:.3,stone:.2,drain:1,decay:1,storm:1,temperature:19,day:500,season:2600,beasts:6,beastPower:1,popCap:320,mutation:1,learning:true,autoReseed:true};
 
 // ---------- query masks ----------
 const Q = {FOOD:1,TREE:2,STONE:4,SHELTER:8,FIRE:16,STORM:32,OTHER:64,PRED:128,CROWD:256,WALL:512};
 
 let agents=[], items=[], buildings=[], storms=[], beasts=[], events=[], history=[], elite=[];
 let ticks=0, nextId=1, nextBid=1, births=0, deaths=0, maxGen=0, peakPop=0, selected=0, lastMilestone=0, seed=1;
-let deathsBy = {age:0,hunger:0,storm:0,fire:0,beast:0,attack:0};
+let deathsBy = {age:0,hunger:0,thirst:0,drowning:0,storm:0,fire:0,beast:0,attack:0};
 let tally = {gifts:0,thanks:0,loves:0,pairings:0,shares:0,thefts:0,attacks:0,hunts:0,beastKills:0,crafts:0,deposits:0,withdraws:0,builds:0};
 let baseTemp = 19, dayS = 0, seasonS = 0;
 let fires=[], shelters=[], walls=[];
@@ -697,11 +719,12 @@ let fert = new Float32Array(FW*FH), forest = new Float32Array(FW*FH), rock = new
 // ---------- biome fields (seeded value noise) ----------
 function mulberry(s){ return () => { s|=0; s=s+0x6D2B79F5|0; let t=Math.imul(s^s>>>15,1|s); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
 function noiseField(r, scale){
-  const gw=Math.ceil(FW/scale)+2, gh=Math.ceil(FH/scale)+2, g=new Float32Array(gw*gh); for (let i=0;i<g.length;i++) g[i]=r();
-  const f=new Float32Array(FW*FH);
+  // value noise on a periodic lattice, so the field wraps seamlessly at the world's edges
+  const P=Math.max(2,Math.round(FW/scale)), g=new Float32Array(P*P); for (let i=0;i<g.length;i++) g[i]=r();
+  const f=new Float32Array(FW*FH), k=P/FW;
   for (let y=0;y<FH;y++) for (let x=0;x<FW;x++){
-    const gx=x/scale, gy=y/scale, x0=gx|0, y0=gy|0, tx=gx-x0, ty=gy-y0, sx=tx*tx*(3-2*tx), sy=ty*ty*(3-2*ty);
-    const a=g[x0+y0*gw], b=g[x0+1+y0*gw], c=g[x0+(y0+1)*gw], d=g[x0+1+(y0+1)*gw];
+    const gx=x*k, gy=y*k, x0=gx|0, y0=gy|0, tx=gx-x0, ty=gy-y0, sx=tx*tx*(3-2*tx), sy=ty*ty*(3-2*ty), x1=(x0+1)%P, y1=(y0+1)%P;
+    const a=g[x0+y0*P], b=g[x1+y0*P], c=g[x0+y1*P], d=g[x1+y1*P];
     f[x+y*FW]=a+(b-a)*sx+(c-a)*sy+(a-b-c+d)*sx*sy;
   }
   return f;
@@ -711,67 +734,92 @@ function makeFields(s){
   fert=mix(noiseField(r,9),noiseField(r,3.5),.72);
   forest=mix(noiseField(r,8),noiseField(r,3),.7);
   rock=mix(noiseField(r,10),noiseField(r,2.5),.65);
-  // rock pushes out fertility; forest prefers mid fertility
-  for (let i=0;i<fert.length;i++){ fert[i]=clamp(fert[i]*(1-.55*rock[i]),0,1); forest[i]=clamp(forest[i]*(1-.6*rock[i]),0,1); }
+  // lakes sit in the lowest ground; land near water is the most fertile
+  const elev=mix(noiseField(r,7),noiseField(r,2.6),.7);
+  water=new Uint8Array(FW*FH); for (let i=0;i<elev.length;i++) water[i]=elev[i]<.2?1:0;
+  buildWaterDistance();
+  for (let i=0;i<fert.length;i++){
+    const near=1-Math.min(1,waterDist[i]/8);
+    fert[i]=water[i]?0:clamp((fert[i]*.7+.45*near)*(1-.55*rock[i]),0,1); forest[i]=water[i]?0:clamp(forest[i]*(1-.6*rock[i]),0,1); rock[i]=water[i]?0:rock[i];
+  }
 }
-const fieldAt = (f,x,y) => f[clamp(x/FC|0,0,FW-1)+clamp(y/FC|0,0,FH-1)*FW];
+// multi-source BFS over the torus: for every cell, the nearest water cell and its distance in cells
+let water=new Uint8Array(0), waterDist=new Float32Array(0), waterNear=new Int32Array(0);
+function buildWaterDistance(){
+  const n=FW*FH; waterDist=new Float32Array(n).fill(1e9); waterNear=new Int32Array(n).fill(-1);
+  const q=new Int32Array(n); let h=0, t=0;
+  for (let i=0;i<n;i++) if (water[i]){ waterDist[i]=0; waterNear[i]=i; q[t++]=i; }
+  while (h<t){ const i=q[h++], x=i%FW, y=(i/FW)|0;
+    for (const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){ const nx=(x+dx+FW)%FW, ny=(y+dy+FH)%FH, j=nx+ny*FW; if (waterDist[j]>waterDist[i]+1){ waterDist[j]=waterDist[i]+1; waterNear[j]=waterNear[i]; q[t++]=j; } } }
+}
+const cellIdx = (x,y) => (Math.floor(wrapX(x)/FC)%FW)+(Math.floor(wrapY(y)/FC)%FH)*FW;
+const isWater = (x,y) => water[cellIdx(x,y)]===1;
+// offset from (x,y) to the centre of the nearest water cell, by the shortest way around
+function waterVec(x,y,out){ const j=waterNear[cellIdx(x,y)]; if (j<0){ out.dx=0; out.dy=0; out.d=1e9; return out; } const cx=(j%FW+.5)*FC, cy=(((j/FW)|0)+.5)*FC; out.dx=wd(cx-x,W); out.dy=wd(cy-y,H); out.d=Math.hypot(out.dx,out.dy); return out; }
+const fieldAt = (f,x,y) => f[cellIdx(x,y)];
 function spawnPoint(f, power){
-  for (let i=0;i<8;i++){ const x=rnd(5,W-5), y=rnd(5,H-5); if (Math.random()<.04+.96*Math.pow(fieldAt(f,x,y),power)) return [x,y]; }
-  return [rnd(5,W-5),rnd(5,H-5)];
+  for (let i=0;i<10;i++){ const x=rnd(0,W), y=rnd(0,H); if (!isWater(x,y)&&Math.random()<.04+.96*Math.pow(fieldAt(f,x,y),power)) return [x,y]; }
+  for (let i=0;i<30;i++){ const x=rnd(0,W), y=rnd(0,H); if (!isWater(x,y)) return [x,y]; }
+  return [rnd(0,W),rnd(0,H)];
 }
 
 // ---------- spatial grids ----------
 const mkGrid = () => Array.from({length: GC*GR}, () => []);
 let gFood, gTree, gStone, gAgent, GRIDS;
-function setSize(name){
-  shape=SHAPES[name]?name:'wide'; [W,H]=SHAPES[shape];
-  GC=Math.ceil(W/CELL)+1; GR=Math.ceil(H/CELL)+1; FW=Math.ceil(W/FC); FH=Math.ceil(H/FC);
+function setSize(){
+  shape='square'; GC=W/CELL; GR=H/CELL; FW=W/FC; FH=H/FC;
+  pher=new Float32Array(FW*FH); pherTmp=new Float32Array(FW*FH);
   gFood=mkGrid(); gTree=mkGrid(); gStone=mkGrid(); gAgent=mkGrid(); GRIDS=[gFood,gTree,gStone];
 }
-setSize('wide');
+let pher, pherTmp;
+setSize();
 function clearGrid(g){ for (let i=0;i<g.length;i++) g[i].length = 0; }
-function cellOf(x,y){ return clamp(x/CELL|0,0,GC-1) + clamp(y/CELL|0,0,GR-1)*GC; }
+function cellOf(x,y){ return (Math.floor(x/CELL)%GC+GC)%GC + ((Math.floor(y/CELL)%GR+GR)%GR)*GC; }
+// visit every grid bin within r of (x,y), wrapping across the edges
+function forBins(g,x,y,r,fn){
+  const x0=Math.floor((x-r)/CELL), x1=Math.floor((x+r)/CELL), y0=Math.floor((y-r)/CELL), y1=Math.floor((y+r)/CELL);
+  for (let cy=y0;cy<=y1;cy++){ const wy=((cy%GR)+GR)%GR; for (let cx=x0;cx<=x1;cx++){ const bin=g[((cx%GC)+GC)%GC+wy*GC]; for (let n=0;n<bin.length;n++) fn(bin[n]); } }
+}
 function nearestIn(g, a, r, q, skip){
-  // expanding-ring search: stops once no unvisited ring can hold anything closer
-  let best=null, d2=r*r;
-  const cx0=clamp(a.x/CELL|0,0,GC-1), cy0=clamp(a.y/CELL|0,0,GR-1), K=Math.ceil(r/CELL)+1;
+  // expanding-ring search on the torus: stops once no unvisited ring can hold anything closer
+  let best=null, d2=r*r, bx=0, by=0;
+  const cx0=Math.floor(a.x/CELL), cy0=Math.floor(a.y/CELL), K=Math.min(Math.ceil(r/CELL)+1,(GC>>1)-1);
   for (let k=0;k<=K;k++){
     const y0=cy0-k, y1=cy0+k, x0=cx0-k, x1=cx0+k;
     for (let cy=y0; cy<=y1; cy++){
-      if (cy<0||cy>=GR) continue;
-      const step=(cy===y0||cy===y1)?1:(x1-x0)||1;
+      const wy=((cy%GR)+GR)%GR, step=(cy===y0||cy===y1)?1:(x1-x0)||1;
       for (let cx=x0; cx<=x1; cx+=step){
-        if (cx<0||cx>=GC) continue;
-        const bin=g[cx+cy*GC];
-        for (let n=0;n<bin.length;n++){ const o=bin[n]; if (o.dead||o===skip) continue; const dx=o.x-a.x, dy=o.y-a.y, dd=dx*dx+dy*dy; if (dd<d2){ d2=dd; best=o; } }
+        const bin=g[((cx%GC)+GC)%GC+wy*GC];
+        for (let n=0;n<bin.length;n++){ const o=bin[n]; if (o.dead||o===skip) continue; const dx=wd(o.x-a.x,W), dy=wd(o.y-a.y,H), dd=dx*dx+dy*dy; if (dd<d2){ d2=dd; best=o; bx=dx; by=dy; } }
       }
     }
     const reach=k*CELL; if (reach*reach>=d2) break;
   }
-  q.obj=best; q.dist=best?Math.sqrt(d2):r; return q;
+  q.obj=best; q.dist=best?Math.sqrt(d2):r; q.dx=bx; q.dy=by; return q;
 }
 function crowdAt(a, r, out){
-  let n=0, sig=0; const r2=r*r, x0=Math.max(0,(a.x-r)/CELL|0), x1=Math.min(GC-1,(a.x+r)/CELL|0), y0=Math.max(0,(a.y-r)/CELL|0), y1=Math.min(GR-1,(a.y+r)/CELL|0);
-  for (let cy=y0;cy<=y1;cy++) for (let cx=x0;cx<=x1;cx++){ const bin=gAgent[cx+cy*GC]; for (const o of bin){ if (o===a||o.dead) continue; const dx=o.x-a.x, dy=o.y-a.y; if (dx*dx+dy*dy<r2){ n++; sig+=o.signal; } } }
+  let n=0, sig=0; const r2=r*r;
+  forBins(gAgent,a.x,a.y,r,o=>{ if (o===a||o.dead) return; const dx=wd(o.x-a.x,W), dy=wd(o.y-a.y,H); if (dx*dx+dy*dy<r2){ n++; sig+=o.signal; } });
   out.n=n; out.sig=n?sig/n:0; return out;
 }
 function nearestList(list, a, r, q, pred){
   let best=null, d2=r*r;
-  for (const b of list){ if (pred&&!pred(b)) continue; const dx=b.x-a.x, dy=b.y-a.y, dd=dx*dx+dy*dy; if (dd<d2){ d2=dd; best=b; } }
-  q.obj=best; q.dist=best?Math.sqrt(d2):r; return q;
+  let bx=0, by=0;
+  for (const b of list){ if (pred&&!pred(b)) continue; const dx=wd(b.x-a.x,W), dy=wd(b.y-a.y,H), dd=dx*dx+dy*dy; if (dd<d2){ d2=dd; best=b; bx=dx; by=dy; } }
+  q.obj=best; q.dist=best?Math.sqrt(d2):r; q.dx=bx; q.dy=by; return q;
 }
 const isShelter = b => (b.type==='house'||b.type==='store')&&b.hp>0;
 const isFire = b => b.type==='fire';
 const isDamaged = b => b.hp<b.max*.85;
 
 // walls are segments: centre (x,y), half-length r, angle ang
-function segDist(px,py,b){ const c=b.c, s=b.s, dx=px-b.x, dy=py-b.y; const t=clamp(dx*c+dy*s,-b.r,b.r); const ex=dx-c*t, ey=dy-s*t; return Math.sqrt(ex*ex+ey*ey); }
-function wallBlocks(nx,ny,pad){ for (const b of walls) if (b.hp>0&&Math.abs(b.x-nx)<b.r+pad+2&&Math.abs(b.y-ny)<b.r+pad+2&&segDist(nx,ny,b)<pad) return true; return false; }
-function nearestWall(a,r){ let d=r; for (const b of walls) if (b.hp>0&&Math.abs(b.x-a.x)<b.r+r&&Math.abs(b.y-a.y)<b.r+r){ const s=segDist(a.x,a.y,b); if (s<d) d=s; } return d; }
+function segDist(px,py,b){ const c=b.c, s=b.s, dx=wd(px-b.x,W), dy=wd(py-b.y,H); const t=clamp(dx*c+dy*s,-b.r,b.r); const ex=dx-c*t, ey=dy-s*t; return Math.sqrt(ex*ex+ey*ey); }
+function wallBlocks(nx,ny,pad){ for (const b of walls) if (b.hp>0&&Math.abs(wd(b.x-nx,W))<b.r+pad+2&&Math.abs(wd(b.y-ny,H))<b.r+pad+2&&segDist(nx,ny,b)<pad) return true; return false; }
+function nearestWall(a,r){ let d=r; for (const b of walls) if (b.hp>0&&Math.abs(wd(b.x-a.x,W))<b.r+r&&Math.abs(wd(b.y-a.y,H))<b.r+r){ const s=segDist(a.x,a.y,b); if (s<d) d=s; } return d; }
 
 // ---------- senses ----------
 // [key, label, query mask, fn(a,e)]
-const dir = (a,q,ax) => q.obj ? (q.obj[ax]-a[ax])/Math.max(1,q.dist) : 0;
+const dir = (a,q,ax) => q.obj ? (ax==='x'?q.dx:q.dy)/Math.max(1,q.dist) : 0;
 const pro = (a,q) => q.obj ? 1-q.dist/a._r : 0;
 function kinship(a,o){
   if (!o) return 0;
@@ -791,6 +839,15 @@ const SENSOR_DEFS = [
   ['temp','Local temperature',0,a=>clamp((a._t-20)/30,-1,1)],
   ['comfort','Thermal comfort',0,a=>clamp(1-Math.abs(a._t-20)/(12*a.traits.thermal),-1,1)],
   ['hungerDrive','Hunger',0,a=>a.drv.hunger],
+  ['thirst','Thirst',0,a=>a.drv.thirst],
+  ['inWater','Swimming',0,a=>a.inWater?1:0],
+  ['waterX','Water direction X',0,a=>{ const v=waterVec(a.x,a.y,_wv); return v.d>1?v.dx/v.d:0; }],
+  ['waterY','Water direction Y',0,a=>{ const v=waterVec(a.x,a.y,_wv); return v.d>1?v.dy/v.d:0; }],
+  ['waterNear','Water proximity',0,a=>{ const v=waterVec(a.x,a.y,_wv); return Math.max(0,1-v.d/a._r); }],
+  ['scent','Scent here',0,a=>Math.min(1,pher[cellIdx(a.x,a.y)]/4)],
+  ['scentX','Scent gradient X',0,a=>clamp((pher[cellIdx(a.x+FC,a.y)]-pher[cellIdx(a.x-FC,a.y)])/2,-1,1)],
+  ['scentY','Scent gradient Y',0,a=>clamp((pher[cellIdx(a.x,a.y+FC)]-pher[cellIdx(a.x,a.y-FC)])/2,-1,1)],
+  ['gratitude','Gratitude owed to nearest yip',Q.OTHER,(a,e)=>e.other.obj?Math.min(1,a.owed.get(e.other.obj.id)||0):0],
   ['coldDrive','Feeling cold or hot',0,a=>a.drv.cold],
   ['fatigue','Fatigue',0,a=>a.drv.fatigue],
   ['lonely','Loneliness',0,a=>a.drv.lonely],
@@ -860,7 +917,7 @@ KEYIDX.memory = KEYIDX.trend;   // pre-1.1 saves
 
 // ---------- brains ----------
 function randArr(n, s=.6){ const f=new Float32Array(n); for (let i=0;i<n;i++) f[i]=rnd(-s,s); return f; }
-const DEFAULT_INPUTS = ['bias','energy','health','pain','coldDrive','lonely','foodX','foodY','foodNear','agentX','agentY','agentNear','kin','predX','predY','predNear','foodStock','memA','memB','signal'];
+const DEFAULT_INPUTS = ['bias','energy','health','pain','thirst','waterX','waterY','coldDrive','lonely','foodX','foodY','foodNear','agentX','agentY','agentNear','kin','predX','predY','predNear','foodStock','memA','memB','signal'];
 function freshBrain(){ const inputs=[...DEFAULT_INPUTS], sizes=[inputs.length,14,12,NOUT]; return {inputs, sizes, w:[randArr(14*inputs.length), randArr(12*14), randArr(NOUT*12)]}; }
 function copyBrain(b){ return {inputs:[...b.inputs], sizes:[...b.sizes], w:b.w.map(f=>new Float32Array(f))}; }
 function toNested(b){ return {inputs:[...b.inputs], sizes:[...b.sizes], weights:b.w.map((f,l)=>{ const rows=b.sizes[l+1], cols=b.sizes[l], m=[]; for (let j=0;j<rows;j++) m.push(Array.from(f.subarray(j*cols,(j+1)*cols))); return m; })}; }
@@ -914,7 +971,7 @@ function forward(a){
   let r=Math.random(), choice=O-1;
   for (let i=0;i<O;i++) a.probs[i]=ex[i]/sum;
   for (let i=0;i<O;i++){ if ((r-=a.probs[i])<=0){ choice=i; break; } }
-  a.signal=z[O]; a.memA=.7*a.memA+.3*z[O+1]; a.memB=.7*a.memB+.3*z[O+2];
+  a.signal=z[O]; a.memA=.7*a.memA+.3*z[O+1]; a.memB=.7*a.memB+.3*z[O+2]; if (z[O+3]>0) pher[cellIdx(a.x,a.y)]+=z[O+3]*.5;
   a.lastChoice=choice; return temp;
 }
 function learn(a, reward, temp){
@@ -941,10 +998,11 @@ function learn(a, reward, temp){
 // Wellbeing = -sum(weight * urgency^2) and reward = change in wellbeing. Squaring makes relief worth the most when
 // the need is greatest and almost nothing once satisfied (sitting by a fire pays less every tick), while a slowly
 // growing need builds the desire back up. It is a potential over the yip's own state, so no loop can farm it.
-const DRIVES = ['hunger','cold','injury','fatigue','lonely','insecure'];
+const DRIVES = ['hunger','thirst','cold','injury','fatigue','lonely','insecure'];
 function updateDrives(a,lt,moved,exertion,restBoost){
   const ph=a.ph, d=a.drv;
   d.hunger=clamp(1-a.energy/(ph.maxE*.7),0,1);
+  d.thirst=clamp(d.thirst+.0005*(1+Math.max(0,lt-24)/12),0,1);   // grows faster in the heat; only drinking lowers it
   const disc=clamp((Math.max(0,ph.coldT-lt)+Math.max(0,lt-ph.hotT))/12,0,1);
   d.cold+=(disc-d.cold)*(disc>d.cold?.015:.12);                     // chill builds slowly, warmth relieves fast
   d.injury=clamp((1-a.health/ph.maxH)*.8+a.pain*.4,0,1);
@@ -954,7 +1012,7 @@ function updateDrives(a,lt,moved,exertion,restBoost){
 }
 function wellbeing(a){
   const d=a.drv, t=a.traits;
-  return -(d.hunger*d.hunger + d.cold*d.cold + t.caution*d.injury*d.injury + .6*d.fatigue*d.fatigue + .8*t.social*d.lonely*d.lonely + (.5+t.greed)*d.insecure*d.insecure);
+  return -(d.hunger*d.hunger + d.thirst*d.thirst + d.cold*d.cold + t.caution*d.injury*d.injury + .6*d.fatigue*d.fatigue + .8*t.social*d.lonely*d.lonely + (.5+t.greed)*d.insecure*d.insecure);
 }
 const MATV={wood:.12,stone:.15}; let ownVal=new Map();
 const buildValue=b=>{ const s=SPECS[b.type]; return (s.wood*MATV.wood+s.stone*MATV.stone)*Math.max(0,b.hp/b.max); };
@@ -1007,11 +1065,13 @@ const PERKS = [
   {id:'tremor',tree:'Senses',req:'eyes',cost:1,name:'Tremor sense',good:'Detects beasts from 1.6× as far',bad:'−5% speed'},
   {id:'fur',tree:'Climate',req:null,cost:1,name:'Fur coat',good:'Comfortable down to 5°C',bad:'Overheats above 26°C'},
   {id:'sweat',tree:'Climate',req:null,cost:1,name:'Sweat glands',good:'Comfortable up to 39°C',bad:'Chills below 18°C'},
+  {id:'webbed',tree:'Aquatic',req:null,cost:1,name:'Webbed feet',good:'Swims 70% faster at half the energy',bad:'−6% speed on land'},
+  {id:'blubber',tree:'Aquatic',req:'webbed',cost:1.2,name:'Blubber',good:'Water barely chills it',bad:'Overheats 4°C sooner, +5% metabolism'},
   {id:'gut',tree:'Gut',req:null,cost:1,name:'Efficient gut',good:'Food gives 25% more energy',bad:'Max energy 175'},
   {id:'fat',tree:'Gut',req:'gut',cost:1.2,name:'Fat reserves',good:'Max energy 260',bad:'−8% speed'},
 ];
 const PERK = Object.fromEntries(PERKS.map(p=>[p.id,p]));
-const CLASH = [['jugg','sprint'],['hide','lean'],['fur','sweat'],['fat','lean'],['hibernate','sprint']];
+const CLASH = [['blubber','sweat'],['blubber','lean'],['jugg','sprint'],['hide','lean'],['fur','sweat'],['fat','lean'],['hibernate','sprint']];
 const clashes = (perks,id) => CLASH.some(([x,y])=>(x===id&&perks.includes(y))||(y===id&&perks.includes(x)));
 function perkAvailable(perks,p){ return !perks.includes(p.id)&&(!p.req||perks.includes(p.req))&&!clashes(perks,p.id); }
 function mutatePerks(src){
@@ -1026,7 +1086,7 @@ const traitMetab = (t,perks=[]) => { const c=traitCost(t,perks); return .7+.12*t
 // derived physiology: what the traits and perks add up to, cached on the agent
 function derive(a){
   const t=a.traits, has=id=>a.perks.includes(id);
-  const ph={speed:1,dmg:1,armor:1,beastArmor:1,carry:0,metab:1,senseAdd:0,senseMul:1,coldT:15,hotT:31,food:1,maxE:200,maxH:100,rest:t.rest,regen:.004*t.regen,predMul:1,night:false,hib:false,sprint:false};
+  const ph={speed:1,dmg:1,armor:1,beastArmor:1,carry:0,metab:1,senseAdd:0,senseMul:1,coldT:15,hotT:31,food:1,maxE:200,maxH:100,rest:t.rest,regen:.004*t.regen,predMul:1,night:false,hib:false,sprint:false,swim:1,chill:1};
   if (has('muscle')){ ph.dmg*=1.25; ph.metab*=1.06; }
   if (has('hide')){ ph.armor*=.7; ph.speed*=.9; }
   if (has('jugg')){ ph.carry+=3; ph.beastArmor*=.5; ph.speed*=.85; ph.metab*=1.08; }
@@ -1041,6 +1101,8 @@ function derive(a){
   if (has('tremor')){ ph.predMul=1.6; ph.speed*=.95; }
   if (has('fur')){ ph.coldT=5; ph.hotT=Math.min(ph.hotT,26); }
   if (has('sweat')){ ph.hotT+=8; ph.coldT=18; }
+  if (has('webbed')){ ph.swim=1.7; ph.speed*=.94; }
+  if (has('blubber')){ ph.chill=.2; ph.hotT-=4; ph.metab*=1.05; }
   if (has('gut')){ ph.food=1.25; ph.maxE=175; }
   if (has('fat')){ ph.maxE=260; ph.speed*=.92; }
   ph.sense=(t.sense+ph.senseAdd)*ph.senseMul;
@@ -1058,32 +1120,40 @@ function mutateTraits(src){
   for (const k of [...PHYS,...MENT]) if (t[k]==null) t[k]=freshTraits()[k];
   return t;
 }
+// Names: 1-4 syllables, each a vowel then a consonant; half are written backwards (Alaboj -> Jobala) for variety.
+const VOW='aeiou', CON='bcdfghjklmnprstvwyz';
+function makeName(){
+  let n=''; const k=1+Math.floor(Math.random()*4);
+  for (let i=0;i<k;i++) n+=VOW[Math.floor(Math.random()*5)]+CON[Math.floor(Math.random()*CON.length)];
+  if (Math.random()<.5) n=[...n].reverse().join('');
+  return n[0].toUpperCase()+n.slice(1);
+}
 function makeAgent(x,y,brain=freshBrain(),gen=0,parent=null,traits=freshTraits(),energy=90,lineage=[],perks=[]){
-  const a={id:nextId++,x,y,vx:0,vy:0,hd:rnd(0,6.283),brain,gen,parent,lineage,traits,energy,health:100,prevHealth:100,age:0,lifespan:rnd(3600,5100),
+  const a={id:nextId++,name:makeName(),x,y,vx:0,vy:0,hd:rnd(0,6.283),brain,gen,parent,lineage,traits,energy,health:100,prevHealth:100,age:0,lifespan:rnd(3600,5100),
     inv:{food:0,wood:0,stone:0},tool:0,memory:0,memA:0,memB:0,signal:0,pain:0,trust:new Map(),lastChoice:O-1,probs:new Float32Array(O),
     builds:0,success:0,kids:0,shared:0,stolen:0,attacks:0,kills:0,hunts:0,beastKills:0,crafts:0,deposits:0,
     actionCounts:new Uint32Array(O),okCounts:new Uint32Array(O),stash:0,shareHeat:0,phi:0,baseline:0,
-    drv:{hunger:0,cold:0,injury:0,fatigue:.1,lonely:.2,insecure:.8},thanked:new Map(),thanksGot:0,lovesGot:0,coparent:null,partners:0,sheltered:false,harm:'hunger',fx:0,_t:20};
+    drv:{hunger:0,thirst:.2,cold:0,injury:0,fatigue:.1,lonely:.2,insecure:.8},owed:new Map(),inWater:false,thanked:new Map(),thanksGot:0,lovesGot:0,coparent:null,partners:0,sheltered:false,harm:'hunger',fx:0,_t:20};
   for (const k of [...PHYS,...MENT]) if (a.traits[k]==null) a.traits[k]=freshTraits()[k];
   a.perks=perks.filter(id=>PERK[id]); derive(a); updateDrives(a,20,false,0,0); a.phi=wellbeing(a);
   compileBrain(a); if (gen>maxGen) maxGen=gen; return a;
 }
 // using another yip's store or house with its owner's trust: the guest feels grateful
-function hostGrace(a,b,strength){ const ow=b.owner&&b.owner!==a.id?byId.get(b.owner):null; if (!ow) return; gainTrust(a,ow.id,.03*strength); thank(a,ow,strength); }
+function hostGrace(a,b,strength){ const ow=b.owner&&b.owner!==a.id?byId.get(b.owner):null; if (!ow) return; gainTrust(a,ow.id,.03*strength); owe(a,ow,.3*strength); }
 function socialTick(a){
   // loneliness eases near yips it trusts and grows when alone among strangers or enemies
-  let friends=0; const r=40, x0=Math.max(0,(a.x-r)/CELL|0), x1=Math.min(GC-1,(a.x+r)/CELL|0), y0=Math.max(0,(a.y-r)/CELL|0), y1=Math.min(GR-1,(a.y+r)/CELL|0);
-  for (let cy=y0;cy<=y1;cy++) for (let cx=x0;cx<=x1;cx++) for (const o of gAgent[cx+cy*GC]){ if (o===a||o.dead) continue; const dx=o.x-a.x, dy=o.y-a.y; if (dx*dx+dy*dy<r*r&&((a.trust.get(o.id)||0)>.25||kinship(a,o)>.4)) friends++; }
+  let friends=0; const r=40;
+  forBins(gAgent,a.x,a.y,r,o=>{ if (o===a||o.dead) return; if (wdist(a,o)<r&&((a.trust.get(o.id)||0)>.25||kinship(a,o)>.4)) friends++; });
   const d=a.drv; d.lonely=clamp(d.lonely+(friends?-.012*Math.min(3,friends):.006*a.traits.social),0,1);
 }
 function findAdmirer(a){
-  let best=null, bt=.5; const r=40, x0=Math.max(0,(a.x-r)/CELL|0), x1=Math.min(GC-1,(a.x+r)/CELL|0), y0=Math.max(0,(a.y-r)/CELL|0), y1=Math.min(GR-1,(a.y+r)/CELL|0);
-  for (let cy=y0;cy<=y1;cy++) for (let cx=x0;cx<=x1;cx++) for (const o of gAgent[cx+cy*GC]){ if (o===a||o.dead||o.energy<60) continue; const t=o.trust.get(a.id)||0; if (t>bt&&kinship(a,o)<.5){ bt=t; best=o; } }
+  let best=null, bt=.5;
+  forBins(gAgent,a.x,a.y,40,o=>{ if (o===a||o.dead||o.energy<60||wdist(a,o)>40) return; const t=o.trust.get(a.id)||0; if (t>bt&&kinship(a,o)<.5){ bt=t; best=o; } });
   return best;
 }
 function blendTraits(x,y){ const t={}; for (const k in x){ if (k==='hue'){ let d=((y.hue-x.hue+540)%360)-180; t.hue=(x.hue+d*Math.random()+360)%360; continue; } const w=Math.random(); t[k]=y[k]==null?x[k]:x[k]*w+y[k]*(1-w); } return t; }
 function child(a,mate){
-  const lineage=[{id:a.id,gen:a.gen,hue:a.traits.hue},...a.lineage].slice(0,12);
+  const lineage=[{id:a.id,name:a.name,gen:a.gen,hue:a.traits.hue},...a.lineage].slice(0,12);
   let traits=a.traits, perks=[...a.perks];
   if (mate){
     // an admirer co-parents: traits blend, and compatible upgrades can come from either side
@@ -1092,7 +1162,7 @@ function child(a,mate){
     mate.energy-=12; mate.drv.lonely=Math.max(0,mate.drv.lonely-.25); a.drv.lonely=Math.max(0,a.drv.lonely-.25);
     a.partners++; mate.partners++; tally.pairings++;
   }
-  const c=makeAgent(clamp(a.x+rnd(-13,13),8,W-8),clamp(a.y+rnd(-13,13),8,H-8),mutateBrain(a.brain),a.gen+1,a.id,mutateTraits(traits),60,lineage,mutatePerks(perks));
+  const c=makeAgent(wrapX(a.x+rnd(-13,13)),wrapY(a.y+rnd(-13,13)),mutateBrain(a.brain),a.gen+1,a.id,mutateTraits(traits),60,lineage,mutatePerks(perks));
   if (mate){ c.coparent=mate.id; c.trust.set(mate.id,.4); repMap.set(mate.id,repOf(mate.id)+.4); }
   setTrust(c,a.id,.5); setTrust(a,c.id,.5);
   a.kids++; return c;
@@ -1110,15 +1180,19 @@ function gainTrust(a,id,x){ const t=a.trust.get(id)||0; setTrust(a,id,t+x*.6*a.t
 function loseTrust(a,id,x){ const t=a.trust.get(id)||0; setTrust(a,id,t-x); }
 function forgetAll(a){ for (const [k,w] of a.trust) repMap.set(k,repOf(k)-w); a.trust.clear(); }
 // a yip that benefits from another thanks them; a trusted, satisfied yip may say it with love
-function thank(g,b,strength){
-  if (!b||b.dead||b===g) return;
-  const last=g.thanked.get(b.id); if (last!==undefined&&ticks-last<150) { gainTrust(g,b.id,.01*strength); return; }
+// Receiving help is remembered as gratitude owed to the helper. Nothing forces a yip to act on it:
+// it can sense what it owes the yip nearest to it, and Thank is an ordinary action it may or may not choose.
+function owe(g,b,amount){ if (!b||b.dead||b===g) return; g.owed.set(b.id,Math.min(2,(g.owed.get(b.id)||0)+amount)); if (g.owed.size>16){ let mk=null, mv=1e9; for (const [k,v] of g.owed) if (v<mv){ mv=v; mk=k; } g.owed.delete(mk); } }
+// What thanking does: the thanked yip feels appreciated (loneliness eases, scaled by its altruism) and trusts the thanker a little.
+// Thanking the same yip again soon means less. A thank-you from a yip that trusts you a lot lands harder (shown as 😍).
+function thank(g,b){
+  const last=g.thanked.get(b.id), fresh=last===undefined?1:Math.min(1,(ticks-last)/300);
   g.thanked.set(b.id,ticks); if (g.thanked.size>24) g.thanked.delete(g.thanked.keys().next().value);
-  const tr=g.trust.get(b.id)||0, d=g.drv, sat=1-(d.hunger+d.cold+d.injury)/3;
-  const love=tr>.55&&sat>.7&&g.traits.social>.7;
-  gainTrust(g,b.id,(love?.14:.07)*strength);
-  b.drv.lonely=Math.max(0,b.drv.lonely-(love?.2:.07)*(.5+b.traits.altruism));   // being appreciated: the warm glow scales with altruism
-  if (love){ b.lovesGot++; tally.loves++; g.fx|=256; } else { b.thanksGot++; tally.thanks++; g.fx|=128; }
+  const tr=Math.max(0,g.trust.get(b.id)||0), warmth=fresh*(.5+tr);
+  b.drv.lonely=Math.max(0,b.drv.lonely-.08*warmth*(.5+b.traits.altruism));
+  gainTrust(b,g.id,.05*warmth);
+  g.owed.set(b.id,Math.max(0,(g.owed.get(b.id)||0)-1));
+  if (tr>.55){ b.lovesGot++; tally.loves++; g.fx|=256; } else { b.thanksGot++; tally.thanks++; g.fx|=128; }
 }
 function witness(attacker,victim,amount){
   // Bystanders judge an attack by how they feel about both sides.
@@ -1126,38 +1200,35 @@ function witness(attacker,victim,amount){
   //  - victim is a stranger: small loss
   //  - victim is distrusted: a small, slow gain ("enemy of my enemy")
   // A trustful witness gives a yip it already trusts the benefit of the doubt, unless its own kin was hurt.
-  const r=40, x0=Math.max(0,(attacker.x-r)/CELL|0), x1=Math.min(GC-1,(attacker.x+r)/CELL|0), y0=Math.max(0,(attacker.y-r)/CELL|0), y1=Math.min(GR-1,(attacker.y+r)/CELL|0);
-  for (let cy=y0;cy<=y1;cy++) for (let cx=x0;cx<=x1;cx++) for (const w of gAgent[cx+cy*GC]){
-    if (w===attacker||w===victim||w.dead) continue;
-    const dx=w.x-attacker.x, dy=w.y-attacker.y; if (dx*dx+dy*dy>=r*r) continue;
+  forBins(gAgent,attacker.x,attacker.y,40,w=>{
+    if (w===attacker||w===victim||w.dead||wdist(w,attacker)>=40) return;
     const kin=kinship(w,victim), tv=w.trust.get(victim.id)||0, ta=w.trust.get(attacker.id)||0;
-    if (tv<-.2&&kin<.3){ gainTrust(w,attacker.id,amount*.6*-tv); continue; }
+    if (tv<-.2&&kin<.3){ gainTrust(w,attacker.id,amount*.6*-tv); return; }
     const care=.5+kin+Math.max(0,tv), doubt=kin>.3?1:1-.4*w.traits.trustful*Math.max(0,ta);
     loseTrust(w,attacker.id,amount*care*Math.max(.2,doubt));
-  }
+  });
 }
 // bystanders who see a yip help someone (or fight off a beast) trust it a little more, scaled by how they feel about who was helped
 function witnessGood(helper,helped,amount){
-  const r=40, x0=Math.max(0,(helper.x-r)/CELL|0), x1=Math.min(GC-1,(helper.x+r)/CELL|0), y0=Math.max(0,(helper.y-r)/CELL|0), y1=Math.min(GR-1,(helper.y+r)/CELL|0);
-  for (let cy=y0;cy<=y1;cy++) for (let cx=x0;cx<=x1;cx++) for (const w of gAgent[cx+cy*GC]){
-    if (w===helper||w===helped||w.dead) continue;
-    const dx=w.x-helper.x, dy=w.y-helper.y; if (dx*dx+dy*dy>=r*r) continue;
+  forBins(gAgent,helper.x,helper.y,40,w=>{
+    if (w===helper||w===helped||w.dead||wdist(w,helper)>=40) return;
     const view=helped?Math.max(kinship(w,helped),w.trust.get(helped.id)||0):.5;
     if (view>-.2) gainTrust(w,helper.id,amount*(.3+Math.max(0,view)));
-  }
+  });
 }
 
 function addItem(type,x,y){
-  if (items.length>1600) return;
+  if (items.length>4500) return;
   const t=ITYPES.indexOf(type);
   if (x===undefined){ [x,y]=spawnPoint(t===0?fert:t===1?forest:rock,t===0?1.6:2.2); }
   const life=t===0?rnd(400,1100):t===1?rnd(1600,3600):rnd(2500,6000);
-  items.push({t,type,x:clamp(x,4,W-4),y:clamp(y,4,H-4),life,max:life,dead:false});
+  x=wrapX(x); y=wrapY(y); if (isWater(x,y)) return;
+  items.push({t,type,x,y,life,max:life,dead:false});
 }
 function occupied(x,y,r,type){
   for (const b of buildings){
-    if (type==='wall'&&b.type==='wall'){ if (Math.hypot(b.x-x,b.y-y)<10) return true; continue; }
-    const br=b.type==='wall'?4:b.r, d=b.type==='wall'?segDist(x,y,b):Math.hypot(b.x-x,b.y-y);
+    if (type==='wall'&&b.type==='wall'){ if (wdistXY(b.x,b.y,x,y)<10) return true; continue; }
+    const br=b.type==='wall'?4:b.r, d=b.type==='wall'?segDist(x,y,b):wdistXY(b.x,b.y,x,y);
     if (d<br+(type==='wall'?3:r)+2) return true;
   }
   return false;
@@ -1173,13 +1244,14 @@ function build(type,a){
   let x=a.x, y=a.y, ang=0;
   if (type==='fire'){ x+=Math.cos(a.hd)*(r+7); y+=Math.sin(a.hd)*(r+7); }
   else if (type==='wall'){ ang=a.hd; x+=Math.cos(a.hd+Math.PI/2)*5; y+=Math.sin(a.hd+Math.PI/2)*5; }   // laid along the direction of travel, offset to the side
-  if (x<r||y<r||x>W-r||y>H-r||occupied(x,y,r,type)) return false;
+  x=wrapX(x); y=wrapY(y);
+  if (isWater(x,y)||occupied(x,y,r,type)) return false;
   a.inv.wood-=s.wood; a.inv.stone-=s.stone; placeBuilding(type,x,y,a.id,ang); a.builds++; tally.builds++;
   if (buildings.length%20===0) log(`${buildings.length} structures standing`,'build');
   return true;
 }
 function log(s,kind='info'){ events.unshift({t:ticks,s,kind}); if (events.length>80) events.length=80; }
-function toast(s,kind){ self.postMessage({type:'toast',s,kind}); }
+function toast(s,kind,important=false){ self.postMessage({type:'toast',s,kind,important}); }
 function dropInventory(a){
   for (const k of ['food','wood','stone']) for (let i=0;i<a.inv[k];i++) addItem(k==='wood'?'tree':k,a.x+rnd(-6,6),a.y+rnd(-6,6));
   a.inv.food=a.inv.wood=a.inv.stone=0;
@@ -1188,7 +1260,7 @@ function dropInventory(a){
 // ---------- beasts ----------
 let nextBeast=1;
 function spawnBeast(x,y){
-  if (x===undefined){ const side=Math.floor(rnd(0,4)); x=side===0?4:side===1?W-4:rnd(0,W); y=side<2?rnd(0,H):side===2?4:H-4; }
+  if (x===undefined){ [x,y]=spawnPoint(rock,.5); }
   beasts.push({id:nextBeast++,x,y,vx:0,vy:0,hd:0,hp:40,max:40,cd:0,energy:100,age:0,target:null,wander:rnd(0,6.28)});
 }
 const _bq={}, _bf={};
@@ -1198,34 +1270,35 @@ function tickBeasts(){
   const pw=settings.beastPower;
   for (const z of beasts){
     z.age++; z.cd--; z.energy-=.03;
-    let tgt=z.target&&!z.target.dead&&!z.target.sheltered&&Math.hypot(z.target.x-z.x,z.target.y-z.y)<160?z.target:null;
-    if (!tgt){ const q=nearestIn(gAgent,z,110,_bq); tgt=q.obj&&!q.obj.sheltered?q.obj:null; }
+    let tgt=z.target&&!z.target.dead&&!z.target.sheltered&&!z.target.inWater&&wdist(z,z.target)<160?z.target:null;
+    if (!tgt){ const q=nearestIn(gAgent,z,110,_bq); tgt=q.obj&&!q.obj.sheltered&&!q.obj.inWater?q.obj:null; }
     z.target=tgt;
     let ax, ay, sp;
     const f=nearestList(fires,z,48,_bf);
-    if (f.obj){ ax=z.x-f.obj.x; ay=z.y-f.obj.y; sp=1.9; }
-    else if (tgt){ ax=tgt.x-z.x; ay=tgt.y-z.y; sp=1.55*(.8+.2*pw); }
+    if (f.obj){ ax=-f.dx; ay=-f.dy; sp=1.9; }
+    else if (tgt){ ax=ddx(z,tgt); ay=ddy(z,tgt); sp=1.55*(.8+.2*pw); }
     else { z.wander+=rnd(-.3,.3); ax=Math.cos(z.wander); ay=Math.sin(z.wander); sp=.6; }
     const n=Math.hypot(ax,ay)||1; z.vx=z.vx*.7+ax/n*sp*.3; z.vy=z.vy*.7+ay/n*sp*.3;
-    const nx=clamp(z.x+z.vx,3,W-3), ny=clamp(z.y+z.vy,3,H-3);
-    if (wallBlocks(nx,ny,4.5)){ z.vx*=-.5; z.vy*=-.5; z.wander+=Math.PI/2; } else { z.x=nx; z.y=ny; }
-    if (nx<=3||nx>=W-3||ny<=3||ny>=H-3) z.wander+=Math.PI;
+    const nx=wrapX(z.x+z.vx), ny=wrapY(z.y+z.vy);
+    // beasts cannot swim: water stops them like a wall
+    if (wallBlocks(nx,ny,4.5)||isWater(nx,ny)){ z.vx*=-.5; z.vy*=-.5; z.wander+=Math.PI/2; } else { z.x=nx; z.y=ny; }
     if (z.vx*z.vx+z.vy*z.vy>.01) z.hd=Math.atan2(z.vy,z.vx);
-    if (tgt&&z.cd<=0&&Math.hypot(tgt.x-z.x,tgt.y-z.y)<7){ const dmg=5*pw*(.6+.4*Math.random()); tgt.health-=dmg*tgt.ph.armor*tgt.ph.beastArmor; tgt.pain=1; tgt.harm='beast'; tgt.fx|=32; z.cd=18; z.energy=Math.min(140,z.energy+8); }
+    if (tgt&&z.cd<=0&&wdist(z,tgt)<7){ const dmg=5*pw*(.6+.4*Math.random()); tgt.health-=dmg*tgt.ph.armor*tgt.ph.beastArmor; tgt.pain=1; tgt.harm='beast'; tgt.fx|=32; z.cd=18; z.energy=Math.min(140,z.energy+8); }
   }
   for (let i=beasts.length-1;i>=0;i--){ const z=beasts[i]; if (z.hp<=0||z.energy<=0||z.age>12000){ if (z.hp<=0) for (let k=0;k<4;k++) addItem('food',z.x+rnd(-8,8),z.y+rnd(-8,8)); beasts.splice(i,1); } }
 }
 
 // ---------- environment ----------
 function temperature(){ return settings.temperature+dayS*6+seasonS*10; }
-function stormAt(a){ for (const s of storms) if (Math.abs(a.x-s.x)<s.w/2&&Math.abs(a.y-s.y)<s.h/2) return s; return null; }
+function stormAt(a){ for (const s of storms) if (Math.abs(wd(a.x-s.x,W))<s.w/2&&Math.abs(wd(a.y-s.y,H))<s.h/2) return s; return null; }
 function inside(a){
-  for (const b of shelters){ if (b.hp<=0) continue; const dx=a.x-b.x, dy=a.y-b.y; if (dx*dx+dy*dy<(b.r-1)*(b.r-1) && (!b.owner||b.owner===a.id||(a.trust.get(b.owner)||0)>-.25)) return b; }
+  for (const b of shelters){ if (b.hp<=0) continue; const dx=wd(a.x-b.x,W), dy=wd(a.y-b.y,H); if (dx*dx+dy*dy<(b.r-1)*(b.r-1) && (!b.owner||b.owner===a.id||(a.trust.get(b.owner)||0)>-.25)) return b; }
   return null;
 }
 function tempAt(a){
-  let t=baseTemp; for (const b of fires) if (b.hp>0){ const dx=a.x-b.x, dy=a.y-b.y; if (dx*dx+dy*dy<4225) t+=22*(1-Math.sqrt(dx*dx+dy*dy)/65); }
+  let t=baseTemp; for (const b of fires) if (b.hp>0){ const dx=wd(a.x-b.x,W), dy=wd(a.y-b.y,H); if (dx*dx+dy*dy<4225) t+=22*(1-Math.sqrt(dx*dx+dy*dy)/65); }
   const s=inside(a); if (s) t=20+(t-20)*(s.type==='house'?.2:.55);   // houses insulate: interiors stay near 20°C
+  if (isWater(a.x,a.y)) t=Math.min(t,baseTemp*.8)-6*a.ph.chill;      // water is colder than the air and steals body heat
   return t;
 }
 const env = {food:{},tree:{},stone:{},shelter:{},fire:{},storm:{},other:{},pred:{},crowd:{n:0,sig:0},wall:30};
@@ -1244,15 +1317,16 @@ function sense(a){
   const inp=a.acts[0], codes=a.codes;
   for (let i=0;i<codes.length;i++) inp[i]=SFN[codes[i]](a,env);
 }
-const _h={}, _r={}, _z={}, _f2={}, _fw={};
+const _h={}, _r={}, _z={}, _f2={}, _fw={}, _wv={};
 let byId=new Map();
 function act(a,choice,e){
   let bonus=0, ok=false, moved=false; const insideNow=inside(a); a.actionCounts[choice]++;
   const o=e.other.obj, od=e.other.dist;
   switch (choice){
     case 0: case 1: case 2: case 3: {
-      const sp=(.7+a.traits.speed*1.7)*a.ph.speed*(a.ph.sprint&&a.energy>60?1.2:1)/(1+load(a)/(capacity(a)*1.2));
-      a.vx=a.vx*.35+DX[choice]*sp*.65; a.vy=a.vy*.35+DY[choice]*sp*.65; a.energy-=.008*sp; moved=true; break;
+      const swim=a.inWater?.45*a.ph.swim:1;
+      const sp=(.7+a.traits.speed*1.7)*a.ph.speed*(a.ph.sprint&&a.energy>60?1.2:1)*swim/(1+load(a)/(capacity(a)*1.2));
+      a.vx=a.vx*.35+DX[choice]*sp*.65; a.vy=a.vy*.35+DY[choice]*sp*.65; a.energy-=.008*sp*(a.inWater?2.5/a.ph.swim:1); moved=true; break;
     }
     case A_.HARVEST: {
       let best=null, bd=11;
@@ -1264,11 +1338,11 @@ function act(a,choice,e){
       break;
     }
     case A_.EAT:
-      if (a.inv.food>0&&a.energy<a.ph.maxE-30){ a.inv.food--; a.energy+=30*a.ph.food; ok=true; }
-      else if (insideNow&&insideNow.stock.food>0&&a.energy<a.ph.maxE-30){ insideNow.stock.food--; if (insideNow.owner===a.id) a.stash=Math.max(0,a.stash-1); else hostGrace(a,insideNow,.5+a.drv.hunger); a.energy+=30*a.ph.food; ok=true; }
+      if (a.inv.food>0&&a.energy<a.ph.maxE-30){ a.inv.food--; a.energy+=30*a.ph.food; a.drv.thirst=Math.max(0,a.drv.thirst-.12); ok=true; }
+      else if (insideNow&&insideNow.stock.food>0&&a.energy<a.ph.maxE-30){ insideNow.stock.food--; if (insideNow.owner===a.id) a.stash=Math.max(0,a.stash-1); else hostGrace(a,insideNow,.5+a.drv.hunger); a.energy+=30*a.ph.food; a.drv.thirst=Math.max(0,a.drv.thirst-.12); ok=true; }
       break;
     case A_.DEPOSIT:
-      if (insideNow){ let n=0; for (const k of ['food','wood','stone']) if (a.inv[k]>0){ insideNow.stock[k]+=a.inv[k]; n+=a.inv[k]; a.inv[k]=0; } if (n){ ok=true; a.stash+=insideNow.owner===a.id?n:0; a.deposits+=n; tally.deposits+=n; a.fx|=64; if (insideNow.owner&&insideNow.owner!==a.id){ const ow=byId.get(insideNow.owner); if (ow){ gainTrust(ow,a.id,.04*n); thank(ow,a,.3+.1*n); } } } }
+      if (insideNow){ let n=0; for (const k of ['food','wood','stone']) if (a.inv[k]>0){ insideNow.stock[k]+=a.inv[k]; n+=a.inv[k]; a.inv[k]=0; } if (n){ ok=true; a.stash+=insideNow.owner===a.id?n:0; a.deposits+=n; tally.deposits+=n; a.fx|=64; if (insideNow.owner&&insideNow.owner!==a.id){ const ow=byId.get(insideNow.owner); if (ow){ gainTrust(ow,a.id,.04*n); owe(ow,a,.3+.1*n); } } } }
       break;
     case A_.WITHDRAW:
       if (insideNow){ let n=0; for (const k of ['wood','stone','food']) while (insideNow.stock[k]>0&&load(a)+(k==='stone'?2:k==='wood'?1.4:1)<=capacity(a)&&n<4){ insideNow.stock[k]--; a.inv[k]++; n++; } if (n){ ok=true; if (insideNow.owner===a.id) a.stash=Math.max(0,a.stash-n); tally.withdraws+=n; if (insideNow.owner&&insideNow.owner!==a.id){ const ow=byId.get(insideNow.owner); if (ow){ if ((ow.trust.get(a.id)||0)>.3) hostGrace(a,insideNow,.4+.5*a.drv.insecure); else loseTrust(ow,a.id,.2*n/2); } } } }
@@ -1277,7 +1351,7 @@ function act(a,choice,e){
       ok=build(BTYPES[choice-A_.HOUSE],a); break;
     case A_.REPAIR: {
       const b=nearestList(buildings,a,17,_r,isDamaged).obj;
-      if (b&&a.inv.wood>=1&&(b.type==='fire'||a.inv.stone>=1)){ a.inv.wood--; if (b.type!=='fire') a.inv.stone--; b.hp=Math.min(b.max,b.hp+110); ok=true; if (b.owner&&b.owner!==a.id){ const ow=byId.get(b.owner); if (ow){ gainTrust(ow,a.id,.06); thank(ow,a,.5); } } }
+      if (b&&a.inv.wood>=1&&(b.type==='fire'||a.inv.stone>=1)){ a.inv.wood--; if (b.type!=='fire') a.inv.stone--; b.hp=Math.min(b.max,b.hp+110); ok=true; if (b.owner&&b.owner!==a.id){ const ow=byId.get(b.owner); if (ow){ gainTrust(ow,a.id,.06); owe(ow,a,.5); } } }
       break;
     }
     case A_.SHARE:
@@ -1292,7 +1366,7 @@ function act(a,choice,e){
         if (k&&load(o)+wt<=capacity(o)){
           a.inv[k]--; o.inv[k]++;
           const value=k==='food'?.4+o.drv.hunger:.3+.5*o.drv.insecure;
-          gainTrust(o,a.id,.15*value+.05); gainTrust(a,o.id,.03); thank(o,a,value); witnessGood(a,o,.02);
+          gainTrust(o,a.id,.15*value+.05); gainTrust(a,o.id,.03); owe(o,a,value); witnessGood(a,o,.02);
           ok=true; a.shared++; tally.shares++; if (k!=='food') tally.gifts++; a.fx|=1;
         }
       }
@@ -1313,16 +1387,25 @@ function act(a,choice,e){
       if (z){
         const dmg=5*a.traits.strength*a.ph.dmg*(a.tool>0?2.2:1)*(.7+.3*a.traits.aggression);
         const prey=z.target&&z.target!==a&&!z.target.dead?z.target:null;
-        if (prey){ gainTrust(prey,a.id,.1); thank(prey,a,.6+prey.drv.injury); }
+        if (prey){ gainTrust(prey,a.id,.1); owe(prey,a,.6+prey.drv.injury); }
         witnessGood(a,prey,.015);
         z.hp-=dmg; z.target=a; a.energy-=1; a.hunts++; tally.hunts++; a.fx|=4; if (a.tool>0) a.tool--;
         ok=true;
-        if (z.hp<=0){ a.beastKills++; tally.beastKills++; log(`Yip #${a.id} slew a beast`,'beast'); }
+        if (z.hp<=0){ a.beastKills++; tally.beastKills++; log(`${a.name} slew a beast`,'beast'); }
       }
       break;
     }
     case A_.CRAFT:
       if (a.tool<=0&&a.inv.wood>=1&&a.inv.stone>=1){ a.inv.wood--; a.inv.stone--; a.tool=40; a.crafts++; tally.crafts++; ok=true; a.fx|=8; }
+      break;
+    case A_.DRINK: {
+      // drinking works in the water or right at its edge
+      const v=waterVec(a.x,a.y,_wv);
+      if (a.inWater||v.d<FC*.9){ a.drv.thirst=Math.max(0,a.drv.thirst-.35); ok=true; }
+      break;
+    }
+    case A_.THANK:
+      if (o&&od<22){ thank(a,o); ok=true; }
       break;
     default:
       if (insideNow){ const yip=insideNow.type==='house'; a.energy+=(yip?.24:.12)*a.ph.rest; a.health=Math.min(a.ph.maxH,a.health+(yip?.12:.05)*a.traits.regen); ok=yip; }
@@ -1330,7 +1413,7 @@ function act(a,choice,e){
   }
   if (!moved){ a.vx*=.5; a.vy*=.5; }
   if (a.vx*a.vx+a.vy*a.vy>.0004){
-    const nx=clamp(a.x+a.vx,4,W-4), ny=clamp(a.y+a.vy,4,H-4);
+    const nx=wrapX(a.x+a.vx), ny=wrapY(a.y+a.vy);
     if (wallBlocks(nx,ny,3.5)){ a.vx=a.vy=0; } else { a.x=nx; a.y=ny; }
     if (moved) a.hd=Math.atan2(a.vy,a.vx);
   }
@@ -1343,11 +1426,11 @@ function act(a,choice,e){
   return bonus;
 }
 
-function sendStorm(){ storms.push({x:-120,y:rnd(50,H-50),w:rnd(90,170),h:rnd(140,300),vx:rnd(1.1,2.5),vy:rnd(-.1,.1),life:750,max:750}); log('Storm front moving in from the west','storm'); toast('Storm front incoming','storm'); }
+function sendStorm(){ storms.push({x:rnd(0,W),y:rnd(50,H-50),w:rnd(90,170),h:rnd(140,300),vx:rnd(1.1,2.5),vy:rnd(-.1,.1),life:750,max:750}); log('Storm front moving in from the west','storm'); toast('Storm front incoming','storm'); }
 function archive(a){
   const score=a.age+a.kids*350+a.builds*60+a.success*2+a.beastKills*200+a.shared*20;
   if (elite.length<24||score>elite[elite.length-1].score){
-    elite.push({score,gen:a.gen,id:a.id,traits:{...a.traits},perks:[...a.perks],brain:copyBrain(a.brain)});
+    elite.push({score,gen:a.gen,id:a.id,name:a.name,traits:{...a.traits},perks:[...a.perks],brain:copyBrain(a.brain)});
     elite.sort((x,y)=>y.score-x.score); if (elite.length>24) elite.length=24;
   }
 }
@@ -1358,7 +1441,7 @@ function reseed(){
     agents.push(src?makeAgent(x,y,mutateBrain(src.brain),src.gen+1,null,mutateTraits(src.traits),90,[{id:src.id,gen:src.gen,hue:src.traits.hue}],mutatePerks(src.perks||[])):makeAgent(x,y));
   }
   log(`Extinction. ${n} colonists reseeded from ${elite.length?elite.length+' archived genomes':'scratch'}`,'death');
-  toast('Extinction: colony reseeded from the archive','death');
+  toast('Extinction: colony reseeded from the archive','death',true);
 }
 
 function tick(){
@@ -1376,7 +1459,7 @@ function tick(){
     if (b.stock.food&&Math.random()<.0004*b.stock.food*settings.decay/prot) b.stock.food--;
     if (b.hp<=0||b.life<=0){ buildings.splice(i,1); if (b.type==='store'&&b.stock.food+b.stock.wood+b.stock.stone>0) for (const k of ['food','wood','stone']) for (let n=0;n<Math.min(6,b.stock[k]);n++) addItem(k==='wood'?'tree':k,b.x+rnd(-10,10),b.y+rnd(-10,10)); }
   }
-  for (let i=storms.length-1;i>=0;i--){ const s=storms[i]; s.x+=s.vx; s.y+=s.vy; s.life--; if (s.life<=0||s.x>W+s.w||s.x<-s.w*2) storms.splice(i,1); }
+  for (let i=storms.length-1;i>=0;i--){ const s=storms[i]; s.x=wrapX(s.x+s.vx); s.y=wrapY(s.y+s.vy); s.life--; if (s.life<=0) storms.splice(i,1); }
   if (ticks%1500===0&&Math.random()<.7) sendStorm();
 
   clearGrid(gFood); clearGrid(gTree); clearGrid(gStone); clearGrid(gAgent);
@@ -1397,14 +1480,15 @@ function tick(){
     const temp=forward(a);
     const preDrv=a.drv.cold, choice=a.lastChoice, bonus=act(a,choice,env);
     const sheltered=inside(a), storm=stormAt(a), lt=tempAt(a), ph=a.ph, cold=Math.max(0,ph.coldT-lt), hot=Math.max(0,lt-ph.hotT), thermal=(cold+hot)/(16*a.traits.thermal); a._t=lt;
-    a.sheltered=!!sheltered;
+    a.sheltered=!!sheltered; a.inWater=isWater(a.x,a.y);
     a.energy-=drainK*ph.baseMetab*ph.metab*(ph.hib&&lt<10?.7:1)+a.brainCost+thermal*(sheltered?.006:.045);
     if (a.energy>40||ph.regen>.02) a.health=Math.min(ph.maxH,a.health+ph.regen);
     if (storm&&!sheltered){ const wb=nearestWall(a,12)<12?.4:1; a.health-=.15*settings.storm*wb; a.energy-=.12*settings.storm*wb; a.harm='storm'; }
-    for (const b of fires){ const dx=a.x-b.x, dy=a.y-b.y; if (dx*dx+dy*dy<(b.r+2)*(b.r+2)){ a.health-=.9; a.energy-=.1; a.harm='fire'; } }
+    for (const b of fires){ const dx=wd(a.x-b.x,W), dy=wd(a.y-b.y,H); if (dx*dx+dy*dy<(b.r+2)*(b.r+2)){ a.health-=.9; a.energy-=.1; a.harm='fire'; } }
+    if (a.inWater){ a.energy-=.015/a.ph.swim; if (a.energy<6){ a.health-=.8; a.harm="drowning"; } }
+    if (a.drv.thirst>=1){ a.health-=.08; a.harm='thirst'; }
     if (a.energy<0){ a.health+=a.energy*.08; a.energy=0; a.harm='hunger'; }
     if (a.energy>ph.maxE) a.energy=ph.maxE;
-    if (a.energy<45&&a.inv.food>0){ a.inv.food--; a.energy=Math.min(ph.maxE,a.energy+28*ph.food); }
     if (a.inv.food&&Math.random()<.0012*a.inv.food) a.inv.food--;   // carried food spoils; stores keep it better
     a.memory=clamp(.96*a.memory+.04*(a.energy/100-1),-1,1);
     a.prevHealth=a.health; a.shareHeat*=.99;
@@ -1414,7 +1498,7 @@ function tick(){
     // gratitude for warmth and shelter that someone else provided
     if (preDrv-a.drv.cold>.004){
       if (sheltered&&sheltered.owner&&sheltered.owner!==a.id) hostGrace(a,sheltered,.6+preDrv);
-      else { const f=nearestList(fires,a,65,_fw).obj; if (f&&f.owner&&f.owner!==a.id){ const ow=byId.get(f.owner); if (ow){ gainTrust(a,ow.id,.006); if (preDrv>.25) thank(a,ow,.5+preDrv); } } }
+      else { const f=nearestList(fires,a,65,_fw).obj; if (f&&f.owner&&f.owner!==a.id){ const ow=byId.get(f.owner); if (ow){ gainTrust(a,ow.id,.006); owe(a,ow,.02+.1*preDrv); } } }
     }
     if (resting&&sheltered&&sheltered.owner&&sheltered.owner!==a.id&&a.drv.fatigue>.3&&Math.random()<.05) hostGrace(a,sheltered,.4+a.drv.fatigue);
     if ((a.id+ticks)%6===0) socialTick(a);
@@ -1433,6 +1517,9 @@ function tick(){
   for (const c of newborn) agents.push(c);
   if (agents.length>peakPop) peakPop=agents.length;
   if (!agents.length&&settings.autoReseed) reseed();
+  // scent fades every tick and spreads to neighbouring cells every 8 ticks (wrapping)
+  for (let i=0;i<pher.length;i++) pher[i]*=.993;
+  if (ticks%8===0){ for (let y=0;y<FH;y++) for (let x=0;x<FW;x++){ const i=x+y*FW, l=((x+FW-1)%FW)+y*FW, r=((x+1)%FW)+y*FW, u=x+((y+FH-1)%FH)*FW, d=x+((y+1)%FH)*FW; pherTmp[i]=pher[i]*.6+(pher[l]+pher[r]+pher[u]+pher[d])*.1; } const t=pher; pher=pherTmp; pherTmp=t; }
   if (ticks%25===0) pushHistory();
 }
 function avg(f){ if (!agents.length) return 0; let s=0; for (const a of agents) s+=f(a); return s/agents.length; }
@@ -1453,39 +1540,41 @@ function reset(newShape){
   seed=(Math.random()*2**31)|0; makeFields(seed);
   agents=[]; items=[]; buildings=[]; storms=[]; beasts=[]; events=[]; history=[]; elite=[]; repMap.clear();
   ticks=0; nextId=1; nextBid=1; births=0; deaths=0; maxGen=0; peakPop=0; lastMilestone=0;
-  deathsBy={age:0,hunger:0,storm:0,fire:0,beast:0,attack:0}; for (const k in tally) tally[k]=0; lastTally={...tally};
-  for (let i=0;i<120;i++){ const [x,y]=spawnPoint(fert,1); agents.push(makeAgent(x,y)); }
-  for (let i=0;i<420;i++) addItem('food'); for (let i=0;i<160;i++) addItem('tree'); for (let i=0;i<120;i++) addItem('stone');
+  deathsBy={age:0,hunger:0,thirst:0,drowning:0,storm:0,fire:0,beast:0,attack:0}; for (const k in tally) tally[k]=0; lastTally={...tally};
+  for (let i=0;i<150;i++){ const [x,y]=spawnPoint(fert,1); agents.push(makeAgent(x,y)); }
+  for (let i=0;i<1100;i++) addItem('food'); for (let i=0;i<420;i++) addItem('tree'); for (let i=0;i<320;i++) addItem('stone');
   for (let i=0;i<settings.beasts;i++) spawnBeast();
-  selected=0; log('120 founders released. Fertile valleys, forests and rocky ground are spread across the map.','birth');
+  selected=0; log('150 founders released. Fertile valleys, forests and rocky ground are spread across the map.','birth');
   postMeta();
 }
 
 // ---------- serialization ----------
 const r4 = v => Math.round(v*1e4)/1e4, r2 = v => Math.round(v*100)/100;
 const serBrain = b => ({inputs:b.inputs,sizes:b.sizes,w:b.w.map(f=>Array.from(f,r4))});
-const AGENT_KEYS=['gen','parent','lineage','traits','perks','stash','drv','thanksGot','lovesGot','coparent','partners','age','lifespan','inv','tool','builds','success','kids','shared','stolen','attacks','kills','hunts','beastKills','crafts','deposits'];
+const AGENT_KEYS=['name','gen','parent','lineage','traits','perks','stash','thanksGot','lovesGot','coparent','partners','age','lifespan','inv','tool','builds','success','kids','shared','stolen','attacks','kills','hunts','beastKills','crafts','deposits'];
 function serialize(){
-  return {version:11,shape,seed,ticks,nextId,nextBid,births,deaths,deathsBy,tally,maxGen,peakPop,selected,settings:{...settings},
-    agents:agents.map(a=>{ const o={id:a.id,x:r2(a.x),y:r2(a.y),hd:r2(a.hd),energy:r2(a.energy),health:r2(a.health),memory:r4(a.memory),memA:r4(a.memA),memB:r4(a.memB),baseline:r4(a.baseline),
+  return {version:12,shape,seed,ticks,nextId,nextBid,births,deaths,deathsBy,tally,maxGen,peakPop,selected,settings:{...settings},
+    agents:agents.map(a=>{ const o={drv:a.drv,owed:[...a.owed],id:a.id,x:r2(a.x),y:r2(a.y),hd:r2(a.hd),energy:r2(a.energy),health:r2(a.health),memory:r4(a.memory),memA:r4(a.memA),memB:r4(a.memB),baseline:r4(a.baseline),
       trust:[...a.trust].map(([k,v])=>[k,r4(v)]),actionCounts:Array.from(a.actionCounts),brain:serBrain(a.brain),learned:a.learned.map(f=>Array.from(f,r4))}; for (const k of AGENT_KEYS) o[k]=a[k]; return o; }),
     items:items.filter(i=>!i.dead).map(i=>[i.t,r2(i.x),r2(i.y),i.life|0,i.max|0]),
     buildings:buildings.map(b=>({...b,hp:r2(b.hp)})),storms,beasts:beasts.map(z=>({...z,target:null})),events,history,elite:elite.map(e=>({...e,brain:serBrain(e.brain)}))};
 }
-// pre-1.1 brains had 14 outputs: map them onto the new action set and add fresh rows for the rest
-const OLD_MAP=[0,1,2,3,4,5,6,8,9,10,11,12,13,17];
+// Older brains had fewer outputs. Map each old discrete action and continuous output onto its new row; new rows start small.
+const OLD_LAYOUTS={14:{disc:[0,1,2,3,4,5,6,8,9,10,11,12,13,17],cont:0},21:{disc:[...Array(18).keys()],cont:3}};
 function upgradeBrain(b){
   const L=b.sizes.length-1, cols=b.sizes[L-1], old=b.w[L-1], rowsOld=b.sizes[L];
+  b.inputs=b.inputs.map(k=>k==='memory'?'trend':k);
   if (rowsOld===NOUT) return b;
-  const f=randArr(NOUT*cols,.3);
-  if (rowsOld===14) for (let j=0;j<14;j++) f.set(old.subarray(j*cols,(j+1)*cols),OLD_MAP[j]*cols);
-  b.w[L-1]=f; b.sizes[L]=NOUT; b.inputs=b.inputs.map(k=>k==='memory'?'trend':k); return b;
+  const f=randArr(NOUT*cols,.3), lay=OLD_LAYOUTS[rowsOld];
+  if (lay){ lay.disc.forEach((to,j)=>f.set(old.subarray(j*cols,(j+1)*cols),to*cols)); for (let c=0;c<lay.cont;c++){ const j=lay.disc.length+c; f.set(old.subarray(j*cols,(j+1)*cols),(O+c)*cols); } }
+  b.w[L-1]=f; b.sizes[L]=NOUT; return b;
 }
 const deBrain = b => upgradeBrain(b.weights ? fromNested(b) : {inputs:b.inputs,sizes:b.sizes,w:b.w.map(x=>Float32Array.from(x))});
 function deserialize(s){
-  if (!s||!Array.isArray(s.agents)||![6,10,11].includes(s.version)) throw Error('Not an ALife Lab save (expected version 0.6 to 1.1)');
-  const legacy=s.version<11; setSize(legacy?'wide':(s.shape||'wide'));
-  const sx=legacy?W/840:1, sy=legacy?H/520:1, reg=s.registry||{};
+  if (!s||!Array.isArray(s.agents)||![6,10,11,12].includes(s.version)) throw Error('Not an ALife Lab save (expected version 0.6 to 1.5)');
+  const legacy=s.version<11, old=s.version<12; setSize();
+  const ow=s.version===6||s.version===10?840:s.shape==='tall'?600:s.shape==='square'?780:960, oh=s.version===6||s.version===10?520:s.shape==='tall'?960:s.shape==='square'?780:600;
+  const sx=old?W/ow:1, sy=old?H/oh:1, reg=s.registry||{};
   seed=s.seed||12345; makeFields(seed);
   const A=s.agents.map(o=>{
     const brain=deBrain(o.brain);
@@ -1493,10 +1582,10 @@ function deserialize(s){
     a.id=o.id;
     for (const k of AGENT_KEYS) if (o[k]!==undefined&&k!=='traits'&&k!=='gen'&&k!=='parent') a[k]=o[k];
     Object.assign(a,{health:o.health,prevHealth:o.health,memory:o.memory||0,memA:o.memA||0,memB:o.memB||0,baseline:o.baseline||0,hd:o.hd||0,lifespan:o.lifespan||rnd(3600,5100),inv:o.inv||{food:0,wood:0,stone:0}});
-    a.trust=new Map(Array.isArray(o.trust)?o.trust:Object.entries(o.trust||{}).map(([k,v])=>[+k,v]));
+    a.trust=new Map(Array.isArray(o.trust)?o.trust:Object.entries(o.trust||{}).map(([k,v])=>[+k,v])); a.owed=new Map(o.owed||[]);
     if (o.actionCounts&&o.actionCounts.length===O) a.actionCounts=Uint32Array.from(o.actionCounts);
-    if (o.learned&&!legacy){ a.learned=o.learned.map(x=>Float32Array.from(x)); }
-    derive(a); if (o.drv) Object.assign(a.drv,o.drv); a.phi=wellbeing(a);
+    if (o.learned&&!old){ a.learned=o.learned.map(x=>Float32Array.from(x)); a.eff=a.brain.w.map((w,l)=>{ const e=new Float32Array(w.length), d=a.learned[l]; for (let i=0;i<w.length;i++) e[i]=w[i]+(d[i]||0); return e; }); }
+    derive(a); if (o.drv) Object.assign(a.drv,o.drv); a.inWater=isWater(a.x,a.y); a.phi=wellbeing(a);
     if (!o.lineage){ const ch=[]; let id=o.parent; for (let i=0;i<12&&id&&reg[id];i++){ ch.push({id,gen:reg[id].gen,hue:0}); id=reg[id].parent; } a.lineage=ch; }
     return a;
   });
@@ -1506,23 +1595,23 @@ function deserialize(s){
   maxGen=s.maxGen||Math.max(0,...A.map(a=>a.gen)); peakPop=s.peakPop||A.length;
   items=(s.items||[]).map(i=>Array.isArray(i)?{t:i[0],type:ITYPES[i[0]],x:i[1]*sx,y:i[2]*sy,life:i[3],max:i[4]||i[3],dead:false}:{t:ITYPES.indexOf(i.type),type:i.type,x:i.x*sx,y:i.y*sy,life:i.life,max:i.life,dead:false});
   nextBid=1;
-  buildings=(s.buildings||[]).map(b=>{ const ang=b.ang||0; return {...b,x:b.x*sx,y:b.y*sy,r:b.type==='wall'?SPECS.wall.r:b.r,id:b.id||nextBid++,ang,c:Math.cos(ang),s:Math.sin(ang),max_life:b.max_life||(b.type==='fire'?600:10000)}; });
+  buildings=(s.buildings||[]).filter(b=>!isWater(b.x*sx,b.y*sy)).map(b=>{ const ang=b.ang||0; return {...b,x:b.x*sx,y:b.y*sy,r:b.type==='wall'?SPECS.wall.r:b.r,id:b.id||nextBid++,ang,c:Math.cos(ang),s:Math.sin(ang),max_life:b.max_life||(b.type==='fire'?600:10000)}; });
   nextBid=Math.max(nextBid,...buildings.map(b=>b.id+1),1);
   storms=(s.storms||[]).map(x=>({max:650,...x})); beasts=(s.beasts||[]).map(z=>({...z,target:null}));
-  events=(s.events||[]).map(e=>typeof e==='string'?{t:0,s:e,kind:'info'}:e); history=Array.isArray(s.history)&&!legacy?s.history:[];
+  events=(s.events||[]).map(e=>typeof e==='string'?{t:0,s:e,kind:'info'}:e); history=Array.isArray(s.history)&&!old?s.history:[];
   elite=(s.elite||[]).map(e=>({...e,brain:deBrain(e.brain)}));
   Object.assign(settings,s.settings||{}); selected=s.selected||0; lastMilestone=maxGen-maxGen%10;
-  log(legacy?'Older snapshot loaded and upgraded to the 1.1 action set':'Snapshot loaded','info');
+  log(old?'Older snapshot loaded and moved onto the new 1.5 world':'Snapshot loaded','info');
   postMeta();
 }
 
 // ---------- reporting ----------
-let started=false, running=true, speed=3, maxMode=false, last=performance.now(), acc=0, stepsWin=0, tps=0, lastMetrics=last, lastFrame=0, lastStats=0, lastInspect=0, inspecting=false;
-function postMeta(){ self.postMessage({type:'meta',drives:DRIVES,bounds:TB,perks:PERKS,clash:CLASH,phys:PHYS,ment:MENT,traitInfo:TRAIT_INFO,senses:SENSES,actions:ACTIONS,short:SHORT,cont:CONT,W,H,FW,FH,FC,shape,settings,fert,forest,rock,seed}); }
+let sendPher=false, started=false, running=true, speed=3, maxMode=false, last=performance.now(), acc=0, stepsWin=0, tps=0, lastMetrics=last, lastFrame=0, lastStats=0, lastInspect=0, inspecting=false;
+function postMeta(){ self.postMessage({type:'meta',water,drives:DRIVES,bounds:TB,perks:PERKS,clash:CLASH,phys:PHYS,ment:MENT,traitInfo:TRAIT_INFO,senses:SENSES,actions:ACTIONS,short:SHORT,cont:CONT,W,H,FW,FH,FC,shape,settings,fert,forest,rock,seed}); }
 function postFrame(){
   const na=agents.length, A=new Float32Array(na*10);
   for (let i=0,o=0;i<na;i++,o+=10){ const a=agents[i]; A[o]=a.id; A[o+1]=a.x; A[o+2]=a.y; A[o+3]=a.traits.hue; A[o+4]=a.hd; A[o+5]=a.energy/200; A[o+6]=a.health/100;
-    A[o+7]=(a.sheltered?1:0)|(a.inv.food+a.inv.wood+a.inv.stone>0?2:0)|(a.tool>0?4:0)|(repOf(a.id)>3?8:0); A[o+8]=a._r||a.ph.sense; A[o+9]=a.fx; }
+    A[o+7]=(a.sheltered?1:0)|(a.inv.food+a.inv.wood+a.inv.stone>0?2:0)|(a.tool>0?4:0)|(repOf(a.id)>3?8:0)|(a.inWater?16:0); A[o+8]=a._r||a.ph.sense; A[o+9]=a.fx; }
   let ni=0; for (const it of items) if (!it.dead) ni++;
   const I=new Float32Array(ni*4); let o=0;
   for (const it of items){ if (it.dead) continue; I[o]=it.t; I[o+1]=it.x; I[o+2]=it.y; I[o+3]=it.life/it.max; o+=4; }
@@ -1532,7 +1621,8 @@ function postFrame(){
   storms.forEach((s,i)=>{ S[i*5]=s.x; S[i*5+1]=s.y; S[i*5+2]=s.w; S[i*5+3]=s.h; S[i*5+4]=s.life/(s.max||650); });
   const Z=new Float32Array(beasts.length*6);
   beasts.forEach((z,i)=>{ Z[i*6]=z.id; Z[i*6+1]=z.x; Z[i*6+2]=z.y; Z[i*6+3]=z.hd; Z[i*6+4]=z.hp/z.max; Z[i*6+5]=z.target?1:0; });
-  self.postMessage({type:'frame',ticks,tps,running,maxMode,temp:baseTemp,day:settings.day,season:settings.season,A,I,B,S,Z},[A.buffer,I.buffer,B.buffer,S.buffer,Z.buffer]);
+  const P=sendPher?Uint8Array.from(pher,v=>Math.min(255,v*40)):null; sendPher=false;
+  self.postMessage({type:'frame',P,ticks,tps,running,maxMode,temp:baseTemp,day:settings.day,season:settings.season,A,I,B,S,Z},[A.buffer,I.buffer,B.buffer,S.buffer,Z.buffer]);
 }
 function postStats(withHistory){
   const n=agents.length||1, sensUse={}, act=new Float64Array(O), byType={house:0,store:0,wall:0,fire:0};
@@ -1541,24 +1631,26 @@ function postStats(withHistory){
   for (const b of buildings){ byType[b.type]++; stocked+=b.stock.food; }
   const counts=[0,0,0]; for (const it of items) if (!it.dead) counts[it.t]++;
   const t=k=>avg(a=>a.traits[k]);
-  self.postMessage({type:'stats',ticks,pop:agents.length,peakPop,births,deaths,deathsBy,tally,maxGen,avgGen:avg(a=>a.gen),byType,counts,temp:baseTemp,beasts:beasts.length,tools,stocked,
+  const names={}; for (const a of agents) names[a.id]=a.name;
+  self.postMessage({type:'stats',names,ticks,pop:agents.length,peakPop,births,deaths,deathsBy,tally,maxGen,avgGen:avg(a=>a.gen),byType,counts,temp:baseTemp,beasts:beasts.length,tools,stocked,
     traits:Object.fromEntries([...PHYS,...MENT].map(k=>[k,t(k)])),perkUse:PERKS.map(p=>[p.id,agents.filter(a=>a.perks.includes(p.id)).length/n]),
     brain:{layers:layers/n,neurons:neurons/n,inputs:inputs/n},sensUse:Object.entries(sensUse).sort((a,b)=>b[1]-a[1]).map(([k,v])=>[k,v/n]),
-    actMix:Array.from(act,v=>v/n),events,eliteTop:elite.slice(0,6).map(e=>({id:e.id,gen:e.gen,score:e.score|0,hue:e.traits.hue})),history:withHistory?history:null,settings});
+    actMix:Array.from(act,v=>v/n),events,eliteTop:elite.slice(0,6).map(e=>({id:e.id,name:e.name||('#'+e.id),gen:e.gen,score:e.score|0,hue:e.traits.hue})),history:withHistory?history:null,settings});
 }
 function postInspect(){
   const a=agents.find(x=>x.id===selected);
   if (!a){ self.postMessage({type:'inspect',none:true,id:selected}); return; }
   const alive=new Set(agents.map(x=>x.id)), b=a.brain;
   const ws=b.w.map((f,l)=>{ const d=a.learned[l], o=new Float32Array(f.length); for (let i=0;i<f.length;i++) o[i]=f[i]+d[i]; return o; });
-  const kids=agents.filter(x=>x.parent===a.id).map(x=>({id:x.id,hue:x.traits.hue,age:x.age}));
-  self.postMessage({type:'inspect',id:a.id,gen:a.gen,age:a.age,lifespan:a.lifespan,energy:a.energy,health:a.health,x:a.x,y:a.y,traits:a.traits,inv:a.inv,tool:a.tool,load:load(a),cap:capacity(a),
+  const kids=agents.filter(x=>x.parent===a.id).map(x=>({id:x.id,name:x.name,hue:x.traits.hue,age:x.age}));
+  const nm=id=>{ const o=byId.get(id); return o?o.name:null; };
+  self.postMessage({type:'inspect',name:a.name,coparentName:nm(a.coparent),parentName:nm(a.parent),id:a.id,gen:a.gen,age:a.age,lifespan:a.lifespan,energy:a.energy,health:a.health,x:a.x,y:a.y,traits:a.traits,inv:a.inv,tool:a.tool,load:load(a),cap:capacity(a),
     builds:a.builds,success:a.success,kids:a.kids,livingKids:kids,sheltered:a.sheltered,temp:a._t,lastChoice:a.lastChoice,probs:Array.from(a.probs),inputs:b.inputs,sizes:b.sizes,ws,
-    acts:a.acts.map(x=>Array.from(x)),trust:[...a.trust].sort((x,y)=>Math.abs(y[1])-Math.abs(x[1])).slice(0,10).map(([id,v])=>({id,v,alive:alive.has(id)})),
-    trustedBy:agents.filter(x=>(x.trust.get(a.id)||0)>.3).map(x=>({id:x.id,v:x.trust.get(a.id),hue:x.traits.hue})).sort((p,q)=>q.v-p.v).slice(0,12),coparentAlive:alive.has(a.coparent),
+    acts:a.acts.map(x=>Array.from(x)),trust:[...a.trust].sort((x,y)=>Math.abs(y[1])-Math.abs(x[1])).slice(0,10).map(([id,v])=>({id,v,name:nm(id),alive:alive.has(id)})),
+    trustedBy:agents.filter(x=>(x.trust.get(a.id)||0)>.3).map(x=>({id:x.id,name:x.name,v:x.trust.get(a.id),hue:x.traits.hue})).sort((p,q)=>q.v-p.v).slice(0,12),coparentAlive:alive.has(a.coparent),
     lineage:a.lineage.map(l=>({...l,alive:alive.has(l.id)})),parent:a.parent,cost:traitCost(a.traits,a.perks),metab:a.ph.baseMetab*a.ph.metab,perks:a.perks,ph:{maxE:a.ph.maxE,maxH:a.ph.maxH,speed:a.ph.speed,dmg:a.ph.dmg,armor:a.ph.armor,coldT:a.ph.coldT,hotT:a.ph.hotT,sense:a.ph.sense},brainCost:a.brainCost,
     deeds:{shared:a.shared,stolen:a.stolen,attacks:a.attacks,kills:a.kills,hunts:a.hunts,beastKills:a.beastKills,crafts:a.crafts,deposits:a.deposits,builds:a.builds},
-    actionCounts:Array.from(a.actionCounts),drv:a.drv,rep:repOf(a.id),admirers:agents.filter(x=>(x.trust.get(a.id)||0)>.5).length,thanksGot:a.thanksGot,lovesGot:a.lovesGot,coparent:a.coparent,partners:a.partners,wellbeing:a.phi,rewardAvg:a.lastReward||0,curiosityGain:a.lastBonus||0,memory:a.memory,memA:a.memA,memB:a.memB,signal:a.signal,pain:a.pain});
+    actionCounts:Array.from(a.actionCounts),owed:[...a.owed].sort((x,y)=>y[1]-x[1]).slice(0,6).map(([id,v])=>[nm(id)||('#'+id),v]),inWater:a.inWater,drv:a.drv,rep:repOf(a.id),admirers:agents.filter(x=>(x.trust.get(a.id)||0)>.5).length,thanksGot:a.thanksGot,lovesGot:a.lovesGot,coparent:a.coparent,partners:a.partners,wellbeing:a.phi,rewardAvg:a.lastReward||0,curiosityGain:a.lastBonus||0,memory:a.memory,memA:a.memA,memB:a.memB,signal:a.signal,pain:a.pain});
 }
 // yield through a MessageChannel: unlike setTimeout(0) it is not clamped to 4 ms, so hyperspeed keeps the CPU busy
 const chan=new MessageChannel(); let pending=false;
@@ -1577,7 +1669,7 @@ function work(){
   const frameGap=maxMode?60:30;
   if (now-lastFrame>=frameGap){ postFrame(); lastFrame=now; }
   if (inspecting&&selected&&now-lastInspect>=(maxMode?300:140)){ postInspect(); lastInspect=now; }
-  if (now-lastStats>=700){ postStats(true); lastStats=now; }
+  if (now-lastStats>=700){ postStats(true); lastStats=now; sendPher=true; }
   schedule(!busy);
 }
 function pickAgent(how){
@@ -1596,7 +1688,7 @@ function pickAgent(how){
   else if (how==='popular') a=best(x=>repOf(x.id));
   else if (how==='child'&&cur){ const k=agents.filter(x=>x.parent===cur.id); if (k.length) a=pick(k); else toast('No living children yet','info'); }
   else if (how==='parent'&&cur){ a=agents.find(x=>x.id===cur.parent)||null; if (!a) toast('Parent is no longer alive','info'); }
-  if (a){ selected=a.id; self.postMessage({type:'selected',id:a.id,x:a.x,y:a.y}); postInspect(); }
+  if (a){ selected=a.id; self.postMessage({type:'selected',name:a.name,id:a.id,x:a.x,y:a.y}); postInspect(); }
 }
 self.onmessage=e=>{
   const m=e.data;
@@ -1616,7 +1708,7 @@ self.onmessage=e=>{
     case 'pick': pickAgent(m.how); break;
     case 'paint': {
       const {x,y,k,r=20,n=1}=m;
-      if (k==='erase'){ for (const it of items) if (Math.hypot(it.x-x,it.y-y)<=r) it.dead=true; buildings=buildings.filter(b=>Math.hypot(b.x-x,b.y-y)>r); beasts=beasts.filter(z=>Math.hypot(z.x-x,z.y-y)>r); }
+      if (k==='erase'){ for (const it of items) if (wdistXY(it.x,it.y,x,y)<=r) it.dead=true; buildings=buildings.filter(b=>wdistXY(b.x,b.y,x,y)>r); beasts=beasts.filter(z=>wdistXY(z.x,z.y,x,y)>r); }
       else if (k==='fire'){ if (!occupied(x,y,12,'fire')) placeBuilding('fire',x,y,null); }
       else if (k==='beast'){ if (beasts.length<40) spawnBeast(x,y); }
       else if (k==='wall'){ const ang=m.ang||0; if (!occupied(x,y,15,'wall')) placeBuilding('wall',x,y,null,ang); }
@@ -1670,10 +1762,11 @@ let sim = null, usingWorker = true;
 const send = (type, rest = {}) => sim.postMessage({ type, ...rest });
 
 /* ================= app state ================= */
-let F = null, stats = null, insp = null;
+let F = null, stats = null, insp = null, names = {};
+const nameOf = id => names[id] || `#${id}`;
 let selected = 0, follow = false, running = true, tool = 'select', maxMode = false;
 const SPEEDS = [1, 2, 4, 8, 16, 32, 64, 128, 256];
-const ui = Object.assign({ night: true, fx: true, sense: true, trail: true, legend: true, perf: true, auto: true, hidePause: true, wake: true, speedIdx: 2, brushSize: 22, brushAmt: 1 }, store.get('alife.ui', {}));
+const ui = Object.assign({ notify: 'important', scent: false, night: true, fx: true, sense: true, trail: true, legend: true, perf: true, auto: true, hidePause: true, wake: true, speedIdx: 2, brushSize: 22, brushAmt: 1 }, store.get('alife.ui', {}));
 ui.speedIdx = clamp(ui.speedIdx | 0, 0, SPEEDS.length - 1);
 let speedIdx = ui.speedIdx;
 const saveUi = () => store.set('alife.ui', ui);
@@ -1683,12 +1776,14 @@ const rpos = new Map();       // id -> smoothed render position
 const bpos = new Map();       // beast id -> smoothed render position
 let trail = [], fx = [];
 let simTps = 0, renderFps = 0;
+const wd = (d, L) => d > L / 2 ? d - L : d < -L / 2 ? d + L : d;
+const wrapC = (v, L) => ((v % L) + L) % L;
 const hyper = () => maxMode || SPEEDS[speedIdx] >= 64;
 
 function preferredShape() { const w = innerWidth, h = innerHeight; return h > w * 1.15 ? 'tall' : w > h * 1.15 ? 'wide' : 'square'; }
 function onSim(m) {
   switch (m.type) {
-    case 'ready': send('init', { shape: preferredShape() }); break;
+    case 'ready': send('init', {}); break;
     case 'meta': {
       const first = !meta; meta = m; W = m.W; H = m.H; buildTerrain(m);
       if (first) buildClimate(m.settings); else syncSliders(m.settings);
@@ -1696,17 +1791,24 @@ function onSim(m) {
       if (first || !cw) fit(true); else fit(true);
       break;
     }
-    case 'frame': ingestFrame(m); break;
-    case 'stats': stats = m; renderStats(); break;
-    case 'inspect': insp = m; renderInspector(); break;
+    case 'frame': ingestFrame(m); if (m.P) paintPher(m.P); break;
+    case 'stats': stats = m; if (m.names) names = m.names; renderStats(); break;
+    case 'inspect': insp = m; if (m.name) names[m.id] = m.name; renderInspector(); break;
     case 'selected': setSelected(m.id, { fromSim: true }); break;
-    case 'toast': toast(m.s, m.kind); break;
+    case 'toast': if (ui.notify === 'all' || (ui.notify === 'important' && m.important)) toast(m.s, m.kind); break;
     case 'saved': onSaved(m); break;
     case 'loaded':
       if (m.ok) { toast('World loaded', 'info'); syncSliders(m.settings); trail = []; rpos.clear(); }
       else toast('Could not load: ' + m.error, 'death');
       break;
   }
+}
+let pherCanvas = null, pherImg = null;
+function paintPher(P) {
+  if (!meta) return;
+  if (!pherCanvas) { pherCanvas = document.createElement('canvas'); pherCanvas.width = meta.FW; pherCanvas.height = meta.FH; pherImg = pherCanvas.getContext('2d').createImageData(meta.FW, meta.FH); }
+  const d = pherImg.data; for (let i = 0; i < P.length; i++) { const v = P[i]; d[i * 4] = 220; d[i * 4 + 1] = 120; d[i * 4 + 2] = 255; d[i * 4 + 3] = v; }
+  pherCanvas.getContext('2d').putImageData(pherImg, 0, 0);
 }
 function ingestFrame(m) {
   F = m; simTps = m.tps;
@@ -1740,7 +1842,7 @@ function resize() {
   dpr = Math.min(2, window.devicePixelRatio || 1);
   cw = cv.clientWidth; ch = cv.clientHeight;
   cv.width = Math.round(cw * dpr); cv.height = Math.round(ch * dpr);
-  minZ = Math.min(cw / W, ch / H) * .45;
+  minZ = Math.max(cw, ch) / (W * 2);
 }
 const vc = { x: 0, y: 0, tx: 0, ty: 0 };   // screen point the camera centers on, kept clear of open drawers
 function viewRect() {
@@ -1762,14 +1864,14 @@ function updateViewCenter(dt) {
   const k = 1 - Math.exp(-dt * 8); vc.x += (vc.tx - vc.x) * k; vc.y += (vc.ty - vc.y) * k;
 }
 const toWorld = (sx, sy) => ({ x: (sx - vc.x) / cam.z + cam.x, y: (sy - vc.y) / cam.z + cam.y });
-const toScreen = (wx, wy) => ({ x: (wx - cam.x) * cam.z + vc.x, y: (wy - cam.y) * cam.z + vc.y });
+const toScreen = (wx, wy) => ({ x: wd(wx - cam.x, W) * cam.z + vc.x, y: wd(wy - cam.y, H) * cam.z + vc.y });
 function chrome() {
   const top = document.querySelector('.top').getBoundingClientRect(), bot = $('bottom').getBoundingClientRect(), cr = cv.getBoundingClientRect();
   const t = top.bottom - cr.top + 8, b = bot.top - cr.top - (cw < 760 ? 8 : 10);
   return { t, b: Math.max(t + 80, b) };
 }
 // fit = the whole map visible in the band between the top bar and the dock
-function fitZoom() { const c = chrome(), side = cw < 760 ? 8 : 24; return clamp(Math.min((cw - side * 2) / W, (c.b - c.t) / H), .05, 9); }
+function fitZoom() { const c = chrome(), side = cw < 760 ? 8 : 24; return clamp(Math.min((cw - side * 2) / W, (c.b - c.t) / H), minZ, 9); }
 function fit(instant) {
   if (!cw) return;
   const c = chrome(), z = fitZoom(); lastFitZ = z;
@@ -1785,7 +1887,7 @@ function zoomAt(sx, sy, z) {
   cam.z = z; cam.x = p.x - (sx - vc.x) / z; cam.y = p.y - (sy - vc.y) / z;
   clampCam(); camTarget = null;
 }
-function clampCam() { cam.x = clamp(cam.x, -W * .25, W * 1.25); cam.y = clamp(cam.y, -H * .25, H * 1.25); }
+function clampCam() { }
 
 /* ================= sprites ================= */
 function sprite(size, draw) { const c = document.createElement('canvas'); c.width = c.height = size; draw(c.getContext('2d'), size); return c; }
@@ -1822,7 +1924,7 @@ const glowFire = sprGlow('rgba(255,150,70,1)'), glowHouse = sprGlow('rgba(255,21
 /* terrain: painted from the simulation's biome fields (fertile valleys, forest, rock) */
 let terrain = null;
 function buildTerrain(m) {
-  const { FW, FH, FC, fert, forest, rock, seed } = m;
+  const { FW, FH, FC, fert, forest, rock, seed, water } = m;
   const small = document.createElement('canvas'); small.width = FW; small.height = FH;
   const sg = small.getContext('2d'), img = sg.createImageData(FW, FH);
   const lerp = (a, b, t) => a + (b - a) * t;
@@ -1832,12 +1934,14 @@ function buildTerrain(m) {
     let R = lerp(52, 30, f), G = lerp(54, 82, f), B = lerp(36, 52, f);
     const ft = clamp((fo - .45) * 2.2, 0, 1); R = lerp(R, 18, ft * .7); G = lerp(G, 58, ft * .7); B = lerp(B, 44, ft * .7);
     const rt = clamp((r - .55) * 2.6, 0, 1); R = lerp(R, 70, rt); G = lerp(G, 70, rt); B = lerp(B, 66, rt);
+    if (water && water[i]) { R = 26; G = 58; B = 84; }
     img.data[i * 4] = R; img.data[i * 4 + 1] = G; img.data[i * 4 + 2] = B; img.data[i * 4 + 3] = 255;
   }
   sg.putImageData(img, 0, 0);
-  const S = 2, t = document.createElement('canvas'); t.width = W * S; t.height = H * S;
+  const S = innerWidth < 760 ? 1 : 1.5, t = document.createElement('canvas'); t.width = W * S; t.height = H * S;
   const g = t.getContext('2d'); g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
-  g.drawImage(small, 0, 0, FW * FC * S, FH * FC * S);
+  // draw the small map three times wide and tall so smoothing blends across the wrap, then keep the centre
+  for (let yy = -1; yy <= 1; yy++) for (let xx = -1; xx <= 1; xx++) g.drawImage(small, xx * W * S, yy * H * S, FW * FC * S, FH * FC * S);
   let sd = seed || 7; const rr = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
   for (let i = 0; i < 360; i++) {
     const x = rr() * t.width, y = rr() * t.height, rad = (16 + rr() * 80) * S;
@@ -1849,6 +1953,7 @@ function buildTerrain(m) {
     g.fillStyle = rk > .6 && rr() < .5 ? 'rgba(200,200,190,.08)' : rr() < .5 ? 'rgba(170,220,170,.05)' : 'rgba(0,0,0,.14)';
     g.fillRect(x * S, y * S, S * (1 + rr()), S * (1 + rr()));
   }
+  if (water) { g.strokeStyle = 'rgba(160,210,240,.10)'; g.lineWidth = 1; for (let i = 0; i < 2200; i++) { const x = rr() * W, y = rr() * H; if (water[clamp(x / FC | 0, 0, FW - 1) + clamp(y / FC | 0, 0, FH - 1) * FW]) { g.beginPath(); g.moveTo(x * S, y * S); g.lineTo((x + 3 + rr() * 4) * S, y * S); g.stroke(); } } }
   g.fillStyle = 'rgba(0,0,0,.22)'; g.fillRect(0, 0, t.width, t.height);
   g.strokeStyle = 'rgba(190,230,210,.04)'; g.lineWidth = 1;
   for (let x = 40; x < W; x += 40) { g.beginPath(); g.moveTo(x * S, 0); g.lineTo(x * S, t.height); g.stroke(); }
@@ -1867,14 +1972,15 @@ function render(t) {
   if (!fast) {
     for (const map of [rpos, bpos]) for (const p of map.values()) {
       if (p.tx === undefined) continue;
-      const dx = p.tx - p.x, dy = p.ty - p.y;
-      if (dx * dx + dy * dy > 1600) { p.x = p.tx; p.y = p.ty; } else { p.x += dx * k; p.y += dy * k; }
+      const dx = wd(p.tx - p.x, W), dy = wd(p.ty - p.y, H);
+      if (dx * dx + dy * dy > 1600) { p.x = p.tx; p.y = p.ty; } else { p.x = wrapC(p.x + dx * k, W); p.y = wrapC(p.y + dy * k, H); }
       let dh = p.thd - p.hd; dh = Math.atan2(Math.sin(dh), Math.cos(dh)); p.hd += dh * Math.min(1, k * 1.4);
     }
   }
   const sp = selected && rpos.get(selected);
-  if (follow && sp) { const kk = 1 - Math.exp(-dt * 6); cam.x += (sp.x - cam.x) * kk; cam.y += (sp.y - cam.y) * kk; }
-  if (sp && ui.trail && !fast) { const lp = trail[trail.length - 1]; if (!lp || Math.hypot(lp.x - sp.x, lp.y - sp.y) > 1.5) { trail.push({ x: sp.x, y: sp.y }); if (trail.length > 90) trail.shift(); } }
+  if (follow && sp) { const kk = 1 - Math.exp(-dt * 6); cam.x += wd(sp.x - cam.x, W) * kk; cam.y += wd(sp.y - cam.y, H) * kk; }
+  if (cam.x < 0 || cam.x >= W || cam.y < 0 || cam.y >= H) { const nx = wrapC(cam.x, W) - cam.x, ny = wrapC(cam.y, H) - cam.y; cam.x += nx; cam.y += ny; if (camTarget) { camTarget.x += nx; camTarget.y += ny; } }
+  if (sp && ui.trail && !fast) { const lp = trail[trail.length - 1]; if (!lp || Math.hypot(wd(lp.x - sp.x, W), wd(lp.y - sp.y, H)) > 1.5) { trail.push({ x: sp.x, y: sp.y }); if (trail.length > 90) trail.shift(); } }
 
   updateViewCenter(dt);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -1883,17 +1989,28 @@ function render(t) {
   const z = cam.z, now = t / 1000;
   ctx.setTransform(dpr * z, 0, 0, dpr * z, dpr * (vc.x - cam.x * z), dpr * (vc.y - cam.y * z));
   const vx0 = cam.x - vc.x / z - 12, vx1 = cam.x + (cw - vc.x) / z + 12, vy0 = cam.y - vc.y / z - 12, vy1 = cam.y + (ch - vc.y) / z + 12;
-  const inView = (x, y) => x > vx0 && x < vx1 && y > vy0 && y < vy1;
-
-  ctx.fillStyle = 'rgba(0,0,0,.4)'; ctx.fillRect(-4, -4, W + 8, H + 10);
+  // the world is a torus: draw one copy per tile the view touches
+  for (let ty = Math.floor(vy0 / H); ty <= Math.floor(vy1 / H); ty++) for (let tx = Math.floor(vx0 / W); tx <= Math.floor(vx1 / W); tx++) drawTile(tx * W, ty * H, z, now, dt, vx0, vx1, vy0, vy1, fast, sp);
+  fpsFrames++;
+  if (t - fpsT > 500) { renderFps = Math.round(fpsFrames * 1000 / (t - fpsT)); fpsFrames = 0; fpsT = t; updateHud(); }
+  requestAnimationFrame(render);
+}
+function drawTile(ox, oy, z, now, dt, vx0, vx1, vy0, vy1, fast, sp) {
+  const inView = (x, y) => x + ox > vx0 && x + ox < vx1 && y + oy > vy0 && y + oy < vy1;
+  const t = now * 1000;
+  ctx.save(); ctx.translate(ox, oy);
   ctx.drawImage(terrain, 0, 0, W, H);
+  if (ui.scent && pherCanvas) { ctx.globalAlpha = .55; ctx.imageSmoothingEnabled = true; ctx.drawImage(pherCanvas, 0, 0, W, H); ctx.globalAlpha = 1; }
   const temp = F.temp;
   if (temp < 10) { ctx.fillStyle = `rgba(170,205,255,${clamp((10 - temp) / 30, 0, 1) * .3})`; ctx.fillRect(0, 0, W, H); }
   else if (temp > 27) { ctx.fillStyle = `rgba(255,190,110,${clamp((temp - 27) / 23, 0, 1) * .2})`; ctx.fillRect(0, 0, W, H); }
 
   // resources
   const I = F.I;
-  for (let o = 0; o < I.length; o += 4) {
+  if (z < .7) {
+    const s = 1.4 / Math.max(.25, z) * .9, cols = [C.food, C.tree, C.stone];
+    for (let ty = 0; ty < 3; ty++) { ctx.fillStyle = cols[ty]; for (let o = 0; o < I.length; o += 4) { if (I[o] !== ty) continue; const x = I[o + 1], y = I[o + 2]; if (inView(x, y)) ctx.fillRect(x - s / 2, y - s / 2, s, s); } }
+  } else for (let o = 0; o < I.length; o += 4) {
     const x = I[o + 1], y = I[o + 2]; if (!inView(x, y)) continue;
     const [img, r0] = ISPR[I[o]], life = I[o + 3];
     const r = fast ? r0 : r0 * (life > .985 ? .4 + (1 - life) / .015 * .6 : 1);
@@ -1983,6 +2100,9 @@ function render(t) {
     ctx.fillStyle = hueFill[(A[o + 3] | 0) % 360]; ctx.beginPath(); ctx.arc(p.x, p.y, R, 0, TAU); ctx.fill();
   }
   ctx.globalAlpha = 1;
+  ctx.strokeStyle = 'rgba(170,215,255,.7)'; ctx.lineWidth = .6; ctx.beginPath();
+  for (let i = 0; i < list.length; i += 2) { const o = list[i], p = list[i + 1]; if (!(A[o + 7] & 16)) continue; const rr = R + 2.5 + Math.sin(now * 5 + p.x) * .8; ctx.moveTo(p.x + rr, p.y); ctx.arc(p.x, p.y, rr, 0, TAU); }
+  ctx.stroke();
   ctx.strokeStyle = 'rgba(255,143,200,.8)'; ctx.lineWidth = .8; ctx.beginPath();
   for (let i = 0; i < list.length; i += 2) { const o = list[i], p = list[i + 1]; if (!(A[o + 7] & 8)) continue; ctx.moveTo(p.x + R + 1.8, p.y); ctx.arc(p.x, p.y, R + 1.8, 0, TAU); }
   ctx.stroke();
@@ -2034,7 +2154,7 @@ function render(t) {
   if (sp) {
     if (ui.trail && trail.length > 1 && !fast) {
       ctx.lineWidth = 1.2; ctx.lineCap = 'round';
-      for (let i = 1; i < trail.length; i++) { ctx.strokeStyle = `rgba(243,201,107,${(i / trail.length) * .55})`; ctx.beginPath(); ctx.moveTo(trail[i - 1].x, trail[i - 1].y); ctx.lineTo(trail[i].x, trail[i].y); ctx.stroke(); }
+      for (let i = 1; i < trail.length; i++) { if (Math.abs(trail[i].x - trail[i - 1].x) > W / 2 || Math.abs(trail[i].y - trail[i - 1].y) > H / 2) continue; ctx.strokeStyle = `rgba(243,201,107,${(i / trail.length) * .55})`; ctx.beginPath(); ctx.moveTo(trail[i - 1].x, trail[i - 1].y); ctx.lineTo(trail[i].x, trail[i].y); ctx.stroke(); }
     }
     const sense = A[sp.i + 8] || 0;
     if (ui.sense && sense) { ctx.strokeStyle = 'rgba(243,201,107,.4)'; ctx.fillStyle = 'rgba(243,201,107,.035)'; ctx.lineWidth = 1 / z; ctx.setLineDash([5 / z, 5 / z]); ctx.beginPath(); ctx.arc(sp.x, sp.y, sense, 0, TAU); ctx.fill(); ctx.stroke(); ctx.setLineDash([]); }
@@ -2043,16 +2163,12 @@ function render(t) {
     ctx.fillStyle = C.accent; ctx.beginPath(); ctx.arc(sp.x, sp.y, R * .55, 0, TAU); ctx.fill();
   }
   if (hoverId && hoverId !== selected) { const hp = rpos.get(hoverId); if (hp) { ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.lineWidth = 1.5 / z; ctx.beginPath(); ctx.arc(hp.x, hp.y, 6.5, 0, TAU); ctx.stroke(); } }
-  if (pointerWorld && tool !== 'select') {
+  if (pointerWorld && tool !== 'select' && ox === 0 && oy === 0) {
     const col = { food: C.food, tree: C.tree, stone: C.stone, wall: C.wall, fire: C.fire, beast: C.beast, erase: C.fg }[tool];
     const r = tool === 'fire' ? 12 : tool === 'beast' ? 8 : tool === 'wall' ? 15 : ui.brushSize;
-    ctx.strokeStyle = col; ctx.lineWidth = 1.2 / z; ctx.setLineDash([4 / z, 3 / z]); ctx.beginPath(); ctx.arc(pointerWorld.x, pointerWorld.y, r, 0, TAU); ctx.stroke(); ctx.setLineDash([]);
+    ctx.strokeStyle = col; ctx.lineWidth = 1.2 / z; ctx.setLineDash([4 / z, 3 / z]); ctx.beginPath(); ctx.arc(pointerWorld.x - ox, pointerWorld.y - oy, r, 0, TAU); ctx.stroke(); ctx.setLineDash([]);
   }
-  ctx.strokeStyle = 'rgba(190,230,210,.18)'; ctx.lineWidth = 1 / z; ctx.strokeRect(0, 0, W, H);
-
-  fpsFrames++;
-  if (t - fpsT > 500) { renderFps = Math.round(fpsFrames * 1000 / (t - fpsT)); fpsFrames = 0; fpsT = t; updateHud(); }
-  requestAnimationFrame(render);
+  ctx.restore();
 }
 function roundRect(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
 requestAnimationFrame(render);
@@ -2185,7 +2301,7 @@ function setSelected(id, { fromSim = false, open = true } = {}) {
 function revealSelected() {
   const p = rpos.get(selected); if (!p) return;
   const v = viewRect(), c = chrome(), s = toScreen(p.x, p.y), m = 40;
-  if (s.x < v.l + m || s.x > v.r - m || s.y < Math.max(v.t, c.t) + 20 || s.y > Math.min(v.b, c.b) - 20) camTarget = { x: p.x, y: p.y, z: Math.max(cam.z, fitZoom() * (cw < 760 ? 1.8 : 1)) };
+  if (s.x < v.l + m || s.x > v.r - m || s.y < Math.max(v.t, c.t) + 20 || s.y > Math.min(v.b, c.b) - 20) camTarget = { x: cam.x + wd(p.x - cam.x, W), y: cam.y + wd(p.y - cam.y, H), z: Math.max(cam.z, fitZoom() * (cw < 760 ? 1.8 : 1)) };
 }
 document.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => send('pick', { how: b.dataset.pick }));
 $('iFollow').onclick = () => toggleFollow();
@@ -2195,10 +2311,10 @@ function toggleFollow() { if (!selected) return; follow = !follow; $('iFollow').
 const ptrs = new Map(); let gesture = null, lastPaint = 0;
 function agentAt(sx, sy, touch) {
   const w = toWorld(sx, sy), r = Math.max(7, (touch ? 26 : 14) / cam.z); let best = 0, bd = r * r;
-  for (const [id, p] of rpos) { const dx = p.x - w.x, dy = p.y - w.y, d = dx * dx + dy * dy; if (d < bd) { bd = d; best = id; } }
+  for (const [id, p] of rpos) { const dx = wd(p.x - w.x, W), dy = wd(p.y - w.y, H), d = dx * dx + dy * dy; if (d < bd) { bd = d; best = id; } }
   return best;
 }
-const inWorld = w => w.x >= 0 && w.y >= 0 && w.x <= W && w.y <= H;
+const inWorld = w => { w.x = wrapC(w.x, W); w.y = wrapC(w.y, H); return true; };
 function paint(sx, sy) { const w = toWorld(sx, sy); if (!inWorld(w)) return; send('paint', { x: w.x, y: w.y, k: tool, r: ui.brushSize, n: ui.brushAmt }); lastPaint = performance.now(); }
 function wallTo(w) {
   const g = gesture; if (!g.last) { g.last = w; return; }
@@ -2206,8 +2322,8 @@ function wallTo(w) {
   if (d < 26) return;
   const ang = Math.atan2(dy, dx), steps = Math.floor(d / 28);
   for (let i = 0; i < steps; i++) {
-    const cx = g.last.x + Math.cos(ang) * 14, cy = g.last.y + Math.sin(ang) * 14;
-    if (inWorld({ x: cx, y: cy })) send('paint', { x: cx, y: cy, k: 'wall', ang });
+    const cx = wrapC(g.last.x + Math.cos(ang) * 14, W), cy = wrapC(g.last.y + Math.sin(ang) * 14, H);
+    send('paint', { x: cx, y: cy, k: 'wall', ang });
     g.last = { x: g.last.x + Math.cos(ang) * 28, y: g.last.y + Math.sin(ang) * 28 }; g.placed = true;
   }
 }
@@ -2264,7 +2380,7 @@ function showHover(id, x, y) {
   if (!id || !F) { el.classList.remove('show'); return; }
   const p = rpos.get(id); if (!p) return;
   const o = p.i, A = F.A;
-  el.innerHTML = `#${id} · energy ${Math.round(A[o + 5] * 200)} · health ${Math.round(A[o + 6] * 100)}${A[o + 7] & 4 ? ' · tool' : ''}`;
+  el.innerHTML = `${esc(nameOf(id))} · energy ${Math.round(A[o + 5] * 200)} · health ${Math.round(A[o + 6] * 100)}${A[o + 7] & 4 ? ' · tool' : ''}`;
   el.style.left = Math.min(x + 14, innerWidth - 220) + 'px'; el.style.top = (y + 12) + 'px'; el.classList.add('show');
 }
 
@@ -2319,9 +2435,9 @@ function toast(s, kind = 'info') {
 /* ================= world settings ================= */
 const SLIDERS = [
   ['temperature', 'Average temperature', -20, 50, 1, v => `${v}°C`],
-  ['food', 'Food growth', 0, 9, .25, v => `${(+v).toFixed(2)} / tick`],
-  ['trees', 'Tree growth', 0, .5, .01, v => `${Math.round(v * 1000)} / 1k ticks`],
-  ['stone', 'Stone emergence', 0, .4, .01, v => `${Math.round(v * 1000)} / 1k ticks`],
+  ['food', 'Food growth', 0, 24, .25, v => `${(+v).toFixed(2)} / tick`],
+  ['trees', 'Tree growth', 0, 1.5, .01, v => `${Math.round(v * 1000)} / 1k ticks`],
+  ['stone', 'Stone emergence', 0, 1.2, .01, v => `${Math.round(v * 1000)} / 1k ticks`],
   ['drain', 'Metabolic pressure', .3, 3, .1, v => `${(+v).toFixed(1)}×`],
   ['decay', 'Decay speed', 0, 4, .1, v => `${(+v).toFixed(1)}×`],
   ['storm', 'Storm severity', 0, 4, .1, v => `${(+v).toFixed(1)}×`],
@@ -2329,19 +2445,19 @@ const SLIDERS = [
   ['season', 'Year length', 0, 6000, 100, v => +v ? `${v} ticks` : 'No seasons'],
 ];
 const SLIDERS2 = [
-  ['beasts', 'Beasts roaming', 0, 20, 1, v => +v ? `${v}` : 'None'],
+  ['beasts', 'Beasts roaming', 0, 40, 1, v => +v ? `${v}` : 'None'],
   ['beastPower', 'Beast ferocity', .3, 3, .1, v => `${(+v).toFixed(1)}×`],
-  ['popCap', 'Population cap', 40, 400, 10, v => `${v} yips`],
+  ['popCap', 'Population cap', 40, 600, 10, v => `${v} yips`],
   ['mutation', 'Mutation rate', 0, 4, .1, v => `${(+v).toFixed(1)}×`],
 ];
 const ALLS = [...SLIDERS, ...SLIDERS2];
 const PRESETS = [
-  ['Temperate', 'Balanced defaults', { food: 3, trees: .12, stone: .08, drain: 1, decay: 1, storm: 1, temperature: 19, day: 500, season: 2600, beasts: 2, beastPower: 1 }],
-  ['Abundance', 'Rich and mild', { food: 5.5, trees: .2, stone: .14, drain: .8, decay: 1, storm: .5, temperature: 21, day: 500, season: 2600, beasts: 1, beastPower: .8 }],
-  ['Scarcity', 'Lean and hungry', { food: 1.4, trees: .07, stone: .05, drain: 1.3, decay: 1.2, storm: 1, temperature: 18, day: 500, season: 2600, beasts: 2, beastPower: 1 }],
-  ['Long winter', 'Hoard or starve', { food: 2.4, trees: .12, stone: .08, drain: 1.1, decay: 1, storm: 1.5, temperature: 4, day: 600, season: 4200, beasts: 2, beastPower: 1.1 }],
-  ['Predators', 'Hunted every day', { food: 3, trees: .14, stone: .1, drain: 1, decay: 1, storm: .8, temperature: 19, day: 500, season: 2600, beasts: 6, beastPower: 1.4 }],
-  ['Tempest', 'Storm season', { food: 3.2, trees: .14, stone: .1, drain: 1, decay: 1.6, storm: 3, temperature: 15, day: 500, season: 2000, beasts: 2, beastPower: 1 }],
+  ['Temperate', 'Balanced defaults', { food: 7.5, trees: .3, stone: .2, drain: 1, decay: 1, storm: 1, temperature: 19, day: 500, season: 2600, beasts: 6, beastPower: 1 }],
+  ['Abundance', 'Rich and mild', { food: 13, trees: .5, stone: .35, drain: .8, decay: 1, storm: .5, temperature: 21, day: 500, season: 2600, beasts: 3, beastPower: .8 }],
+  ['Scarcity', 'Lean and hungry', { food: 3.5, trees: .17, stone: .12, drain: 1.3, decay: 1.2, storm: 1, temperature: 18, day: 500, season: 2600, beasts: 6, beastPower: 1 }],
+  ['Long winter', 'Hoard or starve', { food: 6, trees: .3, stone: .2, drain: 1.1, decay: 1, storm: 1.5, temperature: 4, day: 600, season: 4200, beasts: 6, beastPower: 1.1 }],
+  ['Predators', 'Hunted every day', { food: 7.5, trees: .35, stone: .25, drain: 1, decay: 1, storm: .8, temperature: 19, day: 500, season: 2600, beasts: 18, beastPower: 1.4 }],
+  ['Tempest', 'Storm season', { food: 8, trees: .35, stone: .25, drain: 1, decay: 1.6, storm: 3, temperature: 15, day: 500, season: 2000, beasts: 6, beastPower: 1 }],
 ];
 function paintSlider(el) { const p = (el.value - el.min) / (el.max - el.min) * 100; el.style.setProperty('--p', p + '%'); const s = ALLS.find(x => x[0] === el.id); $(el.id + 'v').textContent = s[5](el.value); }
 function buildClimate(settings) {
@@ -2373,7 +2489,7 @@ $('oReseed').onchange = () => send('settings', { settings: { autoReseed: $('oRes
 $('oLearn').onchange = () => send('settings', { settings: { learning: $('oLearn').checked } });
 
 /* ================= settings ================= */
-const OPTS = { oNight: 'night', oFx: 'fx', oSense: 'sense', oTrail: 'trail', oLegend: 'legend', oPerf: 'perf', oAuto: 'auto', oHidePause: 'hidePause', oWake: 'wake' };
+const OPTS = { oScent: 'scent', oNight: 'night', oFx: 'fx', oSense: 'sense', oTrail: 'trail', oLegend: 'legend', oPerf: 'perf', oAuto: 'auto', oHidePause: 'hidePause', oWake: 'wake' };
 function applyUi() { document.body.classList.toggle('hidelegend', !ui.legend); document.body.classList.toggle('hideperf', !ui.perf); syncWake(); }
 for (const [id, key] of Object.entries(OPTS)) { $(id).checked = ui[key]; $(id).onchange = () => { ui[key] = $(id).checked; saveUi(); applyUi(); }; }
 $('sSave').onclick = () => send('save', { purpose: 'local' });
@@ -2384,9 +2500,9 @@ $('sFile').onchange = async e => { const f = e.target.files[0]; if (!f) return; 
 let newShape = 'wide';
 function markShape() { document.querySelectorAll('[data-shape]').forEach(b => b.classList.toggle('on', b.dataset.shape === newShape)); }
 document.querySelectorAll('[data-shape]').forEach(b => b.onclick = () => { newShape = b.dataset.shape; markShape(); });
-$('sReset').onclick = () => { newShape = preferredShape(); markShape(); $('modal').hidden = false; $('mOk').focus(); };
+$('sReset').onclick = () => { $('modal').hidden = false; $('mOk').focus(); };
 $('mCancel').onclick = () => { $('modal').hidden = true; };
-$('mOk').onclick = () => { $('modal').hidden = true; send('reset', { shape: newShape }); trail = []; rpos.clear(); bpos.clear(); setSelected(0); toast('New world: 120 founders released', 'birth'); };
+$('mOk').onclick = () => { $('modal').hidden = true; send('reset', {}); trail = []; rpos.clear(); bpos.clear(); setSelected(0); toast('New world: 120 founders released', 'birth'); };
 function onSaved(m) {
   const kb = (m.state.length / 1024).toFixed(0), writeLocal = () => { localStorage.setItem('alife.save', m.state); localStorage.setItem('alife.saveMeta', JSON.stringify({ ticks: m.ticks, at: Date.now(), kb })); showSaveInfo(); };
   if (m.purpose === 'auto') { try { writeLocal(); } catch {} return; }
@@ -2434,8 +2550,8 @@ function lineChart(c, series, { min = 0, decimals = 'auto' } = {}) {
 const smooth = (a, k = 4) => a.map((_, i) => { let s = 0, n = 0; for (let j = Math.max(0, i - k); j <= i; j++) { s += a[j]; n++; } return s / n; });
 
 /* ================= stats drawer ================= */
-const DEATHC = { age: C.muted, hunger: C.warn, storm: C.storm, fire: C.fire, beast: C.beast, attack: '#b04a8a' };
-const DEATHL = { age: 'Old age', hunger: 'Starvation', storm: 'Storms', fire: 'Burns', beast: 'Beasts', attack: 'Killed by yips' };
+const DEATHC = { thirst: '#6fb6e8', drowning: '#3f7fb5', age: C.muted, hunger: C.warn, storm: C.storm, fire: C.fire, beast: C.beast, attack: '#b04a8a' };
+const DEATHL = { thirst: 'Thirst', drowning: 'Drowning', age: 'Old age', hunger: 'Starvation', storm: 'Storms', fire: 'Burns', beast: 'Beasts', attack: 'Killed by yips' };
 function renderStats() {
   if (!stats) return;
   updateHud();
@@ -2465,7 +2581,7 @@ function renderStats() {
   $('sensBars').innerHTML = s.sensUse.filter(([k]) => k !== 'bias').slice(0, 12).map(([k, v]) => `<div class="bar"><div class="bt"><i style="width:${v * 100}%"></i><span>${esc(meta.senses[k] || k)}</span></div><b>${Math.round(v * 100)}%</b></div>`).join('');
   const mxA = Math.max(...s.actMix, 1e-9);
   $('actBars').innerHTML = s.actMix.map((v, i) => [v, i]).sort((a, b) => b[0] - a[0]).map(([v, i]) => `<div class="bar${v === mxA ? ' hl' : ''}"><div class="bt"><i style="width:${v / mxA * 100}%"></i><span>${meta.actions[i]}</span></div><b>${(v * 100).toFixed(1)}%</b></div>`).join('');
-  $('elite').innerHTML = s.eliteTop.length ? s.eliteTop.map(e => `<span class="chip dead" title="Score ${e.score}"><i style="background:hsl(${e.hue | 0} 72% 66%)"></i>#${e.id} · gen ${e.gen}</span>`).join('') : '<span class="note">Filled as yips die.</span>';
+  $('elite').innerHTML = s.eliteTop.length ? s.eliteTop.map(e => `<span class="chip dead" title="Score ${e.score}"><i style="background:hsl(${e.hue | 0} 72% 66%)"></i>${esc(e.name)} · gen ${e.gen}</span>`).join('') : '<span class="note">Filled as yips die.</span>';
   $('log').innerHTML = s.events.slice(0, 30).map(e => `<div><time>${fmt(e.t)}</time><i style="background:${KCOL[e.kind] || C.muted}"></i><span>${esc(e.s)}</span></div>`).join('');
 }
 
@@ -2507,8 +2623,8 @@ function renderInspector() {
   if (m.none || m.id !== selected) return;
   const hue = m.traits.hue | 0;
   $('iSwatch').style.background = hueFill[hue]; $('iSwatch').style.setProperty('--hue', `hsl(${hue} 72% 66% / .5)`);
-  $('iTitle').textContent = `Yip #${m.id}`;
-  $('iSub').textContent = `Generation ${m.gen} · age ${fmt(m.age)} · ${m.kids} offspring`;
+  $('iTitle').textContent = m.name || `Yip #${m.id}`;
+  $('iSub').textContent = `#${m.id} · generation ${m.gen} · age ${fmt(m.age)} · ${m.kids} offspring`;
   const badges = [];
   badges.push(m.sheltered ? ['Sheltered', 'good'] : ['Exposed', '']);
   if (m.tool > 0) badges.push([`Tool ${m.tool}`, 'good']);
@@ -2516,11 +2632,13 @@ function renderInspector() {
   if (m.health < 40) badges.push(['Injured', 'bad']);
   if (m.pain > .3) badges.push(['Under attack', 'bad']);
   if (m.rep > 3) badges.push(['Popular', 'good']);
+  if (m.inWater) badges.push(['Swimming', '']);
+  if (m.drv.thirst > .7) badges.push(['Parched', 'bad']);
   if (m.temp < 10) badges.push([`Cold ${m.temp.toFixed(0)}°`, 'warn']); else if (m.temp > 31) badges.push([`Hot ${m.temp.toFixed(0)}°`, 'warn']);
   $('iBadges').innerHTML = badges.map(([t, c]) => `<span class="badge ${c}">${t}</span>`).join('');
   meter('E', m.energy, (m.ph && m.ph.maxE) || 200, m.energy.toFixed(0)); meter('H', m.health, (m.ph && m.ph.maxH) || 100, m.health.toFixed(0));
   meter('A', m.age, m.lifespan, Math.round(m.age / m.lifespan * 100) + '%'); meter('L', m.load, m.cap, `${m.load.toFixed(1)}/${m.cap.toFixed(1)}`);
-  const DL = { hunger: ['Hunger', C.warn], cold: ['Cold / heat', '#9cc6ff'], injury: ['Injury', C.bad], fatigue: ['Fatigue', C.muted], lonely: ['Loneliness', '#c9b3e6'], insecure: ['Insecurity', C.tree] };
+  const DL = { thirst: ['Thirst', '#6fb6e8'], hunger: ['Hunger', C.warn], cold: ['Cold / heat', '#9cc6ff'], injury: ['Injury', C.bad], fatigue: ['Fatigue', C.muted], lonely: ['Loneliness', '#c9b3e6'], insecure: ['Insecurity', C.tree] };
   $('driveBars').innerHTML = meta.drives.map(k => { const v = m.drv[k] || 0; return `<div class="drive"><div>${DL[k][0]}<b>${Math.round(v * 100)}</b></div><div class="meter"><i style="width:${v * 100}%;background:${DL[k][1]}"></i></div></div>`; }).join('');
   if (pane === 'pMind') { drawBrain(m); probBars(m); }
   else if (pane === 'pBody') bodyPane(m);
@@ -2532,7 +2650,7 @@ function probBars(m) {
   const order = m.probs.map((p, i) => [p, i]).sort((a, b) => b[0] - a[0]).slice(0, 6), mx = order[0][0];
   $('probBars').innerHTML = order.map(([p, i]) => `<div class="bar${i === m.lastChoice ? ' hl' : ''}"><div class="bt"><i style="width:${p / mx * 100}%"></i><span>${meta.actions[i]}${i === m.lastChoice ? ' · chosen' : ''}</span></div><b>${(p * 100).toFixed(1)}%</b></div>`).join('');
   $('iLayers').textContent = m.sizes.join(' → ');
-  $('contKV').innerHTML = [['Voice', m.signal], ['Memory A', m.memA], ['Memory B', m.memB]].map(([k, v]) => `<div><span>${k}</span><b>${v >= 0 ? '+' : ''}${v.toFixed(2)}</b></div>`).join('');
+  $('contKV').innerHTML = [['Voice', m.signal], ['Memory A', m.memA], ['Memory B', m.memB], ['Scent laid', m.acts[m.acts.length - 1][meta.short.length + 3] || 0]].map(([k, v]) => `<div><span>${k}</span><b>${v >= 0 ? '+' : ''}${v.toFixed(2)}</b></div>`).join('');
 }
 function bodyPane(m) {
   const avg = stats ? stats.traits : null;
@@ -2549,17 +2667,17 @@ function bodyPane(m) {
   $('bodyKV').innerHTML = kv.map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join('');
 }
 function socialPane(m) {
-  $('socialKV').innerHTML = [['Popularity', m.rep.toFixed(2)], ['Admirers', m.admirers], ['Thanks received', m.thanksGot], ['Loving thanks', m.lovesGot], ['Co-parented', m.partners], ['Co-parent', m.coparent ? `#${m.coparent}${m.coparentAlive ? '' : ' (gone)'}` : 'none']].map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join('');
-  $('trustedBy').innerHTML = m.trustedBy.length ? m.trustedBy.map(t => `<button class="chip" data-goto="${t.id}"><i style="background:${hueFill[t.hue | 0]}"></i>#${t.id} · ${t.v.toFixed(2)}</button>`).join('') : '<p class="note">Nobody yet. Trust is earned slowly by sharing food or materials, warmth, shelter, repairs and defending others from beasts, and lost fast by attacks and theft.</p>';
+  $('socialKV').innerHTML = [['Popularity', m.rep.toFixed(2)], ['Admirers', m.admirers], ['Thanks received', m.thanksGot], ['Loving thanks', m.lovesGot], ['Co-parented', m.partners], ['Co-parent', m.coparent ? `${esc(m.coparentName || '#' + m.coparent)}${m.coparentAlive ? '' : ' (gone)'}` : 'none'], ['Owes thanks to', m.owed && m.owed.length ? m.owed.filter(o => o[1] > .05).slice(0, 3).map(o => esc(o[0])).join(', ') || 'nobody' : 'nobody']].map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join('');
+  $('trustedBy').innerHTML = m.trustedBy.length ? m.trustedBy.map(t => `<button class="chip" data-goto="${t.id}"><i style="background:${hueFill[t.hue | 0]}"></i>${esc(t.name || '#' + t.id)} · ${t.v.toFixed(2)}</button>`).join('') : '<p class="note">Nobody yet. Trust is earned slowly by sharing food or materials, warmth, shelter, repairs and defending others from beasts, and lost fast by attacks and theft.</p>';
   $('trustBars').innerHTML = m.trust.length ? m.trust.map(t => {
     const w = Math.abs(t.v) * 50, left = t.v < 0 ? 50 - w : 50;
-    return `<div class="bar"><div class="bt" style="cursor:${t.alive ? 'pointer' : 'default'}" ${t.alive ? `data-goto="${t.id}"` : ''}><i style="left:${left}%;width:${w}%;background:${t.v < 0 ? 'rgba(242,131,111,.4)' : 'rgba(126,214,176,.35)'}"></i><span style="${t.alive ? '' : 'color:var(--dim)'}">#${t.id}${t.alive ? '' : ' · gone'}</span></div><b>${t.v > 0 ? '+' : ''}${t.v.toFixed(2)}</b></div>`;
+    return `<div class="bar"><div class="bt" style="cursor:${t.alive ? 'pointer' : 'default'}" ${t.alive ? `data-goto="${t.id}"` : ''}><i style="left:${left}%;width:${w}%;background:${t.v < 0 ? 'rgba(242,131,111,.4)' : 'rgba(126,214,176,.35)'}"></i><span style="${t.alive ? '' : 'color:var(--dim)'}">${esc(t.name || '#' + t.id)}${t.alive ? '' : ' · gone'}</span></div><b>${t.v > 0 ? '+' : ''}${t.v.toFixed(2)}</b></div>`;
   }).join('') : '<p class="note">No relationships yet. Trust rises when food is shared and falls after attacks or theft.</p>';
-  $('kidChips').innerHTML = m.livingKids.length ? m.livingKids.map(k => `<button class="chip" data-goto="${k.id}"><i style="background:${hueFill[k.hue | 0]}"></i>#${k.id}</button>`).join('') : '<p class="note">None alive right now.</p>';
+  $('kidChips').innerHTML = m.livingKids.length ? m.livingKids.map(k => `<button class="chip" data-goto="${k.id}"><i style="background:${hueFill[k.hue | 0]}"></i>${esc(k.name || '#' + k.id)}</button>`).join('') : '<p class="note">None alive right now.</p>';
 }
 function linePane(m) {
-  const rows = [`<div><i class="nd" style="background:${hueFill[m.traits.hue | 0]};box-shadow:0 0 0 2px var(--accent)"></i><span>#${m.id} <b>this yip</b></span><small>gen ${m.gen}</small></div>`]
-    .concat(m.lineage.map(l => l.alive ? `<button data-goto="${l.id}"><i class="nd" style="background:${hueFill[(l.hue | 0) % 360]}"></i><span>#${l.id} · alive</span><small>gen ${l.gen}</small></button>` : `<div><i class="nd" style="background:${l.hue ? hueFill[(l.hue | 0) % 360] : C.dim};opacity:.4"></i><span style="color:var(--muted)">#${l.id}</span><small>gen ${l.gen}</small></div>`));
+  const rows = [`<div><i class="nd" style="background:${hueFill[m.traits.hue | 0]};box-shadow:0 0 0 2px var(--accent)"></i><span>${esc(m.name || '#' + m.id)} <b>this yip</b></span><small>gen ${m.gen}</small></div>`]
+    .concat(m.lineage.map(l => l.alive ? `<button data-goto="${l.id}"><i class="nd" style="background:${hueFill[(l.hue | 0) % 360]}"></i><span>${esc(l.name || '#' + l.id)} · alive</span><small>gen ${l.gen}</small></button>` : `<div><i class="nd" style="background:${l.hue ? hueFill[(l.hue | 0) % 360] : C.dim};opacity:.4"></i><span style="color:var(--muted)">${esc(l.name || '#' + l.id)}</span><small>gen ${l.gen}</small></div>`));
   if (!m.lineage.length) rows.push('<p class="note">A founder: no recorded ancestors.</p>');
   $('chain').innerHTML = rows.join('');
 }
@@ -2646,6 +2764,7 @@ document.addEventListener('visibilitychange', () => {
   syncWake();
 });
 setInterval(() => { if (ui.auto && running && F && F.ticks > 200) send('save', { purpose: 'auto' }); }, 120000);
+document.querySelectorAll('[name=notify]').forEach(r => { r.checked = r.value === ui.notify; r.onchange = () => { if (r.checked) { ui.notify = r.value; saveUi(); } }; });
 applyUi();
 
 /* coach mark & resume prompt */
