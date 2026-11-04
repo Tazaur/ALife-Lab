@@ -3,6 +3,7 @@ const $ = id => document.getElementById(id);
 const TAU = Math.PI * 2;
 const clamp = (x, a, b) => x < a ? a : x > b ? b : x;
 const fmt = n => n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e4 ? (n / 1e3).toFixed(1) + 'k' : Math.round(n).toLocaleString();
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } },
@@ -10,14 +11,14 @@ const store = {
 
 /* ================= palette (mirrors CSS tokens for canvas use) ================= */
 const C = {
-  ink: '#0a1110', fg: '#e7efe9', muted: '#93a8a0', dim: '#62776f', line: 'rgba(188,228,212,.11)', accent: '#f3c96b', good: '#7ed6b0', bad: '#f2836f', warn: '#f0b35a',
-  food: '#8fd67a', tree: '#c49a6c', stone: '#aab0bf', house: '#f0c87e', store: '#7fd8ea', wall: '#c9b3e6', fire: '#f08a4b', storm: '#8aa4ff',
+  ink: '#0a1110', fg: '#e7efe9', muted: '#93a8a0', dim: '#62776f', accent: '#f3c96b', good: '#7ed6b0', bad: '#f2836f', warn: '#f0b35a',
+  food: '#8fd67a', tree: '#c49a6c', stone: '#aab0bf', house: '#f0c87e', store: '#7fd8ea', wall: '#c9b3e6', fire: '#f08a4b', storm: '#8aa4ff', beast: '#e05a4e',
 };
 const BCOL = [C.house, C.store, C.wall, C.fire];
 const hueFill = Array.from({ length: 360 }, (_, h) => `hsl(${h} 72% 66%)`);
 
 /* ================= simulation worker ================= */
-let meta = null, W = 840, H = 520;
+let meta = null, W = 960, H = 600;
 let sim = null, usingWorker = true;
 (function boot() {
   const src = $('simSource').textContent;
@@ -25,7 +26,7 @@ let sim = null, usingWorker = true;
   try {
     sim = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
     sim.onmessage = handler;
-    sim.onerror = e => { console.warn('Worker error', e); };
+    sim.onerror = e => console.warn('Worker error', e);
   } catch (err) {
     usingWorker = false;
     const fake = { onmessage: null, postMessage: m => queueMicrotask(() => handler({ data: m })) };
@@ -36,21 +37,32 @@ let sim = null, usingWorker = true;
 const send = (type, rest = {}) => sim.postMessage({ type, ...rest });
 
 /* ================= app state ================= */
-let F = null;                 // latest frame
-let stats = null, insp = null;
-let selected = 0, follow = false, running = true, tool = 'select';
-const SPEEDS = [1, 2, 3, 5, 8, 12, 20, 30, 50, 80, 120];
-let speedIdx = 2;
-const ui = Object.assign({ night: true, sense: true, trail: true, legend: true, perf: true, auto: true, hidePause: true, speedIdx: 2 }, store.get('alife.ui', {}));
+let F = null, stats = null, insp = null;
+let selected = 0, follow = false, running = true, tool = 'select', maxMode = false;
+const SPEEDS = [1, 2, 4, 8, 16, 32, 64, 128, 256];
+const ui = Object.assign({ night: true, fx: true, sense: true, trail: true, legend: true, perf: true, auto: true, hidePause: true, wake: true, speedIdx: 2, brushSize: 22, brushAmt: 1 }, store.get('alife.ui', {}));
+ui.speedIdx = clamp(ui.speedIdx | 0, 0, SPEEDS.length - 1);
+let speedIdx = ui.speedIdx;
+const saveUi = () => store.set('alife.ui', ui);
 const isTouch = matchMedia('(pointer:coarse)').matches;
-const compact = () => cw < 760 || ch <= 500;
+const compact = () => cw < 760 || ch <= 520;
 const rpos = new Map();       // id -> smoothed render position
-let trail = [];
+const bpos = new Map();       // beast id -> smoothed render position
+let trail = [], fx = [];
 let simTps = 0, renderFps = 0;
+const hyper = () => maxMode || SPEEDS[speedIdx] >= 64;
 
+function preferredShape() { const w = innerWidth, h = innerHeight; return h > w * 1.15 ? 'tall' : w > h * 1.15 ? 'wide' : 'square'; }
 function onSim(m) {
   switch (m.type) {
-    case 'meta': meta = m; W = m.W; H = m.H; buildClimate(m.settings); fit(true); break;
+    case 'ready': send('init', { shape: preferredShape() }); break;
+    case 'meta': {
+      const first = !meta; meta = m; W = m.W; H = m.H; buildTerrain(m);
+      if (first) buildClimate(m.settings); else syncSliders(m.settings);
+      rpos.clear(); bpos.clear(); trail = [];
+      if (first || !cw) fit(true); else fit(true);
+      break;
+    }
     case 'frame': ingestFrame(m); break;
     case 'stats': stats = m; renderStats(); break;
     case 'inspect': insp = m; renderInspector(); break;
@@ -65,45 +77,46 @@ function onSim(m) {
 }
 function ingestFrame(m) {
   F = m; simTps = m.tps;
-  const A = m.A, seen = new Set();
-  for (let o = 0; o < A.length; o += 9) {
+  const A = m.A, seen = new Set(), snap = hyper(), now = performance.now(), doFx = ui.fx && !snap && fx.length < 260;
+  for (let o = 0; o < A.length; o += 10) {
     const id = A[o]; seen.add(id);
     let p = rpos.get(id);
     if (!p) rpos.set(id, p = { x: A[o + 1], y: A[o + 2], hd: A[o + 4] });
     p.tx = A[o + 1]; p.ty = A[o + 2]; p.thd = A[o + 4]; p.i = o;
+    if (snap) { p.x = p.tx; p.y = p.ty; p.hd = p.thd; }
+    const f = A[o + 9];
+    if (doFx && f) { for (const bit of [1, 2, 4, 8, 32, 64]) if (f & bit) fx.push({ x: p.tx, y: p.ty, k: bit, t: now }); }
   }
   for (const id of rpos.keys()) if (!seen.has(id)) rpos.delete(id);
-  if (selected && !seen.has(selected) && insp && insp.id === selected) { /* death handled by inspector */ }
+  const Z = m.Z, bseen = new Set();
+  for (let o = 0; o < Z.length; o += 6) {
+    const id = Z[o]; bseen.add(id);
+    let p = bpos.get(id); if (!p) bpos.set(id, p = { x: Z[o + 1], y: Z[o + 2], hd: Z[o + 3] });
+    p.tx = Z[o + 1]; p.ty = Z[o + 2]; p.thd = Z[o + 3]; p.hp = Z[o + 4]; p.hunt = Z[o + 5];
+    if (snap) { p.x = p.tx; p.y = p.ty; p.hd = p.thd; }
+  }
+  for (const id of bpos.keys()) if (!bseen.has(id)) bpos.delete(id);
 }
 
 /* ================= canvas, camera ================= */
 const cv = $('world'), ctx = cv.getContext('2d', { alpha: false });
 let cw = 0, ch = 0, dpr = 1;
-const cam = { x: 420, y: 260, z: 1 };
-let minZ = .3;
+const cam = { x: 480, y: 300, z: 1 };
+let minZ = .3, camTarget = null, lastFitZ = 0;
 function resize() {
   dpr = Math.min(2, window.devicePixelRatio || 1);
   cw = cv.clientWidth; ch = cv.clientHeight;
   cv.width = Math.round(cw * dpr); cv.height = Math.round(ch * dpr);
-  minZ = Math.min(cw / W, ch / H) * .5;
+  minZ = Math.min(cw / W, ch / H) * .45;
 }
-function fitZoom() {
-  const narrow = cw < 760, short = ch <= 500;
-  const zw = (cw - (narrow ? 12 : 40)) / W, zh = (ch - (short ? 104 : narrow ? 130 : 170)) / H;
-  // tall portrait screens: zoom past width-fit so the world fills more of the screen (pan to see the edges)
-  return zh > zw * 1.25 ? Math.min(zh, zw * 1.55) : Math.min(zw, zh);
-}
-function fit(instant) { lastFitZ = fitZoom(); const z = fitZoom(); camTarget = { x: W / 2, y: H / 2 + (ch <= 500 ? -2 : cw < 760 ? 4 : -6) / z, z }; if (instant) Object.assign(cam, camTarget), camTarget = null; }
-let camTarget = null;
-let lastFitZ = 0;
-new ResizeObserver(() => { const first = !cw, wasFit = Math.abs(cam.z - lastFitZ) < .02; resize(); vc.x = 0; updateViewCenter(1); if (first || wasFit) { fit(true); } lastFitZ = fitZoom(); }).observe(cv);
-const vc = { x: 0, y: 0, tx: 0, ty: 0 };   // screen point the camera centers on, kept clear of drawers
+const vc = { x: 0, y: 0, tx: 0, ty: 0 };   // screen point the camera centers on, kept clear of open drawers
 function viewRect() {
   let l = 0, r = cw, t = 0, b = ch;
+  const cr = cv.getBoundingClientRect();
   for (const d of ['dStats', 'dClimate', 'dSettings', 'dInspect']) {
     const el = $(d); if (!el.classList.contains('open')) continue;
-    const q = el.getBoundingClientRect(), cr = cv.getBoundingClientRect();
-    if (q.width >= cw * .9) b = Math.min(b, q.top - cr.top);          // bottom sheet
+    const q = el.getBoundingClientRect();
+    if (q.width >= cw * .9) b = Math.min(b, q.top - cr.top);
     else if (q.left - cr.left < cw / 2) l = Math.max(l, q.right - cr.left);
     else r = Math.min(r, q.left - cr.left);
   }
@@ -113,20 +126,33 @@ function viewRect() {
 function updateViewCenter(dt) {
   const v = viewRect(); vc.tx = (v.l + v.r) / 2; vc.ty = (v.t + v.b) / 2;
   if (!vc.x) { vc.x = vc.tx; vc.y = vc.ty; }
-  const k = 1 - Math.exp(-dt * 8);
-  vc.x += (vc.tx - vc.x) * k; vc.y += (vc.ty - vc.y) * k;
-
+  const k = 1 - Math.exp(-dt * 8); vc.x += (vc.tx - vc.x) * k; vc.y += (vc.ty - vc.y) * k;
 }
 const toWorld = (sx, sy) => ({ x: (sx - vc.x) / cam.z + cam.x, y: (sy - vc.y) / cam.z + cam.y });
 const toScreen = (wx, wy) => ({ x: (wx - cam.x) * cam.z + vc.x, y: (wy - cam.y) * cam.z + vc.y });
+function chrome() {
+  const top = document.querySelector('.top').getBoundingClientRect(), bot = $('bottom').getBoundingClientRect(), cr = cv.getBoundingClientRect();
+  const t = top.bottom - cr.top + 8, b = bot.top - cr.top - (cw < 760 ? 8 : 10);
+  return { t, b: Math.max(t + 80, b) };
+}
+// fit = the whole map visible in the band between the top bar and the dock
+function fitZoom() { const c = chrome(), side = cw < 760 ? 8 : 24; return clamp(Math.min((cw - side * 2) / W, (c.b - c.t) / H), .05, 9); }
+function fit(instant) {
+  if (!cw) return;
+  const c = chrome(), z = fitZoom(); lastFitZ = z;
+  const bandY = (c.t + c.b) / 2, v = viewRect(), cx = (v.l + v.r) / 2, cy = (v.t + v.b) / 2;
+  camTarget = { x: W / 2 - (cw / 2 - cx) / z, y: H / 2 - (bandY - cy) / z, z };
+  if (instant) { Object.assign(cam, camTarget); camTarget = null; }
+}
+new ResizeObserver(() => { const first = !cw, wasFit = Math.abs(cam.z - lastFitZ) < .02; resize(); vc.x = 0; updateViewCenter(1); if (first || wasFit) requestAnimationFrame(() => fit(true)); }).observe(cv);
+new ResizeObserver(() => document.documentElement.style.setProperty('--bh', $('bottom').offsetHeight + 'px')).observe($('bottom'));
 function zoomAt(sx, sy, z) {
-  z = clamp(z, minZ, 9);
+  z = clamp(z, minZ, 10);
   const p = toWorld(sx, sy);
-  cam.z = z;
-  cam.x = p.x - (sx - vc.x) / z; cam.y = p.y - (sy - vc.y) / z;
+  cam.z = z; cam.x = p.x - (sx - vc.x) / z; cam.y = p.y - (sy - vc.y) / z;
   clampCam(); camTarget = null;
 }
-function clampCam() { cam.x = clamp(cam.x, 0, W); cam.y = clamp(cam.y, 0, H); }
+function clampCam() { cam.x = clamp(cam.x, -W * .25, W * 1.25); cam.y = clamp(cam.y, -H * .25, H * 1.25); }
 
 /* ================= sprites ================= */
 function sprite(size, draw) { const c = document.createElement('canvas'); c.width = c.height = size; draw(c.getContext('2d'), size); return c; }
@@ -141,8 +167,7 @@ const sprFood = sprite(SP, (g, s) => {
 const sprTree = sprite(SP, (g, s) => {
   const c = s / 2;
   g.fillStyle = 'rgba(0,0,0,.35)'; g.beginPath(); g.arc(c + 3, c + 4, s * .4, 0, TAU); g.fill();
-  const blobs = [[0, 0, .3], [-.14, -.1, .2], [.15, -.08, .21], [.02, .15, .2], [-.12, .12, .17], [.14, .13, .16]];
-  for (const [dx, dy, rr] of blobs) {
+  for (const [dx, dy, rr] of [[0, 0, .3], [-.14, -.1, .2], [.15, -.08, .21], [.02, .15, .2], [-.12, .12, .17], [.14, .13, .16]]) {
     const x = c + dx * s, y = c + dy * s, r = rr * s;
     const gr = g.createRadialGradient(x - r * .4, y - r * .4, r * .1, x, y, r);
     gr.addColorStop(0, '#e9c79b'); gr.addColorStop(.6, C.tree); gr.addColorStop(1, '#7a5a37');
@@ -158,24 +183,41 @@ const sprStone = sprite(SP, (g, s) => {
   g.strokeStyle = 'rgba(255,255,255,.35)'; g.lineWidth = s * .03; g.beginPath(); g.moveTo(c - .2 * s, c - .26 * s); g.lineTo(c + .12 * s, c - .33 * s); g.stroke();
 });
 const ISPR = [[sprFood, 2.6], [sprTree, 4.6], [sprStone, 3.2]];
-const sprGlow = (col) => sprite(128, (g, s) => { const gr = g.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2); gr.addColorStop(0, col); gr.addColorStop(.35, col.replace(/[\d.]+\)$/, '.35)')); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(0, 0, s, s); });
+const sprGlow = col => sprite(128, (g, s) => { const gr = g.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2); gr.addColorStop(0, col); gr.addColorStop(.35, col.replace(/[\d.]+\)$/, '.35)')); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(0, 0, s, s); });
 const glowFire = sprGlow('rgba(255,150,70,1)'), glowHouse = sprGlow('rgba(255,210,140,1)');
 
-/* terrain: rendered once, seeded so it is stable across reloads */
+/* terrain: painted from the simulation's biome fields (fertile valleys, forest, rock) */
 let terrain = null;
-function buildTerrain() {
+function buildTerrain(m) {
+  const { FW, FH, FC, fert, forest, rock, seed } = m;
+  const small = document.createElement('canvas'); small.width = FW; small.height = FH;
+  const sg = small.getContext('2d'), img = sg.createImageData(FW, FH);
+  const lerp = (a, b, t) => a + (b - a) * t;
+  for (let i = 0; i < FW * FH; i++) {
+    const f = fert[i], fo = forest[i], r = rock[i];
+    // dry ochre -> lush green by fertility, deep green where forest, grey-brown where rock
+    let R = lerp(52, 30, f), G = lerp(54, 82, f), B = lerp(36, 52, f);
+    const ft = clamp((fo - .45) * 2.2, 0, 1); R = lerp(R, 18, ft * .7); G = lerp(G, 58, ft * .7); B = lerp(B, 44, ft * .7);
+    const rt = clamp((r - .55) * 2.6, 0, 1); R = lerp(R, 70, rt); G = lerp(G, 70, rt); B = lerp(B, 66, rt);
+    img.data[i * 4] = R; img.data[i * 4 + 1] = G; img.data[i * 4 + 2] = B; img.data[i * 4 + 3] = 255;
+  }
+  sg.putImageData(img, 0, 0);
   const S = 2, t = document.createElement('canvas'); t.width = W * S; t.height = H * S;
-  const g = t.getContext('2d');
-  let seed = 7; const r = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-  g.fillStyle = '#132420'; g.fillRect(0, 0, t.width, t.height);
-  const tones = ['rgba(34,66,52,.5)', 'rgba(22,48,44,.55)', 'rgba(44,72,50,.4)', 'rgba(16,36,38,.5)', 'rgba(52,70,48,.3)'];
-  for (let i = 0; i < 520; i++) {
-    const x = r() * t.width, y = r() * t.height, rad = (20 + r() * 110) * S;
-    const gr = g.createRadialGradient(x, y, 0, x, y, rad); gr.addColorStop(0, tones[i % tones.length]); gr.addColorStop(1, 'rgba(0,0,0,0)');
+  const g = t.getContext('2d'); g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+  g.drawImage(small, 0, 0, FW * FC * S, FH * FC * S);
+  let sd = seed || 7; const rr = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < 360; i++) {
+    const x = rr() * t.width, y = rr() * t.height, rad = (16 + rr() * 80) * S;
+    const gr = g.createRadialGradient(x, y, 0, x, y, rad); gr.addColorStop(0, rr() < .5 ? 'rgba(0,0,0,.12)' : 'rgba(255,255,255,.035)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
     g.fillStyle = gr; g.fillRect(x - rad, y - rad, rad * 2, rad * 2);
   }
-  for (let i = 0; i < 9000; i++) { g.fillStyle = r() < .5 ? 'rgba(160,210,170,.05)' : 'rgba(0,0,0,.12)'; g.fillRect(r() * t.width, r() * t.height, S * (1 + r()), S * (1 + r())); }
-  g.strokeStyle = 'rgba(190,230,210,.045)'; g.lineWidth = 1;
+  for (let i = 0; i < 12000; i++) {
+    const x = rr() * W, y = rr() * H, rk = rock[clamp(x / FC | 0, 0, FW - 1) + clamp(y / FC | 0, 0, FH - 1) * FW];
+    g.fillStyle = rk > .6 && rr() < .5 ? 'rgba(200,200,190,.08)' : rr() < .5 ? 'rgba(170,220,170,.05)' : 'rgba(0,0,0,.14)';
+    g.fillRect(x * S, y * S, S * (1 + rr()), S * (1 + rr()));
+  }
+  g.fillStyle = 'rgba(0,0,0,.22)'; g.fillRect(0, 0, t.width, t.height);
+  g.strokeStyle = 'rgba(190,230,210,.04)'; g.lineWidth = 1;
   for (let x = 40; x < W; x += 40) { g.beginPath(); g.moveTo(x * S, 0); g.lineTo(x * S, t.height); g.stroke(); }
   for (let y = 40; y < H; y += 40) { g.beginPath(); g.moveTo(0, y * S); g.lineTo(t.width, y * S); g.stroke(); }
   terrain = t;
@@ -183,65 +225,70 @@ function buildTerrain() {
 
 /* ================= world rendering ================= */
 let lastT = performance.now(), fpsFrames = 0, fpsT = lastT, hoverId = 0, pointerWorld = null, flash = 0;
-function phaseOf(ticks, len) { return len ? (ticks % len) / len : 0; }
+const phaseOf = (ticks, len) => len ? (ticks % len) / len : 0;
+const FXC = { 1: [126, 214, 176], 2: [242, 100, 90], 4: [240, 179, 90], 8: [201, 179, 230], 32: [255, 80, 70], 64: [127, 216, 234] };
 function render(t) {
   const dt = Math.min(.1, (t - lastT) / 1000); lastT = t;
-  if (!terrain && meta) buildTerrain();
-  if (camTarget) { const k = 1 - Math.exp(-dt * 9); cam.x += (camTarget.x - cam.x) * k; cam.y += (camTarget.y - cam.y) * k; cam.z += (camTarget.z - cam.z) * k; if (Math.abs(camTarget.z - cam.z) < .001 && Math.hypot(camTarget.x - cam.x, camTarget.y - cam.y) < .05) camTarget = null; }
-  // smooth agent positions
-  const k = 1 - Math.exp(-dt * 16);
-  for (const p of rpos.values()) {
-    if (p.tx === undefined) continue;
-    const dx = p.tx - p.x, dy = p.ty - p.y;
-    if (dx * dx + dy * dy > 1600) { p.x = p.tx; p.y = p.ty; } else { p.x += dx * k; p.y += dy * k; }
-    let dh = p.thd - p.hd; dh = Math.atan2(Math.sin(dh), Math.cos(dh)); p.hd += dh * Math.min(1, k * 1.4);
+  if (camTarget) { const k = 1 - Math.exp(-dt * 9); cam.x += (camTarget.x - cam.x) * k; cam.y += (camTarget.y - cam.y) * k; cam.z += (camTarget.z - cam.z) * k; if (Math.abs(camTarget.z - cam.z) < .001 && Math.hypot(camTarget.x - cam.x, camTarget.y - cam.y) < .05) { Object.assign(cam, camTarget); camTarget = null; } }
+  const k = 1 - Math.exp(-dt * 16), fast = hyper();
+  if (!fast) {
+    for (const map of [rpos, bpos]) for (const p of map.values()) {
+      if (p.tx === undefined) continue;
+      const dx = p.tx - p.x, dy = p.ty - p.y;
+      if (dx * dx + dy * dy > 1600) { p.x = p.tx; p.y = p.ty; } else { p.x += dx * k; p.y += dy * k; }
+      let dh = p.thd - p.hd; dh = Math.atan2(Math.sin(dh), Math.cos(dh)); p.hd += dh * Math.min(1, k * 1.4);
+    }
   }
   const sp = selected && rpos.get(selected);
   if (follow && sp) { const kk = 1 - Math.exp(-dt * 6); cam.x += (sp.x - cam.x) * kk; cam.y += (sp.y - cam.y) * kk; }
-  if (sp && ui.trail) { const lp = trail[trail.length - 1]; if (!lp || Math.hypot(lp.x - sp.x, lp.y - sp.y) > 1.5) { trail.push({ x: sp.x, y: sp.y }); if (trail.length > 90) trail.shift(); } }
+  if (sp && ui.trail && !fast) { const lp = trail[trail.length - 1]; if (!lp || Math.hypot(lp.x - sp.x, lp.y - sp.y) > 1.5) { trail.push({ x: sp.x, y: sp.y }); if (trail.length > 90) trail.shift(); } }
 
   updateViewCenter(dt);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.fillStyle = C.ink; ctx.fillRect(0, 0, cw, ch);
   if (!F || !terrain) { requestAnimationFrame(render); return; }
-  const z = cam.z;
+  const z = cam.z, now = t / 1000;
   ctx.setTransform(dpr * z, 0, 0, dpr * z, dpr * (vc.x - cam.x * z), dpr * (vc.y - cam.y * z));
-  const vx0 = cam.x - vc.x / z - 10, vx1 = cam.x + (cw - vc.x) / z + 10, vy0 = cam.y - vc.y / z - 10, vy1 = cam.y + (ch - vc.y) / z + 10;
+  const vx0 = cam.x - vc.x / z - 12, vx1 = cam.x + (cw - vc.x) / z + 12, vy0 = cam.y - vc.y / z - 12, vy1 = cam.y + (ch - vc.y) / z + 12;
+  const inView = (x, y) => x > vx0 && x < vx1 && y > vy0 && y < vy1;
 
-  // ground
-  ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.fillRect(-3, -3, W + 6, H + 8);
+  ctx.fillStyle = 'rgba(0,0,0,.4)'; ctx.fillRect(-4, -4, W + 8, H + 10);
   ctx.drawImage(terrain, 0, 0, W, H);
   const temp = F.temp;
-  if (temp < 10) { ctx.fillStyle = `rgba(160,200,255,${clamp((10 - temp) / 30, 0, 1) * .28})`; ctx.fillRect(0, 0, W, H); }
+  if (temp < 10) { ctx.fillStyle = `rgba(170,205,255,${clamp((10 - temp) / 30, 0, 1) * .3})`; ctx.fillRect(0, 0, W, H); }
   else if (temp > 27) { ctx.fillStyle = `rgba(255,190,110,${clamp((temp - 27) / 23, 0, 1) * .2})`; ctx.fillRect(0, 0, W, H); }
 
   // resources
   const I = F.I;
   for (let o = 0; o < I.length; o += 4) {
-    const x = I[o + 1], y = I[o + 2]; if (x < vx0 || x > vx1 || y < vy0 || y > vy1) continue;
+    const x = I[o + 1], y = I[o + 2]; if (!inView(x, y)) continue;
     const [img, r0] = ISPR[I[o]], life = I[o + 3];
-    const r = r0 * (life > .985 ? .4 + (1 - life) / .015 * .6 : 1);
+    const r = fast ? r0 : r0 * (life > .985 ? .4 + (1 - life) / .015 * .6 : 1);
     ctx.globalAlpha = life < .15 ? .25 + life / .15 * .75 : 1;
     ctx.drawImage(img, x - r, y - r, r * 2, r * 2);
   }
   ctx.globalAlpha = 1;
 
   // structures
-  const B = F.B, now = t / 1000;
-  for (let o = 0; o < B.length; o += 8) {
+  const B = F.B;
+  for (let o = 0; o < B.length; o += 9) {
     const ty = B[o], x = B[o + 1], y = B[o + 2], r = B[o + 3], hp = B[o + 4], col = BCOL[ty];
-    ctx.globalAlpha = .45 + .55 * hp;
+    if (!inView(x, y)) continue;
+    ctx.globalAlpha = .5 + .5 * hp;
     if (ty === 3) {
-      const fl = 1 + Math.sin(now * 13 + x) * .12 + Math.sin(now * 7.3 + y) * .08;
+      const fl = fast ? 1 : 1 + Math.sin(now * 13 + x) * .12 + Math.sin(now * 7.3 + y) * .08;
       ctx.fillStyle = 'rgba(240,138,75,.18)'; ctx.beginPath(); ctx.arc(x, y, r * 1.05, 0, TAU); ctx.fill();
       ctx.fillStyle = '#5a3a26'; ctx.beginPath(); ctx.arc(x, y, r * .55, 0, TAU); ctx.fill();
       ctx.fillStyle = C.fire; ctx.beginPath(); ctx.arc(x, y, r * .42 * fl, 0, TAU); ctx.fill();
       ctx.fillStyle = '#ffd27a'; ctx.beginPath(); ctx.arc(x, y - .6, r * .2 * fl, 0, TAU); ctx.fill();
-      ctx.strokeStyle = 'rgba(240,138,75,.35)'; ctx.lineWidth = .6; ctx.setLineDash([2, 3]); ctx.beginPath(); ctx.arc(x, y, 40, 0, TAU); ctx.stroke(); ctx.setLineDash([]);
     } else if (ty === 2) {
-      ctx.fillStyle = '#2c2638'; roundRect(x - r, y - 3.4, r * 2, 6.8, 2.5); ctx.fill();
-      ctx.fillStyle = col; roundRect(x - r, y - 3, r * 2, 5, 2); ctx.fill();
-      ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = .5; for (let k2 = -r + 4; k2 < r; k2 += 4) { ctx.beginPath(); ctx.moveTo(x + k2, y - 3); ctx.lineTo(x + k2, y + 2); ctx.stroke(); }
+      ctx.save(); ctx.translate(x, y); ctx.rotate(B[o + 8]);
+      ctx.fillStyle = 'rgba(0,0,0,.45)'; roundRect(-r, -2.4, r * 2, 6.4, 2.5); ctx.fill();
+      ctx.fillStyle = col; roundRect(-r, -3.2, r * 2, 6, 2); ctx.fill();
+      ctx.strokeStyle = 'rgba(40,30,60,.55)'; ctx.lineWidth = .5; ctx.beginPath();
+      for (let k2 = -r + 5; k2 < r - 1; k2 += 5) { ctx.moveTo(k2, -3.2); ctx.lineTo(k2, 2.8); }
+      ctx.moveTo(-r, -.2); ctx.lineTo(r, -.2); ctx.stroke();
+      ctx.restore();
     } else {
       ctx.fillStyle = 'rgba(0,0,0,.35)'; roundRect(x - r + 1.5, y - r + 2, r * 2, r * 2, 3); ctx.fill();
       ctx.fillStyle = ty === 0 ? 'rgba(240,200,126,.2)' : 'rgba(127,216,234,.16)'; roundRect(x - r, y - r, r * 2, r * 2, 3); ctx.fill();
@@ -251,26 +298,27 @@ function render(t) {
       else { ctx.moveTo(x - r, y); ctx.lineTo(x + r, y); ctx.moveTo(x, y - r); ctx.lineTo(x, y + r); }
       ctx.stroke();
       const stock = B[o + 6];
-      if (stock > 0) { ctx.fillStyle = col; const f = Math.min(1, stock / 24); ctx.fillRect(x - r + 2, y + r - 3, (r * 2 - 4) * f, 1.6); }
+      if (stock > 0) { ctx.fillStyle = col; const f = Math.min(1, stock / 30); ctx.fillRect(x - r + 2, y + r - 3, (r * 2 - 4) * f, 1.8); }
     }
     if (hp < .55) { ctx.globalAlpha = 1; ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillRect(x - 8, y - r - 5, 16, 2); ctx.fillStyle = hp < .25 ? C.bad : C.warn; ctx.fillRect(x - 8, y - r - 5, 16 * hp, 2); }
   }
   ctx.globalAlpha = 1;
 
   // night
-  const lightS = Math.sin(TAU * phaseOf(F.ticks, F.day) );
-  const dark = ui.night ? clamp((-lightS + .2) / 1.2, 0, 1) * .52 : 0;
-  if (dark > 0.01) {
+  const lightS = Math.sin(TAU * phaseOf(F.ticks, F.day));
+  const dark = ui.night && !fast ? clamp((-lightS + .2) / 1.2, 0, 1) * .52 : 0;
+  if (dark > .01) {
     ctx.fillStyle = `rgba(4,8,24,${dark})`; ctx.fillRect(0, 0, W, H);
     ctx.globalCompositeOperation = 'lighter';
-    for (let o = 0; o < B.length; o += 8) {
+    for (let o = 0; o < B.length; o += 9) {
       const ty = B[o]; if (ty === 2) continue;
-      const x = B[o + 1], y = B[o + 2];
+      const x = B[o + 1], y = B[o + 2]; if (!inView(x, y)) continue;
       if (ty === 3) { const R = 70 + Math.sin(now * 9 + x) * 4; ctx.globalAlpha = .55 * dark / .52; ctx.drawImage(glowFire, x - R, y - R, R * 2, R * 2); }
       else { const R = B[o + 3] * 2.2; ctx.globalAlpha = .28 * dark / .52; ctx.drawImage(glowHouse, x - R, y - R, R * 2, R * 2); }
     }
     ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
   }
+
   // storms
   const S = F.S;
   for (let o = 0; o < S.length; o += 5) {
@@ -278,20 +326,21 @@ function render(t) {
     ctx.save(); ctx.beginPath(); ctx.rect(x0, y0, w, h); ctx.clip();
     const gr = ctx.createLinearGradient(x0, 0, x0 + w, 0); gr.addColorStop(0, 'rgba(110,135,230,0)'); gr.addColorStop(.3, 'rgba(110,135,230,.22)'); gr.addColorStop(1, 'rgba(90,110,200,.3)');
     ctx.fillStyle = gr; ctx.fillRect(x0, y0, w, h);
-    ctx.strokeStyle = 'rgba(200,215,255,.35)'; ctx.lineWidth = .5; ctx.beginPath();
-    const off = (now * 140) % 24;
-    for (let i = -h; i < w + h; i += 9) for (let j = -24; j < h; j += 24) { const sx = x0 + i - (j + off) * .35, sy = y0 + j + off; ctx.moveTo(sx, sy); ctx.lineTo(sx - 2.2, sy + 6); }
-    ctx.stroke();
-    if (Math.random() < .006) flash = 1;
-    if (flash > 0) { ctx.fillStyle = `rgba(230,235,255,${flash * .35})`; ctx.fillRect(x0, y0, w, h); }
+    if (!fast) {
+      ctx.strokeStyle = 'rgba(200,215,255,.35)'; ctx.lineWidth = .5; ctx.beginPath();
+      const off = (now * 140) % 24;
+      for (let i = -h; i < w + h; i += 9) for (let j = -24; j < h; j += 24) { const sx = x0 + i - (j + off) * .35, sy = y0 + j + off; ctx.moveTo(sx, sy); ctx.lineTo(sx - 2.2, sy + 6); }
+      ctx.stroke();
+      if (Math.random() < .006) flash = 1;
+      if (flash > 0) { ctx.fillStyle = `rgba(230,235,255,${flash * .35})`; ctx.fillRect(x0, y0, w, h); }
+    }
     ctx.restore();
   }
   flash = Math.max(0, flash - dt * 5);
 
   // agents
-  const A = F.A, list = [];
-  for (let o = 0; o < A.length; o += 9) { const p = rpos.get(A[o]); if (!p || p.x < vx0 || p.x > vx1 || p.y < vy0 || p.y > vy1) continue; list.push(o, p); }
-  const R = 3.3;
+  const A = F.A, list = [], R = 3.3;
+  for (let o = 0; o < A.length; o += 10) { const p = rpos.get(A[o]); if (!p || !inView(p.x, p.y)) continue; list.push(o, p); }
   ctx.fillStyle = 'rgba(0,0,0,.42)'; ctx.beginPath();
   for (let i = 0; i < list.length; i += 2) { const p = list[i + 1]; ctx.moveTo(p.x + R + 1.1, p.y + .6); ctx.arc(p.x, p.y + .6, R + 1.1, 0, TAU); }
   ctx.fill();
@@ -301,29 +350,66 @@ function render(t) {
     ctx.fillStyle = hueFill[(A[o + 3] | 0) % 360]; ctx.beginPath(); ctx.arc(p.x, p.y, R, 0, TAU); ctx.fill();
   }
   ctx.globalAlpha = 1;
-  ctx.strokeStyle = 'rgba(8,14,13,.85)'; ctx.lineWidth = 1.1; ctx.lineCap = 'round'; ctx.beginPath();
-  for (let i = 0; i < list.length; i += 2) { const p = list[i + 1], c = Math.cos(p.hd), s = Math.sin(p.hd); ctx.moveTo(p.x + c * .6, p.y + s * .6); ctx.lineTo(p.x + c * R * 1.05, p.y + s * R * 1.05); }
-  ctx.stroke();
-  ctx.fillStyle = '#e8c48f'; ctx.beginPath();
-  for (let i = 0; i < list.length; i += 2) { const o = list[i], p = list[i + 1]; if (!(A[o + 7] & 2)) continue; const c = Math.cos(p.hd), s = Math.sin(p.hd); ctx.moveTo(p.x - c * R * 1.25 + 1, p.y - s * R * 1.25); ctx.arc(p.x - c * R * 1.25, p.y - s * R * 1.25, 1, 0, TAU); }
-  ctx.fill();
+  if (z > .6) {
+    ctx.strokeStyle = 'rgba(8,14,13,.85)'; ctx.lineWidth = 1.1; ctx.lineCap = 'round'; ctx.beginPath();
+    for (let i = 0; i < list.length; i += 2) { const p = list[i + 1], c = Math.cos(p.hd), s = Math.sin(p.hd); ctx.moveTo(p.x + c * .6, p.y + s * .6); ctx.lineTo(p.x + c * R * 1.05, p.y + s * R * 1.05); }
+    ctx.stroke();
+    ctx.fillStyle = '#e8c48f'; ctx.beginPath();
+    for (let i = 0; i < list.length; i += 2) { const o = list[i], p = list[i + 1]; if (!(A[o + 7] & 2)) continue; const c = Math.cos(p.hd), s = Math.sin(p.hd); ctx.moveTo(p.x - c * R * 1.25 + 1, p.y - s * R * 1.25); ctx.arc(p.x - c * R * 1.25, p.y - s * R * 1.25, 1, 0, TAU); }
+    ctx.fill();
+    // tools: a short pale shaft on the agent's right side
+    ctx.strokeStyle = '#f4efe4'; ctx.lineWidth = .9; ctx.beginPath();
+    for (let i = 0; i < list.length; i += 2) { const o = list[i], p = list[i + 1]; if (!(A[o + 7] & 4)) continue; const a = p.hd + 1.2, c = Math.cos(a), s = Math.sin(a), c2 = Math.cos(p.hd), s2 = Math.sin(p.hd); const bx = p.x + c * (R + .8), by = p.y + s * (R + .8); ctx.moveTo(bx - c2 * 1.5, by - s2 * 1.5); ctx.lineTo(bx + c2 * 3, by + s2 * 3); }
+    ctx.stroke();
+  }
+
+  // beasts
+  for (const p of bpos.values()) {
+    if (!inView(p.x, p.y)) continue;
+    ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.hd);
+    ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.beginPath(); ctx.ellipse(1, 1.2, 7.5, 4.6, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#6b2620'; ctx.beginPath(); ctx.ellipse(0, 0, 7, 4.2, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = C.beast; ctx.beginPath(); ctx.ellipse(-.5, 0, 5.6, 3.2, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#7b2c25'; ctx.beginPath(); ctx.moveTo(5, -2.6); ctx.lineTo(8, -4.5); ctx.lineTo(7, -1); ctx.moveTo(5, 2.6); ctx.lineTo(8, 4.5); ctx.lineTo(7, 1); ctx.fill();
+    ctx.fillStyle = p.hunt ? '#ffe08a' : '#ffb59a'; ctx.globalAlpha = .7 + dark; ctx.beginPath(); ctx.arc(5.6, -1.4, .8, 0, TAU); ctx.arc(5.6, 1.4, .8, 0, TAU); ctx.fill(); ctx.globalAlpha = 1;
+    ctx.restore();
+    if (p.hp < .98) { ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillRect(p.x - 7, p.y - 9, 14, 2); ctx.fillStyle = C.beast; ctx.fillRect(p.x - 7, p.y - 9, 14 * p.hp, 2); }
+  }
+
+  // action effects
+  if (fx.length) {
+    const nowMs = performance.now(); let w = 0; ctx.lineWidth = 1.1;
+    for (const e of fx) {
+      const age = (nowMs - e.t) / 520; if (age >= 1) continue; fx[w++] = e;
+      if (!inView(e.x, e.y)) continue;
+      const [r, g, b] = FXC[e.k], a = (1 - age) * .9;
+      ctx.strokeStyle = `rgba(${r},${g},${b},${a})`; ctx.beginPath();
+      if (e.k === 2 || e.k === 4) { const s = 3 + age * 6; ctx.moveTo(e.x - s, e.y - s); ctx.lineTo(e.x + s, e.y + s); ctx.moveTo(e.x + s, e.y - s); ctx.lineTo(e.x - s, e.y + s); }
+      else if (e.k === 32) { ctx.fillStyle = `rgba(${r},${g},${b},${a * .5})`; ctx.arc(e.x, e.y, 4.5, 0, TAU); ctx.fill(); continue; }
+      else if (e.k === 8) { for (let q = 0; q < 4; q++) { const ang = q * Math.PI / 2 + age * 2, d = 3 + age * 7; ctx.moveTo(e.x + Math.cos(ang) * d, e.y + Math.sin(ang) * d); ctx.arc(e.x + Math.cos(ang) * d, e.y + Math.sin(ang) * d, .7, 0, TAU); } }
+      else ctx.arc(e.x, e.y, 4 + age * 9, 0, TAU);
+      ctx.stroke();
+    }
+    fx.length = w;
+  }
 
   // selection
   if (sp) {
-    if (ui.trail && trail.length > 1) {
+    if (ui.trail && trail.length > 1 && !fast) {
       ctx.lineWidth = 1.2; ctx.lineCap = 'round';
       for (let i = 1; i < trail.length; i++) { ctx.strokeStyle = `rgba(243,201,107,${(i / trail.length) * .55})`; ctx.beginPath(); ctx.moveTo(trail[i - 1].x, trail[i - 1].y); ctx.lineTo(trail[i].x, trail[i].y); ctx.stroke(); }
     }
     const sense = A[sp.i + 8] || 0;
     if (ui.sense && sense) { ctx.strokeStyle = 'rgba(243,201,107,.4)'; ctx.fillStyle = 'rgba(243,201,107,.035)'; ctx.lineWidth = 1 / z; ctx.setLineDash([5 / z, 5 / z]); ctx.beginPath(); ctx.arc(sp.x, sp.y, sense, 0, TAU); ctx.fill(); ctx.stroke(); ctx.setLineDash([]); }
     const pulse = 1 + Math.sin(now * 4) * .12;
-    ctx.strokeStyle = C.accent; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.arc(sp.x, sp.y, 7.5 * pulse, 0, TAU); ctx.stroke();
+    ctx.strokeStyle = C.accent; ctx.lineWidth = Math.max(1.4, 1.6 / z); ctx.beginPath(); ctx.arc(sp.x, sp.y, Math.max(7.5, 9 / z) * pulse, 0, TAU); ctx.stroke();
     ctx.fillStyle = C.accent; ctx.beginPath(); ctx.arc(sp.x, sp.y, R * .55, 0, TAU); ctx.fill();
   }
-  if (hoverId && hoverId !== selected) { const hp = rpos.get(hoverId); if (hp) { ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.lineWidth = 1 / z * 1.5; ctx.beginPath(); ctx.arc(hp.x, hp.y, 6.5, 0, TAU); ctx.stroke(); } }
+  if (hoverId && hoverId !== selected) { const hp = rpos.get(hoverId); if (hp) { ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.lineWidth = 1.5 / z; ctx.beginPath(); ctx.arc(hp.x, hp.y, 6.5, 0, TAU); ctx.stroke(); } }
   if (pointerWorld && tool !== 'select') {
-    const col = { food: C.food, tree: C.tree, stone: C.stone, fire: C.fire, erase: C.fg }[tool];
-    ctx.strokeStyle = col; ctx.lineWidth = 1.2 / z; ctx.setLineDash([4 / z, 3 / z]); ctx.beginPath(); ctx.arc(pointerWorld.x, pointerWorld.y, tool === 'fire' ? 12 : 20, 0, TAU); ctx.stroke(); ctx.setLineDash([]);
+    const col = { food: C.food, tree: C.tree, stone: C.stone, wall: C.wall, fire: C.fire, beast: C.beast, erase: C.fg }[tool];
+    const r = tool === 'fire' ? 12 : tool === 'beast' ? 8 : tool === 'wall' ? 15 : ui.brushSize;
+    ctx.strokeStyle = col; ctx.lineWidth = 1.2 / z; ctx.setLineDash([4 / z, 3 / z]); ctx.beginPath(); ctx.arc(pointerWorld.x, pointerWorld.y, r, 0, TAU); ctx.stroke(); ctx.setLineDash([]);
   }
   ctx.strokeStyle = 'rgba(190,230,210,.18)'; ctx.lineWidth = 1 / z; ctx.strokeRect(0, 0, W, H);
 
@@ -336,55 +422,118 @@ requestAnimationFrame(render);
 
 /* ================= HUD ================= */
 const SEASONS = ['Spring', 'Summer', 'Autumn', 'Winter'];
-function dayLabel(p) { return p < .06 || p >= .94 ? 'Dawn' : p < .44 ? 'Day' : p < .56 ? 'Dusk' : 'Night'; }
+const dayLabel = p => p < .06 || p >= .94 ? 'Dawn' : p < .44 ? 'Day' : p < .56 ? 'Dusk' : 'Night';
 function updateHud() {
   if (!F) return;
-  const pop = F.A.length / 9;
+  const pop = F.A.length / 10;
   $('roPop').textContent = pop;
-  $('roTick').textContent = fmt(F.ticks);
-  $('roBuilt').textContent = F.B.length / 8;
-  if (stats) { $('roGen').innerHTML = `${stats.avgGen.toFixed(1)}<em>max ${stats.maxGen}</em>`; $('roFood').textContent = stats.counts[0]; }
+  $('roBeasts').textContent = F.Z.length / 6;
+  $('roBuilt').textContent = F.B.length / 9;
+  $('roTps').textContent = fmt(simTps);
+  if (stats) $('roGen').innerHTML = `${stats.avgGen.toFixed(1)}<em>max ${stats.maxGen}</em>`;
   const p = phaseOf(F.ticks, F.day), season = F.season ? SEASONS[Math.floor(phaseOf(F.ticks, F.season) * 4)] : '';
   $('roDayL').textContent = cw < 760 ? `Day ${Math.floor(F.ticks / F.day) + 1}` : `Day ${Math.floor(F.ticks / F.day) + 1} · ${season || dayLabel(p)}`;
   $('roTemp').innerHTML = `<span class="sun" id="sun"></span>${F.temp.toFixed(0)}°C<em>${dayLabel(p).toLowerCase()}</em>`;
   const sun = $('sun'), light = Math.sin(TAU * p);
   sun.style.background = light > 0 ? C.accent : '#9cb6ff'; sun.style.boxShadow = `0 0 ${light > 0 ? 8 : 4}px ${light > 0 ? C.accent : '#9cb6ff'}`;
-  $('perf').textContent = `${usingWorker ? 'worker' : 'main thread'} · ${simTps} ticks/s · ${renderFps} fps · ${pop} agents`;
+  $('perf').textContent = `${usingWorker ? 'worker' : 'main thread'} · tick ${fmt(F.ticks)} · ${fmt(simTps)} ticks/s · ${renderFps} fps`;
 }
 
 /* ================= controls ================= */
 const ICON = {
-  pause: '<svg class="i" viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>',
-  play: '<svg class="i" viewBox="0 0 24 24"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg>',
+  pause: '<svg class="i" viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg><span>Pause</span>',
+  play: '<svg class="i" viewBox="0 0 24 24"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg><span>Play</span>',
 };
-let setRunning = function (v) { running = v; send('play', { running }); $('bPlay').innerHTML = ICON[running ? 'pause' : 'play']; $('bPlay').dataset.tip = running ? 'Pause' : 'Resume'; };
-function setSpeed(i) { speedIdx = clamp(i, 0, SPEEDS.length - 1); ui.speedIdx = speedIdx; store.set('alife.ui', ui); $('spOut').textContent = SPEEDS[speedIdx] + '×'; send('speed', { speed: SPEEDS[speedIdx] }); }
-setRunning(true); setSpeed(ui.speedIdx);
+function paintPlay() { const b = $('bPlay'); b.innerHTML = ICON[running ? 'pause' : 'play']; b.dataset.tip = running ? 'Pause' : 'Resume'; b.dataset.state = String(running); }
+let setRunning = v => { running = v; send('play', { running }); paintPlay(); syncWake(); };
+function applySpeed() {
+  send('speed', { speed: SPEEDS[speedIdx], max: maxMode });
+  $('spOut').textContent = maxMode ? 'MAX' : SPEEDS[speedIdx] + '×';
+  $('bMax').classList.toggle('hot', maxMode);
+  $('ctx').classList.toggle('hyper', maxMode);
+  ui.speedIdx = speedIdx; saveUi(); updateCtx();
+}
+function setSpeed(i) {
+  if (i >= SPEEDS.length) { if (!maxMode) { maxMode = true; toast('Hyperspeed: drawing is reduced to keep the simulation fast', 'info'); } }
+  else { maxMode = false; speedIdx = clamp(i, 0, SPEEDS.length - 1); }
+  applySpeed();
+}
 $('bPlay').onclick = () => setRunning(!running);
 $('bStep').onclick = () => send('step', { n: 100 });
-$('spDown').onclick = () => setSpeed(speedIdx - 1);
-$('spUp').onclick = () => setSpeed(speedIdx + 1);
-function setTool(t) { tool = t; document.querySelectorAll('[data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === t)); cv.classList.toggle('brush', t !== 'select'); }
+$('spDown').onclick = () => setSpeed(maxMode ? SPEEDS.length - 1 : speedIdx - 1);
+$('spUp').onclick = () => setSpeed(maxMode ? SPEEDS.length : speedIdx + 1);
+$('bMax').onclick = () => { if (maxMode) { maxMode = false; applySpeed(); } else { if (!running) setRunning(true); setSpeed(SPEEDS.length); } };
+
+/* tools + context bar */
+const TOOLS = {
+  select: ['Select & pan', 'Tap an agent to inspect it. Drag to pan; pinch or scroll to zoom.'],
+  food: ['Food brush', 'Drag across the map to paint food.'],
+  tree: ['Tree brush', 'Drag to plant trees. Agents harvest them for wood.'],
+  stone: ['Stone brush', 'Drag to drop stone for building and tools.'],
+  wall: ['Wall brush', 'Drag to draw a wall line. Walls block agents and beasts and break storm winds.'],
+  fire: ['Fire', 'Tap to light a fire. It warms and scares beasts off, but burns anyone standing in it.'],
+  beast: ['Beast', 'Tap to release a beast. Beasts hunt exposed agents; walls, fire and houses protect them.'],
+  erase: ['Eraser', 'Drag to clear resources, structures and beasts.'],
+};
+function setTool(t) {
+  tool = t;
+  document.querySelectorAll('[data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === t));
+  cv.classList.toggle('brush', t !== 'select');
+  updateCtx();
+}
+function updateCtx() {
+  const [name, hint] = TOOLS[tool];
+  $('ctxName').textContent = name;
+  $('ctxHint').textContent = maxMode ? `Hyperspeed on: ${fmt(simTps)} ticks/s, drawing reduced. ${hint}` : hint;
+  $('ctxIco').innerHTML = document.querySelector(`[data-tool="${tool}"] svg`).outerHTML;
+  $('optSize').hidden = !['food', 'tree', 'stone', 'erase'].includes(tool);
+  $('optAmt').hidden = !['food', 'tree', 'stone'].includes(tool);
+  $('ctxInspect').hidden = !(tool === 'select' && selected && !$('dInspect').classList.contains('open'));
+}
 document.querySelectorAll('[data-tool]').forEach(b => b.onclick = () => setTool(b.dataset.tool));
+$('brushSize').value = ui.brushSize; $('brushAmt').value = ui.brushAmt;
+function paintMini() { $('brushSizeV').textContent = ui.brushSize; $('brushAmtV').textContent = ui.brushAmt + '×'; for (const id of ['brushSize', 'brushAmt']) { const el = $(id); el.style.setProperty('--p', (el.value - el.min) / (el.max - el.min) * 100 + '%'); } }
+$('brushSize').oninput = () => { ui.brushSize = +$('brushSize').value; paintMini(); saveUi(); };
+$('brushAmt').oninput = () => { ui.brushAmt = +$('brushAmt').value; paintMini(); saveUi(); };
+paintMini();
+$('ctxInspect').onclick = () => { if (selected) openDrawer('dInspect'); };
+setTool('select');
+paintPlay(); applySpeed();
+setInterval(() => { if (maxMode) updateCtx(); }, 1000);
 const quick = { qStorm: 'storm', qBloom: 'bloom', eStorm: 'storm', eBloom: 'bloom', eCold: 'cold', eHeat: 'heat' };
-for (const [id, cmd] of Object.entries(quick)) $(id).onclick = () => { send(cmd); if (cmd === 'cold' || cmd === 'heat') { const el = $('temperature'); el.value = clamp(+el.value + (cmd === 'cold' ? -12 : 12), -20, 50); paintSlider(el); } };
+for (const [id, cmd] of Object.entries(quick)) $(id).onclick = () => { send(cmd); if (cmd === 'cold' || cmd === 'heat') { const el = $('temperature'); el.value = clamp(+el.value + (cmd === 'cold' ? -12 : 12), -20, 50); paintSlider(el); } if (cmd === 'bloom') toast('Food bloom', 'food'); };
 
 /* drawers */
 const DRAWERS = { bStats: 'dStats', bClimate: 'dClimate', bSettings: 'dSettings' };
+const LEFT = ['dStats', 'dClimate', 'dSettings'];
 function openDrawer(id) {
   const isLeft = id !== 'dInspect', el = $(id), opening = !el.classList.contains('open');
-  if (isLeft) for (const d of ['dStats', 'dClimate', 'dSettings']) $(d).classList.toggle('open', d === id && opening);
+  if (isLeft) for (const d of LEFT) $(d).classList.toggle('open', d === id && opening);
   else el.classList.toggle('open', opening);
-  if (compact() && opening) { if (isLeft) $('dInspect').classList.remove('open'); else for (const d of ['dStats', 'dClimate', 'dSettings']) $(d).classList.remove('open'); }
+  if (compact() && opening) { if (isLeft) $('dInspect').classList.remove('open'); else for (const d of LEFT) $(d).classList.remove('open'); }
   for (const [b, d] of Object.entries(DRAWERS)) $(b).classList.toggle('on', $(d).classList.contains('open'));
   send('inspect', { on: $('dInspect').classList.contains('open') });
   if (id === 'dStats' && opening) renderStats();
+  if (id === 'dInspect' && opening) renderInspector();
+  updateCtx();
 }
 function closeDrawer(id) { if ($(id).classList.contains('open')) openDrawer(id); }
 for (const [b, d] of Object.entries(DRAWERS)) $(b).onclick = () => openDrawer(d);
 document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => closeDrawer(b.dataset.close));
 $('bFit').onclick = () => { follow = false; $('iFollow').classList.remove('on'); fit(); };
-$('bFull').onclick = async () => { try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); } catch { toast('Fullscreen is not available here', 'info'); } };
+
+/* fullscreen (hidden where the browser has none, e.g. iPhone Safari) */
+const fsEl = () => document.fullscreenElement || document.webkitFullscreenElement;
+const fsOk = document.fullscreenEnabled || document.webkitFullscreenEnabled;
+if (!fsOk) $('bFull').hidden = true;
+$('bFull').onclick = async () => {
+  try {
+    if (fsEl()) await (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    else { const el = document.documentElement; await (el.requestFullscreen || el.webkitRequestFullscreen).call(el, { navigationUI: 'hide' }); }
+  } catch { toast('Fullscreen is not available here', 'info'); }
+};
+const onFs = () => { $('bFull').classList.toggle('on', !!fsEl()); $('fullIco').innerHTML = fsEl() ? '<path d="M3 8h5V3M21 8h-5V3M3 16h5v5M21 16h-5v5"/>' : '<path d="M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5"/>'; };
+document.addEventListener('fullscreenchange', onFs); document.addEventListener('webkitfullscreenchange', onFs);
 
 /* selection */
 function setSelected(id, { fromSim = false, open = true } = {}) {
@@ -392,13 +541,14 @@ function setSelected(id, { fromSim = false, open = true } = {}) {
   selected = id || 0;
   if (!fromSim) send('select', { id: selected });
   if (selected && open && !$('dInspect').classList.contains('open')) openDrawer('dInspect');
-  if (!selected) { follow = false; $('iFollow').classList.remove('on'); closeDrawer('dInspect'); return; }
+  if (!selected) { follow = false; $('iFollow').classList.remove('on'); closeDrawer('dInspect'); updateCtx(); return; }
+  updateCtx();
   setTimeout(revealSelected, 60);
 }
 function revealSelected() {
   const p = rpos.get(selected); if (!p) return;
-  const v = viewRect(), s = toScreen(p.x, p.y), m = 40;
-  if (s.x < v.l + m || s.x > v.r - m || s.y < v.t + 60 || s.y > v.b - 70) camTarget = { x: p.x, y: p.y, z: Math.max(cam.z, fitZoom() * (cw < 760 ? 1.8 : 1)) };
+  const v = viewRect(), c = chrome(), s = toScreen(p.x, p.y), m = 40;
+  if (s.x < v.l + m || s.x > v.r - m || s.y < Math.max(v.t, c.t) + 20 || s.y > Math.min(v.b, c.b) - 20) camTarget = { x: p.x, y: p.y, z: Math.max(cam.z, fitZoom() * (cw < 760 ? 1.8 : 1)) };
 }
 document.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => send('pick', { how: b.dataset.pick }));
 $('iFollow').onclick = () => toggleFollow();
@@ -411,12 +561,27 @@ function agentAt(sx, sy, touch) {
   for (const [id, p] of rpos) { const dx = p.x - w.x, dy = p.y - w.y, d = dx * dx + dy * dy; if (d < bd) { bd = d; best = id; } }
   return best;
 }
-function paint(sx, sy) { const w = toWorld(sx, sy); if (w.x < 0 || w.y < 0 || w.x > W || w.y > H) return; send('paint', { x: w.x, y: w.y, k: tool }); lastPaint = performance.now(); }
+const inWorld = w => w.x >= 0 && w.y >= 0 && w.x <= W && w.y <= H;
+function paint(sx, sy) { const w = toWorld(sx, sy); if (!inWorld(w)) return; send('paint', { x: w.x, y: w.y, k: tool, r: ui.brushSize, n: ui.brushAmt }); lastPaint = performance.now(); }
+function wallTo(w) {
+  const g = gesture; if (!g.last) { g.last = w; return; }
+  const dx = w.x - g.last.x, dy = w.y - g.last.y, d = Math.hypot(dx, dy);
+  if (d < 26) return;
+  const ang = Math.atan2(dy, dx), steps = Math.floor(d / 28);
+  for (let i = 0; i < steps; i++) {
+    const cx = g.last.x + Math.cos(ang) * 14, cy = g.last.y + Math.sin(ang) * 14;
+    if (inWorld({ x: cx, y: cy })) send('paint', { x: cx, y: cy, k: 'wall', ang });
+    g.last = { x: g.last.x + Math.cos(ang) * 28, y: g.last.y + Math.sin(ang) * 28 }; g.placed = true;
+  }
+}
 const local = e => { const r = cv.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
 cv.addEventListener('pointerdown', e => {
   const p = local(e); ptrs.set(e.pointerId, p); cv.setPointerCapture(e.pointerId);
   if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; gesture = { type: 'pinch', d0: Math.hypot(a.x - b.x, a.y - b.y), z0: cam.z, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 }; return; }
+  if (ptrs.size > 2) return;
   if (e.button === 1 || e.button === 2 || tool === 'select') { gesture = { type: 'pan', sx: p.x, sy: p.y, cx: cam.x, cy: cam.y, moved: 0, tap: e.button === 0, touch: e.pointerType !== 'mouse' }; cv.classList.add('panning'); }
+  else if (tool === 'wall') { gesture = { type: 'wall', last: null, start: toWorld(p.x, p.y) }; wallTo(toWorld(p.x, p.y)); }
+  else if (tool === 'fire' || tool === 'beast') { gesture = { type: 'once' }; paint(p.x, p.y); }
   else { gesture = { type: 'paint' }; paint(p.x, p.y); }
 });
 cv.addEventListener('pointermove', e => {
@@ -434,8 +599,9 @@ cv.addEventListener('pointermove', e => {
     cam.x -= (mx - gesture.mx) / cam.z; cam.y -= (my - gesture.my) / cam.z; gesture.mx = mx; gesture.my = my; clampCam(); follow = false;
   } else if (gesture.type === 'pan') {
     gesture.moved = Math.max(gesture.moved, Math.hypot(p.x - gesture.sx, p.y - gesture.sy));
-    if (gesture.moved > 4) { cam.x = gesture.cx - (p.x - gesture.sx) / cam.z; cam.y = gesture.cy - (p.y - gesture.sy) / cam.z; clampCam(); camTarget = null; if (follow) { follow = false; $('iFollow').classList.remove('on'); } }
-  } else if (gesture.type === 'paint' && performance.now() - lastPaint > 70) paint(p.x, p.y);
+    if (gesture.moved > (gesture.touch ? 10 : 4)) { cam.x = gesture.cx - (p.x - gesture.sx) / cam.z; cam.y = gesture.cy - (p.y - gesture.sy) / cam.z; clampCam(); camTarget = null; if (follow) { follow = false; $('iFollow').classList.remove('on'); } }
+  } else if (gesture.type === 'paint' && performance.now() - lastPaint > 60) paint(p.x, p.y);
+  else if (gesture.type === 'wall') wallTo(toWorld(p.x, p.y));
 });
 let lastTap = { t: 0, x: 0, y: 0 };
 function endPtr(e) {
@@ -446,15 +612,13 @@ function endPtr(e) {
     else if (gesture.touch && now - lastTap.t < 320 && Math.hypot(p.x - lastTap.x, p.y - lastTap.y) < 30) { zoomAt(p.x, p.y, cam.z * 1.8); lastTap.t = 0; }
     else lastTap = { t: now, x: p.x, y: p.y };
   }
+  if (gesture && gesture.type === 'wall' && !gesture.placed && p) { const w = toWorld(p.x, p.y); if (inWorld(w)) send('paint', { x: w.x, y: w.y, k: 'wall', ang: 0 }); }
   if (!ptrs.size) { gesture = null; cv.classList.remove('panning'); }
-  else if (gesture && gesture.type === 'pinch') {
-    // one finger left after a pinch: continue as a pan from here so the view does not jump
-    const [q] = [...ptrs.values()]; gesture = { type: 'pan', sx: q.x, sy: q.y, cx: cam.x, cy: cam.y, moved: 99, tap: false, touch: true };
-  }
+  else if (gesture && gesture.type === 'pinch') { const [q] = [...ptrs.values()]; gesture = { type: 'pan', sx: q.x, sy: q.y, cx: cam.x, cy: cam.y, moved: 99, tap: false, touch: true }; }
 }
 cv.addEventListener('pointerup', endPtr);
 cv.addEventListener('pointercancel', endPtr);
-cv.addEventListener('pointerleave', () => { pointerWorld = null; hoverId = 0; showHover(0); });
+cv.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') { pointerWorld = null; hoverId = 0; showHover(0); } });
 cv.addEventListener('contextmenu', e => e.preventDefault());
 cv.addEventListener('wheel', e => { e.preventDefault(); const p = local(e); zoomAt(p.x, p.y, cam.z * Math.exp(-e.deltaY * (e.ctrlKey ? .01 : .0016))); }, { passive: false });
 cv.addEventListener('dblclick', e => { if (isTouch) return; const p = local(e); if (!agentAt(p.x, p.y)) zoomAt(p.x, p.y, cam.z * 1.8); });
@@ -463,16 +627,16 @@ function showHover(id, x, y) {
   if (!id || !F) { el.classList.remove('show'); return; }
   const p = rpos.get(id); if (!p) return;
   const o = p.i, A = F.A;
-  el.innerHTML = `#${id} · energy ${Math.round(A[o + 5] * 200)} · health ${Math.round(A[o + 6] * 100)}`;
-  el.style.left = Math.min(x + 14, innerWidth - 200) + 'px'; el.style.top = (y + 12) + 'px'; el.classList.add('show');
+  el.innerHTML = `#${id} · energy ${Math.round(A[o + 5] * 200)} · health ${Math.round(A[o + 6] * 100)}${A[o + 7] & 4 ? ' · tool' : ''}`;
+  el.style.left = Math.min(x + 14, innerWidth - 220) + 'px'; el.style.top = (y + 12) + 'px'; el.classList.add('show');
 }
 
-/* tooltips */
+/* tooltips (mouse only; touch gets the context bar and labels instead) */
 const tip = $('tip');
 document.querySelectorAll('[data-tip]').forEach(el => {
   el.addEventListener('pointerenter', e => {
     if (e.pointerType !== 'mouse') return;
-    tip.innerHTML = el.dataset.tip + (el.dataset.key ? `<kbd>${el.dataset.key}</kbd>` : '');
+    tip.innerHTML = esc(el.dataset.tip) + (el.dataset.key ? `<kbd>${el.dataset.key}</kbd>` : '');
     const r = el.getBoundingClientRect(), below = r.top < 120;
     tip.style.left = '0px'; tip.style.top = '0px'; tip.classList.add('show');
     const tw = tip.offsetWidth;
@@ -483,28 +647,31 @@ document.querySelectorAll('[data-tip]').forEach(el => {
 });
 
 /* keyboard */
+const TOOLKEYS = ['select', 'food', 'tree', 'stone', 'wall', 'fire', 'beast', 'erase'];
 addEventListener('keydown', e => {
   if (e.target.matches('input,textarea,select')) return;
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   const k = e.key;
   if (k === ' ') { e.preventDefault(); setRunning(!running); }
   else if (k === '.') send('step', { n: 100 });
-  else if (k === '-' || k === '_') setSpeed(speedIdx - 1);
-  else if (k === '=' || k === '+') setSpeed(speedIdx + 1);
-  else if (k >= '1' && k <= '6') setTool(['select', 'food', 'tree', 'stone', 'fire', 'erase'][+k - 1]);
+  else if (k === '-' || k === '_') $('spDown').click();
+  else if (k === '=' || k === '+') $('spUp').click();
+  else if (k === 'm' || k === 'M') $('bMax').click();
+  else if (k >= '1' && k <= '8') setTool(TOOLKEYS[+k - 1]);
+  else if (k === '[' || k === ']') { ui.brushSize = clamp(ui.brushSize + (k === ']' ? 4 : -4), 8, 70); $('brushSize').value = ui.brushSize; paintMini(); saveUi(); }
   else if (k === 'f' || k === 'F') toggleFollow();
-  else if (k === '0') { follow = false; fit(); }
+  else if (k === '0') $('bFit').click();
   else if (k === 's' || k === 'S') openDrawer('dStats');
   else if (k === 'c' || k === 'C') openDrawer('dClimate');
   else if (k === 'Escape') {
     if (!$('modal').hidden) { $('modal').hidden = true; return; }
-    const open = ['dStats', 'dClimate', 'dSettings'].find(d => $(d).classList.contains('open'));
+    const open = LEFT.find(d => $(d).classList.contains('open'));
     if (open) closeDrawer(open); else setSelected(0);
   }
 });
 
 /* ================= toasts ================= */
-const KCOL = { storm: C.storm, death: C.bad, birth: C.good, build: C.house, cold: '#9cc6ff', heat: '#ff9d6b', food: C.food, info: C.muted };
+const KCOL = { storm: C.storm, death: C.bad, birth: C.good, build: C.house, cold: '#9cc6ff', heat: '#ff9d6b', food: C.food, beast: C.beast, info: C.muted };
 function toast(s, kind = 'info') {
   const el = document.createElement('div'); el.className = 'toast glass';
   el.innerHTML = `<i style="background:${KCOL[kind] || C.muted}"></i>`; el.append(s);
@@ -512,7 +679,7 @@ function toast(s, kind = 'info') {
   setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 300); }, 3200);
 }
 
-/* ================= climate ================= */
+/* ================= world settings ================= */
 const SLIDERS = [
   ['temperature', 'Average temperature', -20, 50, 1, v => `${v}°C`],
   ['food', 'Food growth', 0, 9, .25, v => `${(+v).toFixed(2)} / tick`],
@@ -524,73 +691,79 @@ const SLIDERS = [
   ['day', 'Day length', 100, 1500, 50, v => `${v} ticks`],
   ['season', 'Year length', 0, 6000, 100, v => +v ? `${v} ticks` : 'No seasons'],
 ];
-const PRESETS = [
-  ['Temperate', 'Balanced defaults', { food: 2.5, trees: .09, stone: .06, drain: 1, decay: 1, storm: 1, temperature: 19, day: 500, season: 2600 }],
-  ['Abundance', 'Rich and mild', { food: 5, trees: .18, stone: .12, drain: .8, decay: 1, storm: .5, temperature: 21, day: 500, season: 2600 }],
-  ['Scarcity', 'Lean and hungry', { food: 1.2, trees: .05, stone: .04, drain: 1.4, decay: 1.2, storm: 1, temperature: 18, day: 500, season: 2600 }],
-  ['Long winter', 'Cold, slow years', { food: 2, trees: .08, stone: .06, drain: 1.1, decay: 1, storm: 1.5, temperature: 4, day: 600, season: 4200 }],
-  ['Desert', 'Hot, sparse wood', { food: 1.6, trees: .03, stone: .1, drain: 1.1, decay: 1.4, storm: .6, temperature: 36, day: 450, season: 2600 }],
-  ['Tempest', 'Storm season', { food: 2.8, trees: .1, stone: .08, drain: 1, decay: 1.6, storm: 3, temperature: 15, day: 500, season: 2000 }],
+const SLIDERS2 = [
+  ['beasts', 'Beasts roaming', 0, 20, 1, v => +v ? `${v}` : 'None'],
+  ['beastPower', 'Beast ferocity', .3, 3, .1, v => `${(+v).toFixed(1)}×`],
+  ['popCap', 'Population cap', 40, 400, 10, v => `${v} agents`],
+  ['mutation', 'Mutation rate', 0, 4, .1, v => `${(+v).toFixed(1)}×`],
 ];
-function paintSlider(el) { const p = (el.value - el.min) / (el.max - el.min) * 100; el.style.setProperty('--p', p + '%'); const s = SLIDERS.find(x => x[0] === el.id); $(el.id + 'v').textContent = s[5](el.value); }
+const ALLS = [...SLIDERS, ...SLIDERS2];
+const PRESETS = [
+  ['Temperate', 'Balanced defaults', { food: 3, trees: .12, stone: .08, drain: 1, decay: 1, storm: 1, temperature: 19, day: 500, season: 2600, beasts: 3, beastPower: 1 }],
+  ['Abundance', 'Rich and mild', { food: 5.5, trees: .2, stone: .14, drain: .8, decay: 1, storm: .5, temperature: 21, day: 500, season: 2600, beasts: 2, beastPower: .8 }],
+  ['Scarcity', 'Lean and hungry', { food: 1.4, trees: .07, stone: .05, drain: 1.3, decay: 1.2, storm: 1, temperature: 18, day: 500, season: 2600, beasts: 4, beastPower: 1 }],
+  ['Long winter', 'Hoard or starve', { food: 2.4, trees: .12, stone: .08, drain: 1.1, decay: 1, storm: 1.5, temperature: 4, day: 600, season: 4200, beasts: 3, beastPower: 1.1 }],
+  ['Predators', 'Hunted every day', { food: 3, trees: .14, stone: .1, drain: 1, decay: 1, storm: .8, temperature: 19, day: 500, season: 2600, beasts: 12, beastPower: 1.4 }],
+  ['Tempest', 'Storm season', { food: 3.2, trees: .14, stone: .1, drain: 1, decay: 1.6, storm: 3, temperature: 15, day: 500, season: 2000, beasts: 3, beastPower: 1 }],
+];
+function paintSlider(el) { const p = (el.value - el.min) / (el.max - el.min) * 100; el.style.setProperty('--p', p + '%'); const s = ALLS.find(x => x[0] === el.id); $(el.id + 'v').textContent = s[5](el.value); }
 function buildClimate(settings) {
-  const box = $('sliders'); box.innerHTML = '';
-  for (const [key, label, min, max, step] of SLIDERS) {
-    const d = document.createElement('div'); d.className = 'slider';
-    d.innerHTML = `<label for="${key}">${label}</label><output id="${key}v"></output><input type="range" id="${key}" min="${min}" max="${max}" step="${step}" value="${settings[key]}">`;
-    box.append(d);
-    const el = d.querySelector('input'); paintSlider(el);
-    el.addEventListener('input', () => { paintSlider(el); send('settings', { settings: { [key]: +el.value } }); markPreset(); });
+  for (const [boxId, list] of [['sliders', SLIDERS], ['sliders2', SLIDERS2]]) {
+    const box = $(boxId); box.innerHTML = '';
+    for (const [key, label, min, max, step] of list) {
+      const d = document.createElement('div'); d.className = 'slider';
+      d.innerHTML = `<label for="${key}">${label}</label><output id="${key}v"></output><input type="range" id="${key}" min="${min}" max="${max}" step="${step}" value="${settings[key]}">`;
+      box.append(d);
+      const el = d.querySelector('input'); paintSlider(el);
+      el.addEventListener('input', () => { paintSlider(el); send('settings', { settings: { [key]: +el.value } }); markPreset(); });
+    }
   }
   const pb = $('presets'); pb.innerHTML = '';
   PRESETS.forEach(([name, sub, vals]) => {
     const b = document.createElement('button'); b.className = 'preset'; b.innerHTML = `<b>${name}</b><small>${sub}</small>`;
-    b.onclick = () => { send('settings', { settings: vals }); syncSliders(vals); toast(`Climate set to ${name.toLowerCase()}`, 'info'); };
+    b.onclick = () => { send('settings', { settings: vals }); syncSliders(vals); toast(`World set to ${name.toLowerCase()}`, 'info'); };
     pb.append(b);
   });
-  $('oReseed').checked = settings.autoReseed !== false;
+  $('oReseed').checked = settings.autoReseed !== false; $('oLearn').checked = settings.learning !== false;
   markPreset();
 }
-function syncSliders(s) { for (const [key] of SLIDERS) { const el = $(key); if (el && s[key] != null) { el.value = s[key]; paintSlider(el); } } if (s.autoReseed != null) $('oReseed').checked = s.autoReseed; markPreset(); }
-function markPreset() { const cur = Object.fromEntries(SLIDERS.map(([k]) => [k, +$(k).value])); [...$('presets').children].forEach((b, i) => b.classList.toggle('on', Object.entries(PRESETS[i][2]).every(([k, v]) => Math.abs(cur[k] - v) < 1e-6))); }
+function syncSliders(s) {
+  for (const [key] of ALLS) { const el = $(key); if (el && s[key] != null) { el.value = s[key]; paintSlider(el); } }
+  if (s.autoReseed != null) $('oReseed').checked = s.autoReseed; if (s.learning != null) $('oLearn').checked = s.learning; markPreset();
+}
+function markPreset() { const cur = Object.fromEntries(ALLS.map(([k]) => [k, +$(k).value])); [...$('presets').children].forEach((b, i) => b.classList.toggle('on', Object.entries(PRESETS[i][2]).every(([k, v]) => Math.abs(cur[k] - v) < 1e-6))); }
+$('oReseed').onchange = () => send('settings', { settings: { autoReseed: $('oReseed').checked } });
+$('oLearn').onchange = () => send('settings', { settings: { learning: $('oLearn').checked } });
 
 /* ================= settings ================= */
-const OPTS = { oNight: 'night', oSense: 'sense', oTrail: 'trail', oLegend: 'legend', oPerf: 'perf' };
-function applyUi() { document.body.classList.toggle('hidelegend', !ui.legend); document.body.classList.toggle('hideperf', !ui.perf); }
-for (const [id, key] of Object.entries(OPTS)) { $(id).checked = ui[key]; $(id).onchange = () => { ui[key] = $(id).checked; store.set('alife.ui', ui); applyUi(); }; }
-applyUi();
-$('oReseed').onchange = () => send('settings', { settings: { autoReseed: $('oReseed').checked } });
+const OPTS = { oNight: 'night', oFx: 'fx', oSense: 'sense', oTrail: 'trail', oLegend: 'legend', oPerf: 'perf', oAuto: 'auto', oHidePause: 'hidePause', oWake: 'wake' };
+function applyUi() { document.body.classList.toggle('hidelegend', !ui.legend); document.body.classList.toggle('hideperf', !ui.perf); syncWake(); }
+for (const [id, key] of Object.entries(OPTS)) { $(id).checked = ui[key]; $(id).onchange = () => { ui[key] = $(id).checked; saveUi(); applyUi(); }; }
 $('sSave').onclick = () => send('save', { purpose: 'local' });
 $('sExport').onclick = () => send('save', { purpose: 'file' });
 $('sLoad').onclick = () => { let s = null; try { s = localStorage.getItem('alife.save'); } catch {} if (!s) { toast('No browser save yet', 'info'); return; } send('load', { state: s }); };
 $('sImport').onclick = () => $('sFile').click();
-$('sFile').onchange = async e => { const f = e.target.files[0]; if (!f) return; try { send('load', { state: await f.text() }); } catch (err) { toast('Could not read that file', 'death'); } e.target.value = ''; };
-$('sReset').onclick = () => { $('modal').hidden = false; $('mOk').focus(); };
+$('sFile').onchange = async e => { const f = e.target.files[0]; if (!f) return; try { send('load', { state: await f.text() }); } catch { toast('Could not read that file', 'death'); } e.target.value = ''; };
+let newShape = 'wide';
+function markShape() { document.querySelectorAll('[data-shape]').forEach(b => b.classList.toggle('on', b.dataset.shape === newShape)); }
+document.querySelectorAll('[data-shape]').forEach(b => b.onclick = () => { newShape = b.dataset.shape; markShape(); });
+$('sReset').onclick = () => { newShape = preferredShape(); markShape(); $('modal').hidden = false; $('mOk').focus(); };
 $('mCancel').onclick = () => { $('modal').hidden = true; };
-$('mOk').onclick = () => { $('modal').hidden = true; send('reset'); trail = []; rpos.clear(); setSelected(0); toast('New world: 100 founders released', 'birth'); };
+$('mOk').onclick = () => { $('modal').hidden = true; send('reset', { shape: newShape }); trail = []; rpos.clear(); bpos.clear(); setSelected(0); toast('New world: 120 founders released', 'birth'); };
 function onSaved(m) {
-  const kb = (m.state.length / 1024).toFixed(0);
-  if (m.purpose === 'auto') { try { localStorage.setItem('alife.save', m.state); localStorage.setItem('alife.saveMeta', JSON.stringify({ ticks: m.ticks, at: Date.now(), kb })); showSaveInfo(); } catch {} return; }
-  if (m.purpose === 'local') {
-    try { localStorage.setItem('alife.save', m.state); localStorage.setItem('alife.saveMeta', JSON.stringify({ ticks: m.ticks, at: Date.now(), kb })); toast(`Saved at tick ${fmt(m.ticks)}`, 'info'); showSaveInfo(); }
-    catch { toast('Browser storage is full or blocked. Use Download file instead.', 'death'); }
-  } else {
-    const url = URL.createObjectURL(new Blob([m.state], { type: 'application/json' }));
-    const a = document.createElement('a'); a.href = url; a.download = `alife-tick-${m.ticks}.json`; document.body.append(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 2000);
-    toast(`Exported ${kb} KB snapshot`, 'info');
-  }
+  const kb = (m.state.length / 1024).toFixed(0), writeLocal = () => { localStorage.setItem('alife.save', m.state); localStorage.setItem('alife.saveMeta', JSON.stringify({ ticks: m.ticks, at: Date.now(), kb })); showSaveInfo(); };
+  if (m.purpose === 'auto') { try { writeLocal(); } catch {} return; }
+  if (m.purpose === 'local') { try { writeLocal(); toast(`Saved at tick ${fmt(m.ticks)}`, 'info'); } catch { toast('Browser storage is full or blocked. Use Download file instead.', 'death'); } return; }
+  const url = URL.createObjectURL(new Blob([m.state], { type: 'application/json' }));
+  const a = document.createElement('a'); a.href = url; a.download = `alife-tick-${m.ticks}.json`; document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+  toast(`Exported ${kb} KB snapshot`, 'info');
 }
 function showSaveInfo() { const m = store.get('alife.saveMeta', null); $('saveInfo').textContent = m ? `Browser save: tick ${fmt(m.ticks)}, ${m.kb} KB, ${new Date(m.at).toLocaleString()}` : ''; }
 showSaveInfo();
-// embedded viewers (e.g. a hosted preview) block file downloads, so only offer it when the page is opened directly
+// embedded viewers block file downloads, so only offer it when the page is opened directly
 let embedded = true; try { embedded = window.self !== window.top; } catch {}
 if (embedded) $('sExport').hidden = true;
-
-/* coach mark */
-if (!store.get('alife.coached', false)) { $('coach').hidden = false; }
-$('coachOk').onclick = () => { $('coach').hidden = true; store.set('alife.coached', true); };
-cv.addEventListener('pointerdown', () => { if (!$('coach').hidden && $('coachResume').hidden) setTimeout(() => { $('coach').hidden = true; store.set('alife.coached', true); }, 2500); }, { once: true });
 
 /* ================= charts ================= */
 function setupCanvas(c) {
@@ -601,60 +774,65 @@ function setupCanvas(c) {
   return { g, w, h };
 }
 function niceMax(v) { if (v <= 0) return 1; const e = Math.pow(10, Math.floor(Math.log10(v))), f = v / e; return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * e; }
-function lineChart(c, series, { min = 0, decimals = 0 } = {}) {
+function lineChart(c, series, { min = 0, decimals = 'auto' } = {}) {
   const s = setupCanvas(c); if (!s) return; const { g, w, h } = s;
   const n = series[0].values.length; if (n < 2) { g.fillStyle = C.dim; g.font = '11px "Instrument Sans",sans-serif'; g.fillText('Collecting data…', 4, h / 2); return; }
-  let mx = -Infinity, mn = Infinity; for (const sr of series) for (const v of sr.values) { if (v > mx) mx = v; if (v < mn) mn = v; }
-  const lo = min === 'auto' ? Math.floor(mn * 10) / 10 : min, hi = niceMax(mx - lo) + lo;
+  let mx = -Infinity; for (const sr of series) for (const v of sr.values) if (v > mx) mx = v;
+  const lo = min, hi = niceMax(mx - lo) + lo;
   const L = 34, Rr = 8, T = 8, Bb = 18, pw = w - L - Rr, ph = h - T - Bb;
   const X = i => L + i / (n - 1) * pw, Y = v => T + ph - (v - lo) / (hi - lo) * ph;
-  g.font = '10px "JetBrains Mono",monospace'; g.textAlign = 'right'; g.textBaseline = 'middle';
   const dec = decimals === 'auto' ? (hi - lo < 4 ? 1 : 0) : decimals;
+  g.font = '10px "JetBrains Mono",monospace'; g.textAlign = 'right'; g.textBaseline = 'middle';
   for (let k = 0; k <= 4; k++) { const v = lo + (hi - lo) * k / 4, y = Y(v); g.strokeStyle = 'rgba(188,228,212,.08)'; g.lineWidth = 1; g.beginPath(); g.moveTo(L, Math.round(y) + .5); g.lineTo(w - Rr, Math.round(y) + .5); g.stroke(); g.fillStyle = C.dim; g.fillText(v.toFixed(dec), L - 6, y); }
   const hist = stats.history; g.textAlign = 'left'; g.textBaseline = 'alphabetic'; g.fillText(`t ${fmt(hist[0].t)}`, L, h - 4); g.textAlign = 'right'; g.fillText(`t ${fmt(hist[hist.length - 1].t)}`, w - Rr, h - 4);
   series.forEach((sr, si) => {
-    g.beginPath(); sr.values.forEach((v, i) => i ? g.lineTo(X(i), Y(v)) : g.moveTo(X(i), Y(v)));
-    if (si === 0 && sr.area !== false) { g.save(); g.lineTo(X(n - 1), Y(lo)); g.lineTo(X(0), Y(lo)); g.closePath(); const gr = g.createLinearGradient(0, T, 0, T + ph); gr.addColorStop(0, sr.color + '40'); gr.addColorStop(1, sr.color + '00'); g.fillStyle = gr; g.fill(); g.restore(); g.beginPath(); sr.values.forEach((v, i) => i ? g.lineTo(X(i), Y(v)) : g.moveTo(X(i), Y(v))); }
+    const path = () => { g.beginPath(); sr.values.forEach((v, i) => i ? g.lineTo(X(i), Y(v)) : g.moveTo(X(i), Y(v))); };
+    path();
+    if (si === 0 && sr.area !== false) { g.save(); g.lineTo(X(n - 1), Y(lo)); g.lineTo(X(0), Y(lo)); g.closePath(); const gr = g.createLinearGradient(0, T, 0, T + ph); gr.addColorStop(0, sr.color + '40'); gr.addColorStop(1, sr.color + '00'); g.fillStyle = gr; g.fill(); g.restore(); path(); }
     g.strokeStyle = sr.color; g.lineWidth = si === 0 ? 1.8 : 1.4; g.lineJoin = 'round'; g.stroke();
     const lv = sr.values[n - 1]; g.fillStyle = sr.color; g.beginPath(); g.arc(X(n - 1), Y(lv), 3, 0, TAU); g.fill();
   });
 }
+// smooth noisy per-interval counts with a short moving average
+const smooth = (a, k = 4) => a.map((_, i) => { let s = 0, n = 0; for (let j = Math.max(0, i - k); j <= i; j++) { s += a[j]; n++; } return s / n; });
 
 /* ================= stats drawer ================= */
-const DEATHC = { age: C.muted, hunger: C.warn, storm: C.storm, fire: C.fire };
-const DEATHL = { age: 'Old age', hunger: 'Starvation', storm: 'Storms', fire: 'Burns' };
+const DEATHC = { age: C.muted, hunger: C.warn, storm: C.storm, fire: C.fire, beast: C.beast, attack: '#b04a8a' };
+const DEATHL = { age: 'Old age', hunger: 'Starvation', storm: 'Storms', fire: 'Burns', beast: 'Beasts', attack: 'Killed by agents' };
 function renderStats() {
   if (!stats) return;
   updateHud();
   if (!$('dStats').classList.contains('open')) return;
-  const s = stats;
+  const s = stats, ta = s.tally;
   $('fPop').textContent = s.pop; $('fPeak').textContent = s.peakPop;
   $('fGen').innerHTML = `${s.maxGen}<em> avg ${s.avgGen.toFixed(1)}</em>`;
   $('fBD').innerHTML = `${fmt(s.births)}<em> / ${fmt(s.deaths)}</em>`;
   const bt = s.byType; $('fBuilt').textContent = bt.house + bt.store + bt.wall + bt.fire;
   $('fBuiltSub').textContent = `${bt.house} houses · ${bt.store} stores · ${bt.wall} walls · ${bt.fire} fires`;
-  $('statsSub').textContent = `Tick ${fmt(s.ticks)} · ${s.counts[0]} food · ${s.counts[1]} trees · ${s.counts[2]} stone`;
+  $('statsSub').textContent = `Tick ${fmt(s.ticks)} · ${s.counts[0]} food · ${s.counts[1]} trees · ${s.counts[2]} stone · ${s.beasts} beasts`;
   const h = s.history || [];
   if (h.length) $('hSpan').textContent = `last ${fmt(h[h.length - 1].t - h[0].t)} ticks`;
-  lineChart($('cPop'), [{ values: h.map(x => x.pop), color: C.good }, { values: h.map(x => x.build), color: C.house }]);
-  lineChart($('cGen'), [{ values: h.map(x => x.gen), color: C.accent }], { decimals: 'auto' });
-  lineChart($('cBody'), [{ values: h.map(x => x.str), color: C.bad, area: false }, { values: h.map(x => x.spd), color: C.store }, { values: h.map(x => x.sense / 100), color: C.wall }, { values: h.map(x => (x.neurons || 0) / 30), color: C.accent }], { min: 0, decimals: 1 });
+  const per100 = k => smooth(h.map((x, i) => i ? (x[k] || 0) * 100 / Math.max(1, x.t - h[i - 1].t) : 0));
+  lineChart($('cPop'), [{ values: h.map(x => x.pop), color: C.good }, { values: h.map(x => x.build), color: C.house }, { values: h.map(x => (x.beasts || 0) * 10), color: C.beast }]);
+  lineChart($('cBeh'), [{ values: per100('shares'), color: C.good }, { values: per100('thefts'), color: C.bad }, { values: per100('attacks').map(v => v / 10), color: C.beast + '99' }, { values: per100('hunts'), color: C.warn }, { values: per100('crafts'), color: C.wall }, { values: per100('deposits'), color: C.store }]);
+  $('behFigs').innerHTML = [['Food shared', ta.shares], ['Food stolen', ta.thefts], ['Beasts slain', ta.beastKills], ['Tools made', ta.crafts], ['Items stored', ta.deposits], ['Holding tools', Math.round(s.tools / Math.max(1, s.pop) * 100) + '%']]
+    .map(([k, v]) => `<div class="fig"><b>${typeof v === 'number' ? fmt(v) : v}</b><small>${k}</small></div>`).join('');
+  lineChart($('cGen'), [{ values: h.map(x => x.gen), color: C.accent }]);
+  lineChart($('cBody'), [{ values: h.map(x => x.str), color: C.bad, area: false }, { values: h.map(x => x.spd), color: C.store }, { values: h.map(x => x.sense / 100), color: C.wall }, { values: h.map(x => x.agg || 0), color: C.beast }, { values: h.map(x => (x.neurons || 0) / 50), color: C.accent }], { decimals: 1 });
   const tot = Object.values(s.deathsBy).reduce((a, b) => a + b, 0) || 1;
-  $('deathStack').innerHTML = Object.entries(s.deathsBy).map(([k, v]) => `<i style="width:${v / tot * 100}%;background:${DEATHC[k]}"></i>`).join('');
-  $('deathKey').innerHTML = Object.entries(s.deathsBy).map(([k, v]) => `<span><i style="background:${DEATHC[k]}"></i>${DEATHL[k]} <b class="num">${Math.round(v / tot * 100)}%</b></span>`).join('');
-  $('sensBars').innerHTML = s.sensUse.filter(([k]) => k !== 'bias').slice(0, 10).map(([k, v]) => `<div class="bar"><div class="bt"><i style="width:${v * 100}%"></i><span>${meta.senses[k]}</span></div><b>${Math.round(v * 100)}%</b></div>`).join('');
-  const mxA = Math.max(...s.actMix);
+  $('deathStack').innerHTML = Object.entries(s.deathsBy).map(([k, v]) => `<i style="width:${v / tot * 100}%;background:${DEATHC[k] || C.dim}"></i>`).join('');
+  $('deathKey').innerHTML = Object.entries(s.deathsBy).map(([k, v]) => `<span><i style="background:${DEATHC[k] || C.dim}"></i>${DEATHL[k] || k} <b class="num">${Math.round(v / tot * 100)}%</b></span>`).join('');
+  $('sensBars').innerHTML = s.sensUse.filter(([k]) => k !== 'bias').slice(0, 12).map(([k, v]) => `<div class="bar"><div class="bt"><i style="width:${v * 100}%"></i><span>${esc(meta.senses[k] || k)}</span></div><b>${Math.round(v * 100)}%</b></div>`).join('');
+  const mxA = Math.max(...s.actMix, 1e-9);
   $('actBars').innerHTML = s.actMix.map((v, i) => [v, i]).sort((a, b) => b[0] - a[0]).map(([v, i]) => `<div class="bar${v === mxA ? ' hl' : ''}"><div class="bt"><i style="width:${v / mxA * 100}%"></i><span>${meta.actions[i]}</span></div><b>${(v * 100).toFixed(1)}%</b></div>`).join('');
-  $('elite').innerHTML = s.eliteTop.length ? s.eliteTop.map(e => `<span class="chip dead" title="Score ${e.score}"><i style="background:hsl(${e.hue|0} 72% 66%)"></i>#${e.id} · gen ${e.gen}</span>`).join('') : '<span class="note">Filled as agents die.</span>';
+  $('elite').innerHTML = s.eliteTop.length ? s.eliteTop.map(e => `<span class="chip dead" title="Score ${e.score}"><i style="background:hsl(${e.hue | 0} 72% 66%)"></i>#${e.id} · gen ${e.gen}</span>`).join('') : '<span class="note">Filled as agents die.</span>';
   $('log').innerHTML = s.events.slice(0, 30).map(e => `<div><time>${fmt(e.t)}</time><i style="background:${KCOL[e.kind] || C.muted}"></i><span>${esc(e.s)}</span></div>`).join('');
 }
-const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 /* ================= inspector ================= */
 let pane = 'pMind';
 document.querySelectorAll('[data-pane]').forEach(b => b.onclick = () => { pane = b.dataset.pane; document.querySelectorAll('[data-pane]').forEach(x => x.classList.toggle('on', x === b)); document.querySelectorAll('.pane').forEach(p => p.hidden = p.id !== pane); renderInspector(); });
-const TRAITS = [['strength', 'Strength', .2, 3, 2], ['speed', 'Speed', .2, 3, 2], ['thermal', 'Thermal tol.', .2, 2.5, 2], ['sense', 'Sensing range', 30, 210, 0], ['social', 'Sociability', .2, 2.5, 2], ['budget', 'Body budget', 2, 15, 1], ['explore', 'Exploration', .02, 2.8, 2], ['lr', 'Learning rate', .0001, .15, 4]];
-const SHORT = ['N', 'E', 'S', 'W', 'Harvest', 'Eat', 'Deposit', 'House', 'Store', 'Wall', 'Fire', 'Repair', 'Signal', 'Rest'];
+const TRAITS = [['strength', 'Strength', .2, 3, 2], ['speed', 'Speed', .2, 3, 2], ['aggression', 'Aggression', .05, 3, 2], ['thermal', 'Thermal tol.', .2, 2.5, 2], ['sense', 'Sensing range', 30, 210, 0], ['social', 'Sociability', .2, 2.5, 2], ['budget', 'Body budget', 2, 15, 1], ['explore', 'Exploration', .02, 2.8, 2], ['lr', 'Learning rate', .0001, .15, 4]];
 function renderInspector() {
   const m = insp; if (!m || !$('dInspect').classList.contains('open')) return;
   const dead = m.none && m.id === selected;
@@ -667,8 +845,10 @@ function renderInspector() {
   $('iSub').textContent = `Generation ${m.gen} · age ${fmt(m.age)} · ${m.kids} offspring`;
   const badges = [];
   badges.push(m.sheltered ? ['Sheltered', 'good'] : ['Exposed', '']);
+  if (m.tool > 0) badges.push([`Tool ${m.tool}`, 'good']);
   if (m.energy < 30) badges.push(['Starving', 'bad']); else if (m.energy > 135) badges.push(['Ready to breed', 'good']);
   if (m.health < 40) badges.push(['Injured', 'bad']);
+  if (m.pain > .3) badges.push(['Under attack', 'bad']);
   if (m.temp < 10) badges.push([`Cold ${m.temp.toFixed(0)}°`, 'warn']); else if (m.temp > 31) badges.push([`Hot ${m.temp.toFixed(0)}°`, 'warn']);
   $('iBadges').innerHTML = badges.map(([t, c]) => `<span class="badge ${c}">${t}</span>`).join('');
   meter('E', m.energy, 200, m.energy.toFixed(0)); meter('H', m.health, 100, m.health.toFixed(0));
@@ -683,21 +863,25 @@ function probBars(m) {
   const order = m.probs.map((p, i) => [p, i]).sort((a, b) => b[0] - a[0]).slice(0, 6), mx = order[0][0];
   $('probBars').innerHTML = order.map(([p, i]) => `<div class="bar${i === m.lastChoice ? ' hl' : ''}"><div class="bt"><i style="width:${p / mx * 100}%"></i><span>${meta.actions[i]}${i === m.lastChoice ? ' · chosen' : ''}</span></div><b>${(p * 100).toFixed(1)}%</b></div>`).join('');
   $('iLayers').textContent = m.sizes.join(' → ');
+  $('contKV').innerHTML = [['Voice', m.signal], ['Memory A', m.memA], ['Memory B', m.memB]].map(([k, v]) => `<div><span>${k}</span><b>${v >= 0 ? '+' : ''}${v.toFixed(2)}</b></div>`).join('');
 }
 function bodyPane(m) {
   const avg = stats ? stats.traits : {};
   $('traitList').innerHTML = TRAITS.map(([k, label, lo, hi, d]) => {
-    const v = m.traits[k], f = clamp((v - lo) / (hi - lo), 0, 1), a = avg[k] != null ? clamp((avg[k] - lo) / (hi - lo), 0, 1) : null;
+    const v = m.traits[k] ?? 0, f = clamp((v - lo) / (hi - lo), 0, 1), a = avg[k] != null ? clamp((avg[k] - lo) / (hi - lo), 0, 1) : null;
     return `<div class="trait"><span>${label}</span><div class="tr"><i style="width:${f * 100}%"></i>${a != null ? `<u style="left:${a * 100}%"></u>` : ''}</div><b>${v.toFixed(d)}</b></div>`;
   }).join('');
-  const kv = [['Food carried', m.inv.food], ['Wood carried', m.inv.wood], ['Stone carried', m.inv.stone], ['Trait cost', m.cost.toFixed(2)], ['Metabolism', m.metab.toFixed(2) + '×'], ['Felt temp.', m.temp.toFixed(1) + '°C'], ['Built', m.builds], ['Harvested', m.success], ['Memory', m.memory.toFixed(2)], ['Lifespan', fmt(m.lifespan)], ['Last act', SHORT[m.lastChoice]], ['Position', `${m.x | 0}, ${m.y | 0}`]];
+  const d = m.deeds;
+  $('deedKV').innerHTML = [['Food shared', d.shared], ['Food stolen', d.stolen], ['Attacks', d.attacks], ['Agents killed', d.kills], ['Beast hits', d.hunts], ['Beasts slain', d.beastKills], ['Tools made', d.crafts], ['Items stored', d.deposits], ['Built', d.builds], ['Harvested', m.success]]
+    .map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join('');
+  const kv = [['Food carried', m.inv.food], ['Wood carried', m.inv.wood], ['Stone carried', m.inv.stone], ['Tool uses left', m.tool], ['Trait cost', m.cost.toFixed(2)], ['Metabolism', m.metab.toFixed(2) + '×'], ['Brain upkeep', m.brainCost.toFixed(3)], ['Felt temp.', m.temp.toFixed(1) + '°C'], ['Lifespan', fmt(m.lifespan)], ['Last act', meta.short[m.lastChoice]], ['Position', `${m.x | 0}, ${m.y | 0}`], ['Energy trend', m.memory.toFixed(2)]];
   $('bodyKV').innerHTML = kv.map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join('');
 }
 function socialPane(m) {
   $('trustBars').innerHTML = m.trust.length ? m.trust.map(t => {
     const w = Math.abs(t.v) * 50, left = t.v < 0 ? 50 - w : 50;
     return `<div class="bar"><div class="bt" style="cursor:${t.alive ? 'pointer' : 'default'}" ${t.alive ? `data-goto="${t.id}"` : ''}><i style="left:${left}%;width:${w}%;background:${t.v < 0 ? 'rgba(242,131,111,.4)' : 'rgba(126,214,176,.35)'}"></i><span style="${t.alive ? '' : 'color:var(--dim)'}">#${t.id}${t.alive ? '' : ' · gone'}</span></div><b>${t.v > 0 ? '+' : ''}${t.v.toFixed(2)}</b></div>`;
-  }).join('') : '<p class="note">No relationships yet. Trust forms when agents meet and signal.</p>';
+  }).join('') : '<p class="note">No relationships yet. Trust rises when food is shared and falls after attacks or theft.</p>';
   $('kidChips').innerHTML = m.livingKids.length ? m.livingKids.map(k => `<button class="chip" data-goto="${k.id}"><i style="background:${hueFill[k.hue | 0]}"></i>#${k.id}</button>`).join('') : '<p class="note">None alive right now.</p>';
 }
 function linePane(m) {
@@ -712,51 +896,55 @@ $('dInspect').addEventListener('click', e => { const g = e.target.closest('[data
 let brainNodes = [], brainHover = null;
 function drawBrain(m) {
   const c = $('brain'), s = setupCanvas(c); if (!s) return; const { g, w, h } = s;
-  const L = m.sizes.length, padL = 78, padR = 66, padT = 22, padB = 12;
+  const L = m.sizes.length, padL = 78, padR = 62, padT = 22, padB = 10;
   const xs = m.sizes.map((_, l) => padL + l * (w - padL - padR) / (L - 1));
   const pos = m.sizes.map((n, l) => Array.from({ length: n }, (_, i) => ({ x: xs[l], y: n === 1 ? (padT + h - padB) / 2 : padT + i * (h - padT - padB) / (n - 1) })));
   brainNodes = [];
-  const hv = brainHover;
+  const hv = brainHover, thr = m.ws.reduce((s, x) => s + x.length, 0) > 900 ? .3 : .15;
   for (let l = 0; l < m.ws.length; l++) {
     const wl = m.ws[l], cols = m.sizes[l], rows = m.sizes[l + 1];
     for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
-      const v = wl[j * cols + i]; if (Math.abs(v) < .15) continue;
+      const v = wl[j * cols + i]; if (Math.abs(v) < thr) continue;
       const lit = hv && ((hv.l === l && hv.j === i) || (hv.l === l + 1 && hv.j === j));
-      const a = clamp(Math.abs(v) / 2.4, .05, .7) * (hv ? (lit ? 1.4 : .25) : 1);
-      g.strokeStyle = v > 0 ? `rgba(126,214,176,${a})` : `rgba(242,131,111,${a})`; g.lineWidth = .4 + Math.abs(v) * .55;
+      const a = clamp(Math.abs(v) / 2.4, .05, .7) * (hv ? (lit ? 1.4 : .2) : 1);
+      g.strokeStyle = v > 0 ? `rgba(126,214,176,${a})` : `rgba(242,131,111,${a})`; g.lineWidth = .4 + Math.abs(v) * .5;
       const p = pos[l][i], q = pos[l + 1][j]; g.beginPath(); g.moveTo(p.x, p.y); g.bezierCurveTo((p.x + q.x) / 2, p.y, (p.x + q.x) / 2, q.y, q.x, q.y); g.stroke();
     }
   }
-  g.font = '10px "JetBrains Mono",monospace'; g.textBaseline = 'middle';
+  const O = meta.short.length, fs = Math.max(8, Math.min(10, (h - padT) / Math.max(...m.sizes) * .9));
+  g.textBaseline = 'middle';
   for (let l = 0; l < L; l++) {
+    g.font = `${fs}px "JetBrains Mono",monospace`;
     for (let j = 0; j < m.sizes[l]; j++) {
-      const p = pos[l][j], v = m.acts[l][j] || 0, out = l === L - 1, chosen = out && j === m.lastChoice;
-      const r = out ? 3 + m.probs[j] * 9 : 3.5 + Math.abs(v) * 2.5;
+      const p = pos[l][j], v = m.acts[l][j] || 0, out = l === L - 1, disc = out && j < O, chosen = disc && j === m.lastChoice;
+      const r = disc ? 2.5 + m.probs[j] * 9 : 3 + Math.abs(v) * 2.2;
       g.beginPath(); g.arc(p.x, p.y, r, 0, TAU);
-      g.fillStyle = out ? (chosen ? C.accent : `rgba(231,239,233,${.25 + m.probs[j] * 2})`) : v >= 0 ? `rgba(126,214,176,${.35 + Math.abs(v) * .65})` : `rgba(242,131,111,${.35 + Math.abs(v) * .65})`;
+      g.fillStyle = disc ? (chosen ? C.accent : `rgba(231,239,233,${.25 + m.probs[j] * 2})`) : out ? 'rgba(201,179,230,.85)' : v >= 0 ? `rgba(126,214,176,${.35 + Math.abs(v) * .65})` : `rgba(242,131,111,${.35 + Math.abs(v) * .65})`;
       g.fill(); if (chosen) { g.strokeStyle = C.accent; g.lineWidth = 1.2; g.beginPath(); g.arc(p.x, p.y, r + 3, 0, TAU); g.stroke(); }
-      if (l === 0) { g.textAlign = 'right'; g.fillStyle = C.muted; g.fillText(m.inputs[j], p.x - 9, p.y); }
-      if (out) { g.textAlign = 'left'; g.fillStyle = chosen ? C.accent : C.muted; g.fillText(SHORT[j], p.x + 12, p.y); }
+      if (l === 0) { g.textAlign = 'right'; g.fillStyle = C.muted; g.fillText(m.inputs[j], p.x - 8, p.y); }
+      if (out) { g.textAlign = 'left'; g.fillStyle = chosen ? C.accent : disc ? C.muted : C.wall; g.fillText(disc ? meta.short[j] : meta.cont[j - O], p.x + 10, p.y); }
       brainNodes.push({ x: p.x, y: p.y, l, j, v });
     }
     g.textAlign = 'center'; g.fillStyle = C.dim; g.font = '600 9px "Instrument Sans",sans-serif';
-    g.fillText(l === 0 ? 'SENSES' : l === L - 1 ? 'ACTIONS' : `H${l}`, xs[l], 9); g.font = '10px "JetBrains Mono",monospace';
+    g.fillText(l === 0 ? 'SENSES' : l === L - 1 ? 'OUTPUTS' : `H${l}`, xs[l], 9);
   }
 }
-$('brain').addEventListener('pointermove', e => {
+function brainPoint(e) {
   const r = $('brain').getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
-  const n = brainNodes.find(n => Math.hypot(n.x - x, n.y - y) < 9);
+  const n = brainNodes.find(n => Math.hypot(n.x - x, n.y - y) < (e.pointerType === 'mouse' ? 8 : 14));
   brainHover = n ? { l: n.l, j: n.j } : null;
   if (!insp || insp.none) return;
   if (n) {
-    const m = insp, L = m.sizes.length;
-    const label = n.l === 0 ? `${m.inputs[n.j]} · ${meta.senses[m.inputs[n.j]]}` : n.l === L - 1 ? `${meta.actions[n.j]} · ${(m.probs[n.j] * 100).toFixed(1)}% chance` : `Hidden layer ${n.l}, neuron ${n.j + 1}`;
+    const m = insp, L = m.sizes.length, O = meta.short.length;
+    const label = n.l === 0 ? `${m.inputs[n.j]} · ${meta.senses[m.inputs[n.j]] || ''}` : n.l === L - 1 ? (n.j < O ? `${meta.actions[n.j]} · ${(m.probs[n.j] * 100).toFixed(1)}% chance` : `${meta.cont[n.j - O]} (continuous output)`) : `Hidden layer ${n.l}, neuron ${n.j + 1}`;
     let links = 0; if (n.l) { const cols = m.sizes[n.l - 1]; for (let i = 0; i < cols; i++) if (Math.abs(m.ws[n.l - 1][n.j * cols + i]) > .15) links++; }
     $('brainInfo').innerHTML = `<b>${esc(label)}</b> · activation ${n.v.toFixed(3)}${n.l ? ` · ${links} strong inputs` : ''}`;
-  } else $('brainInfo').textContent = 'Hover a neuron to read it. Teal links excite, coral links inhibit.';
+  } else $('brainInfo').textContent = 'Hover or tap a neuron to read it. Teal links excite, coral links inhibit.';
   drawBrain(insp);
-});
-$('brain').addEventListener('pointerleave', () => { brainHover = null; if (insp && !insp.none) drawBrain(insp); });
+}
+$('brain').addEventListener('pointermove', brainPoint);
+$('brain').addEventListener('pointerdown', brainPoint);
+$('brain').addEventListener('pointerleave', e => { if (e.pointerType !== 'mouse') return; brainHover = null; if (insp && !insp.none) drawBrain(insp); });
 addEventListener('resize', () => { if (insp && !insp.none && pane === 'pMind') drawBrain(insp); renderStats(); });
 
 /* ================= touch & quality of life ================= */
@@ -764,7 +952,7 @@ addEventListener('resize', () => { if (insp && !insp.none && pane === 'pMind') d
 document.querySelectorAll('.drawer .dh').forEach(h => {
   let y0 = null, id = null;
   h.addEventListener('pointerdown', e => { if (e.pointerType === 'mouse' || e.target.closest('button')) return; y0 = e.clientY; id = e.pointerId; h.setPointerCapture(id); });
-  h.addEventListener('pointermove', e => { if (y0 == null || e.pointerId !== id) return; const dy = Math.max(0, e.clientY - y0); if (window.getComputedStyle(h.parentElement).borderTopLeftRadius !== '16px') return; h.parentElement.style.transform = `translateY(${dy}px)`; h.parentElement.style.transition = 'none'; });
+  h.addEventListener('pointermove', e => { if (y0 == null || e.pointerId !== id) return; if (getComputedStyle(h.parentElement).borderTopLeftRadius !== '16px') return; h.parentElement.style.transform = `translateY(${Math.max(0, e.clientY - y0)}px)`; h.parentElement.style.transition = 'none'; });
   const end = e => { if (y0 == null) return; const dy = e.clientY - y0, d = h.parentElement; d.style.transform = ''; d.style.transition = ''; y0 = null; if (dy > 70) closeDrawer(d.id); };
   h.addEventListener('pointerup', end); h.addEventListener('pointercancel', end);
 });
@@ -772,24 +960,25 @@ document.querySelectorAll('.drawer .dh').forEach(h => {
 let wake = null;
 async function syncWake() {
   try {
-    if (running && document.visibilityState === 'visible' && !wake && navigator.wakeLock) { wake = await navigator.wakeLock.request('screen'); wake.addEventListener('release', () => { wake = null; }); }
-    else if ((!running || document.visibilityState !== 'visible') && wake) { await wake.release(); wake = null; }
+    const want = ui.wake && running && document.visibilityState === 'visible';
+    if (want && !wake && navigator.wakeLock) { wake = await navigator.wakeLock.request('screen'); wake.addEventListener('release', () => { wake = null; }); }
+    else if (!want && wake) { await wake.release(); wake = null; }
   } catch { wake = null; }
 }
 addEventListener('pointerdown', syncWake, { once: true });
-const _setRunning = setRunning;
-setRunning = v => { _setRunning(v); syncWake(); };
-// pause while hidden, resume on return
 let hiddenPaused = false;
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') { if (ui.hidePause && running) { hiddenPaused = true; _setRunning(false); } if (ui.auto) send('save', { purpose: 'auto' }); }
-  else if (hiddenPaused) { hiddenPaused = false; _setRunning(true); }
+  if (document.visibilityState === 'hidden') { if (ui.hidePause && running) { hiddenPaused = true; running = false; send('play', { running: false }); paintPlay(); } if (ui.auto) send('save', { purpose: 'auto' }); }
+  else if (hiddenPaused) { hiddenPaused = false; setRunning(true); }
   syncWake();
 });
-for (const [id, key] of [['oAuto', 'auto'], ['oHidePause', 'hidePause']]) { $(id).checked = ui[key]; $(id).onchange = () => { ui[key] = $(id).checked; store.set('alife.ui', ui); }; }
 setInterval(() => { if (ui.auto && running && F && F.ticks > 200) send('save', { purpose: 'auto' }); }, 120000);
-// touch-specific coach copy and resume prompt
+applyUi();
+
+/* coach mark & resume prompt */
 if (isTouch) $('coachText').innerHTML = '<b>Tap an agent</b> to read its mind · <b>pinch</b> to zoom · <b>drag</b> to pan · <b>double-tap</b> to zoom in';
+if (!store.get('alife.coached11', false)) $('coach').hidden = false;
+$('coachOk').onclick = () => { $('coach').hidden = true; store.set('alife.coached11', true); };
 (() => {
   const m = store.get('alife.saveMeta', null);
   if (!m || !m.ticks) return;

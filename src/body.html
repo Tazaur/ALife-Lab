@@ -5,23 +5,23 @@
   <header class="top">
     <div class="brand glass">
       <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14" fill="none" stroke="#f3c96b" stroke-width="1.5" opacity=".5"/><circle cx="16" cy="16" r="9" fill="none" stroke="#7ed6b0" stroke-width="1.2" stroke-dasharray="2 3"/><circle cx="16" cy="16" r="4" fill="#f3c96b"/><circle cx="25" cy="10" r="2" fill="#8fd67a"/><circle cx="8" cy="22" r="1.6" fill="#7fd8ea"/></svg>
-      <h1>ALife <span>Lab</span><small>1.0</small></h1>
+      <h1>ALife <span>Lab</span><small>1.1</small></h1>
     </div>
     <div class="readouts glass" role="status">
       <div class="ro"><small><span class="lg">Living</span><span class="sh">Pop</span></small><b id="roPop">0</b></div>
       <div class="ro"><small><span class="lg">Generation</span><span class="sh">Gen</span></small><b id="roGen">0</b></div>
-      <div class="ro opt2"><small>Built</small><b id="roBuilt">0</b></div>
-      <div class="ro opt"><small>Food</small><b id="roFood">0</b></div>
+      <div class="ro opt2"><small>Beasts</small><b id="roBeasts">0</b></div>
+      <div class="ro opt"><small>Built</small><b id="roBuilt">0</b></div>
       <div class="ro"><small id="roDayL">Day 1</small><b id="roTemp"><span class="sun" id="sun"></span>19°</b></div>
-      <div class="ro opt"><small>Tick</small><b id="roTick">0</b></div>
+      <div class="ro opt"><small>Ticks / s</small><b id="roTps">0</b></div>
     </div>
     <div class="grow"></div>
     <nav class="topbtns glass">
       <button class="ib" id="bStats" data-tip="Population stats" data-key="S"><svg class="i" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span class="lbl">Stats</span></button>
-      <button class="ib" id="bClimate" data-tip="Climate & pressures" data-key="C"><svg class="i" viewBox="0 0 24 24"><path d="M14 14.8V4a2 2 0 0 0-4 0v10.8a4 4 0 1 0 4 0z"/><path d="M12 10v7"/></svg><span class="lbl">Climate</span></button>
-      <button class="ib" id="bSettings" data-tip="Settings & saves"><svg class="i" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg></button>
-      <button class="ib" id="bFit" data-tip="Fit world to screen" data-key="0"><svg class="i" viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="2"/><path d="M9 3h6M9 21h6"/></svg></button>
-      <button class="ib" id="bFull" data-tip="Fullscreen"><svg class="i" viewBox="0 0 24 24"><path d="M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5"/></svg></button>
+      <button class="ib" id="bClimate" data-tip="Climate, beasts & evolution settings" data-key="C"><svg class="i" viewBox="0 0 24 24"><path d="M14 14.8V4a2 2 0 0 0-4 0v10.8a4 4 0 1 0 4 0z"/><path d="M12 10v7"/></svg><span class="lbl">World</span></button>
+      <button class="ib" id="bSettings" data-tip="Display, saves & shortcuts"><svg class="i" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg><span class="lbl">Settings</span></button>
+      <button class="ib" id="bFit" data-tip="Show the whole map" data-key="0"><svg class="i" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/><rect x="8" y="8" width="8" height="8" rx="1"/></svg><span class="lbl">Fit</span></button>
+      <button class="ib" id="bFull" data-tip="Fullscreen" data-key="F11"><svg class="i" viewBox="0 0 24 24" id="fullIco"><path d="M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5"/></svg><span class="lbl">Full</span></button>
     </nav>
   </header>
 
@@ -29,7 +29,7 @@
 
   <!-- Stats drawer -->
   <aside class="drawer left glass" id="dStats" aria-label="Population stats">
-    <div class="dh"><i class="grab"></i><h2>Population<small id="statsSub">Live evolutionary metrics</small></h2><button class="ib" data-close="dStats" aria-label="Close"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
+    <div class="dh"><h2>Population<small id="statsSub">Live evolutionary metrics</small></h2><button class="ib" data-close="dStats" aria-label="Close"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
     <div class="db">
       <div class="figs">
         <div class="fig"><b id="fPop">0</b><small>Living now · peak <span id="fPeak" class="num">0</span></small></div>
@@ -37,9 +37,14 @@
         <div class="fig"><b id="fBD">0</b><small>Births / deaths</small></div>
         <div class="fig"><b id="fBuilt">0</b><small id="fBuiltSub">Structures</small></div>
       </div>
-      <section class="sec"><h3>Population &amp; structures <span id="hSpan"></span></h3><canvas class="chart tall" id="cPop"></canvas><div class="key"><span><i style="background:#7ed6b0"></i>Population</span><span><i style="background:#f0c87e"></i>Structures</span></div></section>
+      <section class="sec"><h3>Population &amp; structures <span id="hSpan"></span></h3><canvas class="chart tall" id="cPop"></canvas><div class="key"><span><i style="background:#7ed6b0"></i>Population</span><span><i style="background:#f0c87e"></i>Structures</span><span><i style="background:#e26d5a"></i>Beasts × 10</span></div></section>
+      <section class="sec"><h3>Behavior <span>events per 100 ticks</span></h3>
+        <canvas class="chart tall" id="cBeh"></canvas>
+        <div class="key"><span><i style="background:#7ed6b0"></i>Sharing</span><span><i style="background:#f2836f"></i>Thefts</span><span><i style="background:#e26d5a;opacity:.55"></i>Attacks ÷ 10</span><span><i style="background:#f0b35a"></i>Hunts</span><span><i style="background:#c9b3e6"></i>Tools made</span><span><i style="background:#7fd8ea"></i>Stored</span></div>
+        <div class="figs" id="behFigs"></div>
+      </section>
       <section class="sec"><h3>Average generation</h3><canvas class="chart" id="cGen"></canvas></section>
-      <section class="sec"><h3>Body drift</h3><canvas class="chart" id="cBody"></canvas><div class="key"><span><i style="background:#f2836f"></i>Strength</span><span><i style="background:#7fd8ea"></i>Speed</span><span><i style="background:#c9b3e6"></i>Sense ÷ 100</span><span><i style="background:#f3c96b"></i>Brain size ÷ 30</span></div></section>
+      <section class="sec"><h3>Body &amp; temperament drift</h3><canvas class="chart" id="cBody"></canvas><div class="key"><span><i style="background:#f2836f"></i>Strength</span><span><i style="background:#7fd8ea"></i>Speed</span><span><i style="background:#c9b3e6"></i>Sense ÷ 100</span><span><i style="background:#e26d5a"></i>Aggression</span><span><i style="background:#f3c96b"></i>Brain size ÷ 50</span></div></section>
       <section class="sec"><h3>How they died</h3><div class="stack" id="deathStack"></div><div class="key" id="deathKey"></div></section>
       <section class="sec"><h3>What they sense <span>share of brains wired to it</span></h3><div class="bars" id="sensBars"></div></section>
       <section class="sec"><h3>What they do <span>average action mix</span></h3><div class="bars" id="actBars"></div></section>
@@ -48,9 +53,9 @@
     </div>
   </aside>
 
-  <!-- Climate drawer -->
-  <aside class="drawer left glass" id="dClimate" aria-label="Climate and pressures">
-    <div class="dh"><i class="grab"></i><h2>Climate<small>Shapes the world, never the genes directly</small></h2><button class="ib" data-close="dClimate" aria-label="Close"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
+  <!-- World drawer -->
+  <aside class="drawer left glass" id="dClimate" aria-label="World settings">
+    <div class="dh"><h2>World<small>Climate, predators and the pace of evolution</small></h2><button class="ib" data-close="dClimate" aria-label="Close"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
     <div class="db">
       <section class="sec"><h3>Biome presets</h3><div class="presets" id="presets"></div></section>
       <section class="sec"><h3>Interventions</h3>
@@ -61,30 +66,35 @@
           <button class="btn" id="eHeat"><svg class="i" viewBox="0 0 24 24" style="color:var(--heat)"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>Heatwave +12°</button>
         </div>
       </section>
-      <section class="sec"><h3>World parameters</h3><div class="sec" id="sliders" style="gap:14px"></div></section>
+      <section class="sec"><h3>Climate &amp; resources</h3><div class="sec" id="sliders" style="gap:14px"></div></section>
+      <section class="sec"><h3>Predators &amp; evolution</h3><div class="sec" id="sliders2" style="gap:14px"></div>
+        <label class="toggle"><span>Lifetime learning<small>Brains also adjust during life from rewards. Off is faster but evolution-only.</small></span><span class="sw"><input type="checkbox" id="oLearn" checked><i></i></span></label>
+        <label class="toggle"><span>Reseed on extinction<small>Restart from the hall-of-fame genomes if everyone dies</small></span><span class="sw"><input type="checkbox" id="oReseed" checked><i></i></span></label>
+      </section>
     </div>
   </aside>
 
   <!-- Settings drawer -->
   <aside class="drawer left glass" id="dSettings" aria-label="Settings">
-    <div class="dh"><i class="grab"></i><h2>Settings<small>View options, saves and shortcuts</small></h2><button class="ib" data-close="dSettings" aria-label="Close"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
+    <div class="dh"><h2>Settings<small>View options, saves and shortcuts</small></h2><button class="ib" data-close="dSettings" aria-label="Close"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
     <div class="db">
       <section class="sec"><h3>Display</h3>
         <div>
           <label class="toggle"><span>Day and night lighting<small>Darkens the map at night; fires glow</small></span><span class="sw"><input type="checkbox" id="oNight" checked><i></i></span></label>
+          <label class="toggle"><span>Action effects<small>Flashes for sharing, attacks, hunts and crafting</small></span><span class="sw"><input type="checkbox" id="oFx" checked><i></i></span></label>
           <label class="toggle"><span>Sensing radius<small>Ring around the selected agent</small></span><span class="sw"><input type="checkbox" id="oSense" checked><i></i></span></label>
           <label class="toggle"><span>Movement trail<small>Recent path of the selected agent</small></span><span class="sw"><input type="checkbox" id="oTrail" checked><i></i></span></label>
           <label class="toggle"><span>Map legend</span><span class="sw"><input type="checkbox" id="oLegend" checked><i></i></span></label>
           <label class="toggle"><span>Performance readout</span><span class="sw"><input type="checkbox" id="oPerf" checked><i></i></span></label>
         </div>
       </section>
-      <section class="sec"><h3>Simulation</h3>
+      <section class="sec"><h3>Running</h3>
         <label class="toggle"><span>Autosave<small>Saves to this browser every 2 minutes while running</small></span><span class="sw"><input type="checkbox" id="oAuto" checked><i></i></span></label>
         <label class="toggle"><span>Pause when hidden<small>Stops the simulation while this tab is in the background</small></span><span class="sw"><input type="checkbox" id="oHidePause" checked><i></i></span></label>
-        <label class="toggle"><span>Reseed on extinction<small>Restart from the hall-of-fame genomes if everyone dies</small></span><span class="sw"><input type="checkbox" id="oReseed" checked><i></i></span></label>
+        <label class="toggle"><span>Keep screen awake<small>Stops a phone from dimming while the colony runs</small></span><span class="sw"><input type="checkbox" id="oWake" checked><i></i></span></label>
       </section>
       <section class="sec"><h3>Saves</h3>
-        <p class="note">Browser saves stay on this device. Files include every agent, brain, resource and setting, and also load 0.6–0.9 snapshots.</p>
+        <p class="note">Browser saves stay on this device. Files include every agent, brain, resource and setting, and also load 0.6–1.0 snapshots.</p>
         <div class="row">
           <button class="btn" id="sSave">Save in browser</button>
           <button class="btn" id="sLoad">Load browser save</button>
@@ -102,25 +112,27 @@
           <kbd>Space</kbd><span>Pause or resume</span>
           <kbd>.</kbd><span>Advance 100 ticks</span>
           <kbd>− / +</kbd><span>Slower / faster</span>
-          <kbd>1–6</kbd><span>Select, food, trees, stone, fire, erase</span>
+          <kbd>M</kbd><span>Toggle hyperspeed</span>
+          <kbd>1–8</kbd><span>Select, food, tree, stone, wall, fire, beast, erase</span>
+          <kbd>[ / ]</kbd><span>Smaller / larger brush</span>
           <kbd>F</kbd><span>Follow selected agent</span>
-          <kbd>0</kbd><span>Fit world to screen</span>
-          <kbd>S / C</kbd><span>Stats / climate</span>
+          <kbd>0</kbd><span>Fit the map to the screen</span>
+          <kbd>S / C</kbd><span>Stats / world</span>
           <kbd>Esc</kbd><span>Close panels, clear selection</span>
         </div>
-        <p class="note">Mouse: scroll to zoom, drag to pan, right-drag pans with any tool, double-click zooms in. Touch: pinch to zoom, two fingers pan with any tool, double-tap zooms in, swipe a sheet down to close it.</p>
+        <p class="note">Mouse: scroll to zoom, drag to pan, right-drag pans with any brush, double-click zooms in. Touch: pinch to zoom, two fingers pan with any brush, double-tap zooms in, swipe a sheet down to close it.</p>
       </section>
     </div>
   </aside>
 
   <!-- Inspector -->
   <aside class="drawer right glass" id="dInspect" aria-label="Agent inspector">
-    <div class="dh"><i class="grab"></i>
+    <div class="dh">
       <div class="spec" style="flex:1;min-width:0">
         <div class="swatch" id="iSwatch"></div>
         <h2><span id="iTitle">Agent</span><small id="iSub"></small><div class="badges" id="iBadges"></div></h2>
       </div>
-      <button class="ib" id="iFollow" data-tip="Follow" data-key="F"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg></button>
+      <button class="ib" id="iFollow" data-tip="Follow with the camera" data-key="F"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg><span class="lbl">Follow</span></button>
       <button class="ib" data-close="dInspect" aria-label="Close"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
     </div>
     <div class="db" id="iBody">
@@ -130,14 +142,18 @@
         <div class="vital"><div>Life used<b id="vA">0</b></div><div class="meter"><i id="mA" style="background:var(--muted)"></i></div></div>
         <div class="vital"><div>Load<b id="vL">0</b></div><div class="meter"><i id="mL" style="background:var(--tree)"></i></div></div>
       </div>
+      <div class="sec" style="gap:6px"><h3>Jump to</h3>
       <div class="nav">
         <button class="btn sm" data-pick="parent">Parent</button>
         <button class="btn sm" data-pick="child">A child</button>
         <button class="btn sm" data-pick="random">Random</button>
         <button class="btn sm" data-pick="oldest">Oldest</button>
         <button class="btn sm" data-pick="fittest">Most kids</button>
-        <button class="btn sm" data-pick="youngest">Newest gen</button>
-      </div>
+        <button class="btn sm" data-pick="generous">Most generous</button>
+        <button class="btn sm" data-pick="violent">Most violent</button>
+        <button class="btn sm" data-pick="hunter">Top hunter</button>
+        <button class="btn sm" data-pick="builder">Top builder</button>
+      </div></div>
       <div class="tabs" role="tablist">
         <button class="on" data-pane="pMind">Mind</button>
         <button data-pane="pBody">Body</button>
@@ -145,13 +161,17 @@
         <button data-pane="pLine">Lineage</button>
       </div>
       <div class="pane sec" id="pMind">
-        <div class="brainwrap"><canvas id="brain"></canvas><div class="braininfo" id="brainInfo">Hover a neuron to read it.</div></div>
+        <div class="brainwrap"><canvas id="brain"></canvas><div class="braininfo" id="brainInfo">Hover or tap a neuron to read it. Teal links excite, coral links inhibit.</div></div>
         <h3>Next-action odds <span id="iLayers"></span></h3>
         <div class="bars" id="probBars"></div>
+        <h3>Continuous outputs</h3>
+        <div class="kv" id="contKV"></div>
       </div>
       <div class="pane sec" id="pBody" hidden>
         <h3>Traits <span>marker = population average</span></h3>
         <div class="sec" id="traitList" style="gap:7px"></div>
+        <h3>Lifetime deeds</h3>
+        <div class="kv" id="deedKV"></div>
         <h3>State</h3>
         <div class="kv" id="bodyKV"></div>
       </div>
@@ -171,39 +191,54 @@
 
   <div class="legend glass" id="legend">
     <span><i style="background:var(--food)"></i>Food</span>
-    <span><i style="background:var(--tree)"></i>Tree</span>
+    <span><i style="background:var(--tree)"></i>Wood</span>
     <span><i style="background:var(--stone)"></i>Stone</span>
     <span><i class="sq" style="background:var(--house)"></i>House</span>
     <span><i class="sq" style="background:var(--store)"></i>Store</span>
     <span><i class="sq" style="background:var(--wall)"></i>Wall</span>
     <span><i style="background:var(--fire)"></i>Fire</span>
+    <span><i style="background:var(--beast)"></i>Beast</span>
   </div>
   <div class="perf" id="perf">Starting…</div>
   <div class="coach glass" id="coach" hidden><span id="coachText"><b>Tap an agent</b> to read its mind · <b>scroll</b> to zoom · <b>drag</b> to pan · pick a brush to paint</span><div class="row"><button class="btn sm pri" id="coachResume" hidden>Resume</button><button class="btn sm" id="coachOk">Got it</button></div></div>
 
-  <div class="dock glass" id="dock">
-    <div class="dg">
-      <button class="tool play" id="bPlay" data-tip="Pause" data-key="Space"></button>
-      <button class="tool" id="bStep" data-tip="Advance 100 ticks" data-key="."><svg class="i" viewBox="0 0 24 24"><path d="M6 5v14M10 5l9 7-9 7z"/></svg></button>
-      <div class="speed" data-tip="Simulation speed" data-key="− +"><button id="spDown" aria-label="Slower"><svg class="i" viewBox="0 0 24 24"><path d="M6 12h12"/></svg></button><output id="spOut">3×</output><button id="spUp" aria-label="Faster"><svg class="i" viewBox="0 0 24 24"><path d="M12 6v12M6 12h12"/></svg></button></div>
+  <div class="bottom" id="bottom">
+    <div class="ctx glass" id="ctx">
+      <div class="ctxIco" id="ctxIco"></div>
+      <div class="ctxText"><b id="ctxName">Select &amp; pan</b><span id="ctxHint"></span></div>
+      <div class="ctxOpts" id="ctxOpts">
+        <label class="mini" id="optSize"><span>Size</span><input type="range" id="brushSize" min="8" max="70" step="1" value="22"><output id="brushSizeV" class="num">22</output></label>
+        <label class="mini" id="optAmt"><span>Amount</span><input type="range" id="brushAmt" min=".25" max="3" step=".25" value="1"><output id="brushAmtV" class="num">1×</output></label>
+        <button class="btn sm" id="ctxInspect" hidden>Open inspector</button>
+      </div>
     </div>
-    <div class="dsep"></div>
-    <div class="dg" id="tools">
-      <button class="tool on" data-tool="select" data-tip="Select &amp; pan" data-key="1"><kbd>1</kbd><svg class="i" viewBox="0 0 24 24"><path d="M5 3l13 8-6 1.5L9 19z"/></svg></button>
-      <button class="tool" data-tool="food" data-tip="Paint food" data-key="2"><kbd>2</kbd><svg class="i" viewBox="0 0 24 24"><path d="M12 20c-5-3-7-7-5-10 1.5-2 3.5-2 5-.5 1.5-1.5 3.5-1.5 5 .5 2 3 0 7-5 10z"/><path d="M12 9.5C12 6 13.5 4 16 3.5"/></svg><i class="dot" style="background:var(--food)"></i></button>
-      <button class="tool" data-tool="tree" data-tip="Plant trees" data-key="3"><kbd>3</kbd><svg class="i" viewBox="0 0 24 24"><path d="M12 3 6 12h3l-4 6h14l-4-6h3z"/><path d="M12 18v3"/></svg><i class="dot" style="background:var(--tree)"></i></button>
-      <button class="tool" data-tool="stone" data-tip="Drop stone" data-key="4"><kbd>4</kbd><svg class="i" viewBox="0 0 24 24"><path d="M4 16 7.5 8l8-2.5L20 15l-6 5z"/></svg><i class="dot" style="background:var(--stone)"></i></button>
-      <button class="tool" data-tool="fire" data-tip="Light a fire" data-key="5"><kbd>5</kbd><svg class="i" viewBox="0 0 24 24"><path d="M12 21c-4 0-6-3-5-7 .6-2 2-3 2-6 2.5 1 3.5 3 3.5 4.5C14 11 14.5 8 14 5c4 3.5 5.5 7.5 4.5 11-.8 3-3.4 5-6.5 5z"/></svg><i class="dot" style="background:var(--fire)"></i></button>
-      <button class="tool" data-tool="erase" data-tip="Clear resources" data-key="6"><kbd>6</kbd><svg class="i" viewBox="0 0 24 24"><path d="M4 15 13.5 5.5l6 6L10 21H6z"/><path d="M9 21h11"/></svg></button>
-    </div>
-    <div class="dsep"></div>
-    <div class="dg">
-      <button class="tool" id="qStorm" data-tip="Send storm"><svg class="i" viewBox="0 0 24 24" style="color:var(--storm)"><path d="M7 16a4 4 0 0 1 0-8 5 5 0 0 1 9.6-1.2A3.5 3.5 0 1 1 17 16"/><path d="M11 13l-2 4h3l-2 4"/></svg></button>
-      <button class="tool" id="qBloom" data-tip="Food bloom"><svg class="i" viewBox="0 0 24 24" style="color:var(--food)"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></svg></button>
+    <div class="dock glass" id="dock">
+      <div class="dg" id="gTransport">
+        <button class="tool play" id="bPlay" data-tip="Pause" data-key="Space"></button>
+        <button class="tool" id="bStep" data-tip="Advance 100 ticks" data-key="."><svg class="i" viewBox="0 0 24 24"><path d="M6 5v14M10 5l9 7-9 7z"/></svg><span>+100</span></button>
+        <div class="speed" data-tip="Simulation speed" data-key="− + M"><button id="spDown" aria-label="Slower"><svg class="i" viewBox="0 0 24 24"><path d="M6 12h12"/></svg></button><div class="spv"><output id="spOut">3×</output><span>speed</span></div><button id="spUp" aria-label="Faster"><svg class="i" viewBox="0 0 24 24"><path d="M12 6v12M6 12h12"/></svg></button></div>
+        <button class="tool" id="bMax" data-tip="Hyperspeed: as fast as this device can go" data-key="M"><svg class="i" viewBox="0 0 24 24"><path d="M4 6l7 6-7 6zM13 6l7 6-7 6z"/></svg><span>Max</span></button>
+      </div>
+      <div class="dsep"></div>
+      <div class="dg" id="tools">
+        <button class="tool on" data-tool="select" data-tip="Select agents and pan the map" data-key="1"><svg class="i" viewBox="0 0 24 24"><path d="M5 3l13 8-6 1.5L9 19z"/></svg><span>Select</span></button>
+        <button class="tool" data-tool="food" data-tip="Paint food" data-key="2"><svg class="i" viewBox="0 0 24 24"><path d="M12 20c-5-3-7-7-5-10 1.5-2 3.5-2 5-.5 1.5-1.5 3.5-1.5 5 .5 2 3 0 7-5 10z"/><path d="M12 9.5C12 6 13.5 4 16 3.5"/></svg><span>Food</span><i class="dot" style="background:var(--food)"></i></button>
+        <button class="tool" data-tool="tree" data-tip="Plant trees (wood)" data-key="3"><svg class="i" viewBox="0 0 24 24"><path d="M12 3 6 12h3l-4 6h14l-4-6h3z"/><path d="M12 18v3"/></svg><span>Tree</span><i class="dot" style="background:var(--tree)"></i></button>
+        <button class="tool" data-tool="stone" data-tip="Drop stone" data-key="4"><svg class="i" viewBox="0 0 24 24"><path d="M4 16 7.5 8l8-2.5L20 15l-6 5z"/></svg><span>Stone</span><i class="dot" style="background:var(--stone)"></i></button>
+        <button class="tool" data-tool="wall" data-tip="Draw walls" data-key="5"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="10" rx="1"/><path d="M3 12h18M9 7v5M15 12v5"/></svg><span>Wall</span><i class="dot" style="background:var(--wall)"></i></button>
+        <button class="tool" data-tool="fire" data-tip="Light a fire" data-key="6"><svg class="i" viewBox="0 0 24 24"><path d="M12 21c-4 0-6-3-5-7 .6-2 2-3 2-6 2.5 1 3.5 3 3.5 4.5C14 11 14.5 8 14 5c4 3.5 5.5 7.5 4.5 11-.8 3-3.4 5-6.5 5z"/></svg><span>Fire</span><i class="dot" style="background:var(--fire)"></i></button>
+        <button class="tool" data-tool="beast" data-tip="Release a beast" data-key="7"><svg class="i" viewBox="0 0 24 24"><path d="M5 9 3 4l5 3M19 9l2-5-5 3"/><path d="M5 9c0 6 3 10 7 10s7-4 7-10c-2-2-4.5-3-7-3S7 7 5 9z"/><path d="M9.5 12h.01M14.5 12h.01M10 16l2 1 2-1"/></svg><span>Beast</span><i class="dot" style="background:var(--beast)"></i></button>
+        <button class="tool" data-tool="erase" data-tip="Clear resources, structures and beasts" data-key="8"><svg class="i" viewBox="0 0 24 24"><path d="M4 15 13.5 5.5l6 6L10 21H6z"/><path d="M9 21h11"/></svg><span>Erase</span></button>
+      </div>
+      <div class="dsep"></div>
+      <div class="dg" id="gEvents">
+        <button class="tool" id="qStorm" data-tip="Send a storm front"><svg class="i" viewBox="0 0 24 24" style="color:var(--storm)"><path d="M7 16a4 4 0 0 1 0-8 5 5 0 0 1 9.6-1.2A3.5 3.5 0 1 1 17 16"/><path d="M11 13l-2 4h3l-2 4"/></svg><span>Storm</span></button>
+        <button class="tool" id="qBloom" data-tip="Scatter 220 food on fertile ground"><svg class="i" viewBox="0 0 24 24" style="color:var(--food)"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></svg><span>Bloom</span></button>
+      </div>
     </div>
   </div>
 
   <div class="hover" id="hover"></div>
   <div class="tipbox" id="tip"></div>
-  <div class="modal" id="modal" hidden><div class="glass"><h2>Start a new world?</h2><p>The current colony, its brains and its history will be replaced by 100 fresh founders. Download a file first if you want to keep it.</p><div class="row" style="justify-content:flex-end"><button class="btn" id="mCancel">Keep this world</button><button class="btn pri" id="mOk">Start new world</button></div></div></div>
+  <div class="modal" id="modal" hidden><div class="glass"><h2>Start a new world?</h2><p>The current colony, its brains and its history will be replaced by 120 fresh founders on a newly generated map. Save first if you want to keep it.</p><div class="sec" style="gap:7px"><h3>Map shape</h3><div class="presets"><button class="preset" data-shape="wide"><b>Wide</b><small>Desktop, landscape</small></button><button class="preset" data-shape="tall"><b>Tall</b><small>Phone in portrait</small></button><button class="preset" data-shape="square"><b>Square</b><small>Either way</small></button></div></div><div class="row" style="justify-content:flex-end"><button class="btn" id="mCancel">Keep this world</button><button class="btn pri" id="mOk">Start new world</button></div></div></div>
 </div>
