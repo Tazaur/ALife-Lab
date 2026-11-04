@@ -292,6 +292,29 @@ button.chip:hover{border-color:var(--line-hi);background:rgba(255,255,255,.05)}
 .seg input:checked+span{background:var(--glass-hi);color:var(--fg);box-shadow:0 0 0 1px var(--line-hi)}
 .seg input:focus-visible+span{outline:2px solid var(--accent)}
 
+.islands{display:flex;gap:2px;padding:4px;height:48px;align-items:center}
+.isl{display:grid;grid-template-columns:auto auto;grid-template-rows:auto auto;column-gap:6px;align-items:baseline;padding:4px 9px;border-radius:8px;color:var(--muted);height:38px;text-align:left}
+.isl b{font:700 13px var(--f-display);grid-row:span 2;align-self:center;color:var(--fg)}
+.isl span{font-size:12px;color:var(--fg)}
+.isl small{font-size:9.5px;color:var(--dim)}
+.isl:hover{background:rgba(255,255,255,.06)}
+.isl.on{background:rgba(243,201,107,.14)}
+.isl.on b{color:var(--accent)}
+.turbo{position:absolute;inset:0;z-index:40;display:flex;align-items:center;justify-content:center;background:var(--ink);padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:16px;overflow-y:auto}
+.turboBox{display:flex;flex-direction:column;gap:14px;max-width:760px;width:100%;align-items:flex-start}
+.turboBox h2{margin:0;font:700 28px var(--f-display);letter-spacing:-.02em;color:var(--accent)}
+.tcards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;width:100%}
+.tcard{border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;display:flex;flex-direction:column;gap:6px;background:var(--glass-hi)}
+.tcard.on{border-color:rgba(243,201,107,.5)}
+.tcard>b{font:700 15px var(--f-display)}
+.tcard div{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);gap:8px}
+.tcard div b{font:500 13px var(--f-mono);color:var(--fg)}
+.tcard div b em{font-style:normal;color:var(--dim);font-size:11px}
+.sel{grid-column:1/-1;background:rgba(255,255,255,.05);border:1px solid var(--line-hi);border-radius:8px;padding:6px 8px;color:var(--fg)}
+@media (max-width:560px){ #islands{display:none} }
+@media (max-width:760px){ .islands{height:46px;padding:2px} .isl{padding:2px 6px;height:40px} .isl small{display:none} }
+@media (max-height:520px){ .islands{height:40px} .isl{height:34px} .isl small{display:none} }
+
 /* ---------- overlays ---------- */
 .legend{position:absolute;right:var(--gut);top:72px;display:flex;gap:10px;padding:7px 11px;font-size:11px;color:var(--muted);z-index:4;pointer-events:none;transition:opacity .2s}
 .legend span{display:flex;align-items:center;gap:5px;white-space:nowrap}
@@ -409,7 +432,7 @@ button.chip:hover{border-color:var(--line-hi);background:rgba(255,255,255,.05)}
   <header class="top">
     <div class="brand glass">
       <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14" fill="none" stroke="#f3c96b" stroke-width="1.5" opacity=".5"/><circle cx="16" cy="16" r="9" fill="none" stroke="#7ed6b0" stroke-width="1.2" stroke-dasharray="2 3"/><circle cx="16" cy="16" r="4" fill="#f3c96b"/><circle cx="25" cy="10" r="2" fill="#8fd67a"/><circle cx="8" cy="22" r="1.6" fill="#7fd8ea"/></svg>
-      <h1>ALife <span>Lab</span><small id="ver">build 11</small></h1>
+      <h1>ALife <span>Lab</span><small id="ver">build 12</small></h1>
     </div>
     <div class="readouts glass" role="status">
       <div class="ro"><small><span class="lg">Living</span><span class="sh">Pop</span></small><b id="roPop">0</b></div>
@@ -419,6 +442,7 @@ button.chip:hover{border-color:var(--line-hi);background:rgba(255,255,255,.05)}
       <div class="ro"><small id="roDayL">Day 1</small><b id="roTemp"><span class="sun" id="sun"></span>19°</b></div>
       <div class="ro opt"><small>Ticks / s</small><b id="roTps">0</b></div>
     </div>
+    <div class="islands glass" id="islands" aria-label="Islands"></div>
     <div class="grow"></div>
     <nav class="topbtns glass">
       <button class="ib" id="bStats" data-tip="Population stats" data-key="S"><svg class="i" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span class="lbl">Stats</span></button>
@@ -504,6 +528,12 @@ button.chip:hover{border-color:var(--line-hi);background:rgba(255,255,255,.05)}
           <label class="toggle"><span>Performance readout</span><span class="sw"><input type="checkbox" id="oPerf" checked><i></i></span></label>
         </div>
       </section>
+      <section class="sec"><h3>Islands</h3>
+        <div class="slider"><label for="islandCount">Number of islands</label><output></output><select id="islandCount" class="sel"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></div>
+        <div class="islands" id="islands2" style="height:auto;padding:0"></div>
+        <p class="note" id="coreNote"></p>
+        <p class="note">Each island is a separate world on its own CPU core. The others run unseen at full speed, and every few thousand ticks a few of an island's most successful yips migrate to another. Migration timing is under World. Saves and the inspector cover the island you are watching.</p>
+      </section>
       <section class="sec"><h3>Running</h3>
         <label class="toggle"><span>Autosave<small>Saves to this browser every 2 minutes while running</small></span><span class="sw"><input type="checkbox" id="oAuto" checked><i></i></span></label>
         <label class="toggle"><span>Pause when hidden<small>Stops the simulation while this tab is in the background</small></span><span class="sw"><input type="checkbox" id="oHidePause" checked><i></i></span></label>
@@ -523,13 +553,14 @@ button.chip:hover{border-color:var(--line-hi);background:rgba(255,255,255,.05)}
         <p class="note" id="saveInfo"></p>
         <div class="row"><button class="btn danger" id="sReset">Start a new world</button></div>
       </section>
-      <section class="sec"><h3>About</h3><p class="note">ALife Lab build 11 · 2026-11-04</p></section>
+      <section class="sec"><h3>About</h3><p class="note">ALife Lab build 12 · 2026-11-05</p></section>
       <section class="sec"><h3>Shortcuts</h3>
         <div class="keys">
           <kbd>Space</kbd><span>Pause or resume</span>
           <kbd>.</kbd><span>Advance 100 ticks</span>
           <kbd>− / +</kbd><span>Slower / faster</span>
           <kbd>M</kbd><span>Toggle hyperspeed</span>
+          <kbd>T</kbd><span>Toggle Turbo</span>
           <kbd>1–8</kbd><span>Select, food, tree, stone, wall, fire, beast, erase</span>
           <kbd>[ / ]</kbd><span>Smaller / larger brush</span>
           <kbd>F</kbd><span>Follow selected yip</span>
@@ -648,6 +679,7 @@ button.chip:hover{border-color:var(--line-hi);background:rgba(255,255,255,.05)}
         <button class="tool" id="bStep" data-tip="Advance 100 ticks" data-key="."><svg class="i" viewBox="0 0 24 24"><path d="M6 5v14M10 5l9 7-9 7z"/></svg><span>+100</span></button>
         <div class="speed" data-tip="Simulation speed" data-key="− + M"><button id="spDown" aria-label="Slower"><svg class="i" viewBox="0 0 24 24"><path d="M6 12h12"/></svg></button><div class="spv"><output id="spOut">3×</output><span>speed</span></div><button id="spUp" aria-label="Faster"><svg class="i" viewBox="0 0 24 24"><path d="M12 6v12M6 12h12"/></svg></button></div>
         <button class="tool" id="bMax" data-tip="Hyperspeed: as fast as this device can go" data-key="M"><svg class="i" viewBox="0 0 24 24"><path d="M4 6l7 6-7 6zM13 6l7 6-7 6z"/></svg><span>Max</span></button>
+        <button class="tool" id="bTurbo" data-tip="Turbo: stop drawing, pure computation" data-key="T"><svg class="i" viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg><span>Turbo</span></button>
       </div>
       <div class="dsep"></div>
       <div class="dg" id="tools">
@@ -668,6 +700,15 @@ button.chip:hover{border-color:var(--line-hi);background:rgba(255,255,255,.05)}
     </div>
   </div>
 
+  <div class="turbo" id="turbo" hidden>
+    <div class="turboBox">
+      <h2>Turbo</h2>
+      <p class="note" id="turboTotal"></p>
+      <div class="tcards" id="turboStats"></div>
+      <p class="note">Nothing is drawn and no stats are gathered, so every core goes to the simulation. Background islands always run flat out.</p>
+      <button class="btn pri" id="turboExit">Back to the map</button>
+    </div>
+  </div>
   <div class="hover" id="hover"></div>
   <div class="tipbox" id="tip"></div>
   <div class="modal" id="modal" hidden><div class="glass"><h2>Start a new world?</h2><p>The current colony, its brains and its history will be replaced by 150 fresh founders on a newly generated map. Save first if you want to keep it.</p><div class="row" style="justify-content:flex-end"><button class="btn" id="mCancel">Keep this world</button><button class="btn pri" id="mOk">Start new world</button></div></div></div>
@@ -704,7 +745,7 @@ const BTYPES = ['house','store','wall','fire'];
 const SPECS = {house:{wood:3,stone:1,hp:450,r:16},store:{wood:5,stone:4,hp:720,r:23},wall:{wood:2,stone:1,hp:420,r:15},fire:{wood:2,stone:0,hp:180,r:12}};
 const LIMITS = {layers:6, neurons:24, inputs:32};
 const DX = [0,1,0,-1], DY = [-1,0,1,0];
-const settings = {food:7.5,trees:.3,stone:.2,drain:1,decay:1,storm:1,temperature:19,day:500,season:2600,beasts:6,beastPower:1,popCap:450,mutation:1,learning:true,autoReseed:true};
+const settings = {food:7.5,trees:.3,stone:.2,drain:1,decay:1,storm:1,temperature:19,day:500,season:2600,beasts:6,beastPower:1,popCap:450,migrateEvery:3000,migrants:4,mutation:1,learning:true,autoReseed:true};
 
 // ---------- query masks ----------
 const Q = {FRIEND:1024,FOOD:1,TREE:2,STONE:4,SHELTER:8,FIRE:16,STORM:32,OTHER:64,PRED:128,CROWD:256,WALL:512};
@@ -1614,6 +1655,7 @@ function tick(){
   if (ticks%4===0){ for (let y=0;y<FH;y++) for (let x=0;x<FW;x++){ const i=x+y*FW, l=((x+FW-1)%FW)+y*FW, r=((x+1)%FW)+y*FW, u=x+((y+FH-1)%FH)*FW, d=x+((y+1)%FH)*FW; mateTmp[i]=mateSc[i]*.5+(mateSc[l]+mateSc[r]+mateSc[u]+mateSc[d])*.125; } const t=mateSc; mateSc=mateTmp; mateTmp=t; }
   if (ticks%8===0){ for (let y=0;y<FH;y++) for (let x=0;x<FW;x++){ const i=x+y*FW, l=((x+FW-1)%FW)+y*FW, r=((x+1)%FW)+y*FW, u=x+((y+FH-1)%FH)*FW, d=x+((y+1)%FH)*FW; pherTmp[i]=pher[i]*.6+(pher[l]+pher[r]+pher[u]+pher[d])*.1; } const t=pher; pher=pherTmp; pherTmp=t; }
   if (ticks%25===0) pushHistory();
+  if (settings.migrateEvery>0&&ticks%settings.migrateEvery===0) exportMigrants();
 }
 function avg(f){ if (!agents.length) return 0; let s=0; for (const a of agents) s+=f(a); return s/agents.length; }
 let lastTally={...tally};
@@ -1640,18 +1682,22 @@ function reset(newShape){
     for (const a of band) for (const o of band) if (a!==o) setTrust(a,o.id,.3); }
   for (let i=0;i<1100;i++) addItem('food'); for (let i=0;i<420;i++) addItem('tree'); for (let i=0;i<320;i++) addItem('stone');
   for (let i=0;i<settings.beasts;i++) spawnBeast();
-  selected=0; log('300 founders released in 60 bands. Fertile valleys, forests and rocky ground are spread across the map.','birth');
-  postMeta();
+  selected=0; log(`Island ${'ABCD'[island]||island+1}: 300 founders released in 60 bands. Fertile valleys, forests and rocky ground are spread across the map.`,'birth');
+  if (viewing) postMeta();
 }
 
 // ---------- serialization ----------
 const r4 = v => Math.round(v*1e4)/1e4, r2 = v => Math.round(v*100)/100;
 const serBrain = b => ({inputs:b.inputs,sizes:b.sizes,w:b.w.map(f=>Array.from(f,r4))});
 const AGENT_KEYS=['name','gen','parent','lineage','traits','perks','stash','thanksGot','lovesGot','coparent','partners','age','lifespan','inv','tool','builds','success','kids','shared','stolen','attacks','kills','hunts','beastKills','crafts','deposits'];
+function serAgent(a){
+  const o={drv:a.drv,owed:[...a.owed],id:a.id,x:r2(a.x),y:r2(a.y),hd:r2(a.hd),energy:r2(a.energy),health:r2(a.health),memory:r4(a.memory),memA:r4(a.memA),memB:r4(a.memB),baseline:r4(a.baseline),
+    trust:[...a.trust].map(([k,v])=>[k,r4(v)]),actionCounts:Array.from(a.actionCounts),brain:serBrain(a.brain),learned:a.learned.map(f=>Array.from(f,r4))};
+  for (const k of AGENT_KEYS) o[k]=a[k]; return o;
+}
 function serialize(){
   return {version:12,shape,seed,ticks,nextId,nextBid,births,deaths,deathsBy,tally,maxGen,peakPop,selected,settings:{...settings},
-    agents:agents.map(a=>{ const o={drv:a.drv,owed:[...a.owed],id:a.id,x:r2(a.x),y:r2(a.y),hd:r2(a.hd),energy:r2(a.energy),health:r2(a.health),memory:r4(a.memory),memA:r4(a.memA),memB:r4(a.memB),baseline:r4(a.baseline),
-      trust:[...a.trust].map(([k,v])=>[k,r4(v)]),actionCounts:Array.from(a.actionCounts),brain:serBrain(a.brain),learned:a.learned.map(f=>Array.from(f,r4))}; for (const k of AGENT_KEYS) o[k]=a[k]; return o; }),
+    agents:agents.map(serAgent),
     items:items.filter(i=>!i.dead).map(i=>[i.t,r2(i.x),r2(i.y),i.life|0,i.max|0]),
     buildings:buildings.map(b=>({...b,hp:r2(b.hp)})),storms,beasts:beasts.map(z=>({...z,target:null})),events,history,elite:elite.map(e=>({...e,brain:serBrain(e.brain)}))};
 }
@@ -1672,7 +1718,11 @@ function deserialize(s){
   const ow=s.version===6||s.version===10?840:s.shape==='tall'?600:s.shape==='square'?780:960, oh=s.version===6||s.version===10?520:s.shape==='tall'?960:s.shape==='square'?780:600;
   const sx=old?W/ow:1, sy=old?H/oh:1, reg=s.registry||{};
   seed=s.seed||12345; makeFields(seed);
-  const A=s.agents.map(o=>{
+  const A=s.agents.map(o=>deAgent(o,sx,sy,old,reg));
+  agents=A; repMap.clear(); for (const a of A) for (const [k,v] of a.trust) repMap.set(k,repOf(k)+v);
+  restOfDeserialize(s,A,sx,sy,old);
+}
+function deAgent(o,sx=1,sy=1,old=false,reg={}){
     const brain=deBrain(o.brain);
     const a=makeAgent(o.x*sx,o.y*sy,brain,o.gen||0,o.parent??null,{...freshTraits(),...o.traits},o.energy,[],o.perks||[]);
     a.id=o.id;
@@ -1684,8 +1734,8 @@ function deserialize(s){
     derive(a); if (o.drv) Object.assign(a.drv,o.drv); a.inWater=isWater(a.x,a.y); a.phi=wellbeing(a);
     if (!o.lineage){ const ch=[]; let id=o.parent; for (let i=0;i<12&&id&&reg[id];i++){ ch.push({id,gen:reg[id].gen,hue:0}); id=reg[id].parent; } a.lineage=ch; }
     return a;
-  });
-  agents=A; repMap.clear(); for (const a of A) for (const [k,v] of a.trust) repMap.set(k,repOf(k)+v);
+}
+function restOfDeserialize(s,A,sx,sy,old){
   ticks=s.ticks||0; nextId=Math.max(s.nextId||1,...A.map(a=>a.id+1)); births=s.births||0; deaths=s.deaths||0;
   deathsBy={age:0,hunger:0,storm:0,fire:0,beast:0,attack:0,...(s.deathsBy||{})}; Object.assign(tally,s.tally||{}); lastTally={...tally};
   maxGen=s.maxGen||Math.max(0,...A.map(a=>a.gen)); peakPop=s.peakPop||A.length;
@@ -1698,11 +1748,11 @@ function deserialize(s){
   elite=(s.elite||[]).map(e=>({...e,brain:deBrain(e.brain)}));
   Object.assign(settings,s.settings||{}); selected=s.selected||0; lastMilestone=maxGen-maxGen%10;
   log(old?'Older snapshot loaded and moved onto the new 1.5 world':'Snapshot loaded','info');
-  postMeta();
+  if (viewing) postMeta();
 }
 
 // ---------- reporting ----------
-let sendPher=false, started=false, running=true, speed=3, maxMode=false, last=performance.now(), acc=0, stepsWin=0, tps=0, lastMetrics=last, lastFrame=0, lastStats=0, lastInspect=0, inspecting=false;
+let lastPulse=0, sendPher=false, started=false, running=true, speed=3, maxMode=false, last=performance.now(), acc=0, stepsWin=0, tps=0, lastMetrics=last, lastFrame=0, lastStats=0, lastInspect=0, inspecting=false;
 function postMeta(){ self.postMessage({type:'meta',water,drives:DRIVES,bounds:TB,perks:PERKS,clash:CLASH,phys:PHYS,ment:MENT,traitInfo:TRAIT_INFO,senses:SENSES,actions:ACTIONS,short:SHORT,cont:CONT,W,H,FW,FH,FC,shape,settings,fert,forest,rock,seed}); }
 function postFrame(){
   const na=agents.length, A=new Float32Array(na*10);
@@ -1763,10 +1813,42 @@ function work(){
   }
   if (now-lastMetrics>=1000){ tps=Math.round(stepsWin*1000/(now-lastMetrics)); stepsWin=0; lastMetrics=now; }
   const frameGap=maxMode?60:30;
-  if (now-lastFrame>=frameGap){ postFrame(); lastFrame=now; }
-  if (inspecting&&selected&&now-lastInspect>=(maxMode?300:140)){ postInspect(); lastInspect=now; }
-  if (now-lastStats>=700){ postStats(true); lastStats=now; sendPher=true; }
+  if (viewing){
+    if (now-lastFrame>=frameGap){ postFrame(); lastFrame=now; }
+    if (inspecting&&selected&&now-lastInspect>=(maxMode?300:140)){ postInspect(); lastInspect=now; }
+    if (now-lastStats>=700){ postStats(true); lastStats=now; sendPher=true; }
+  }
+  if (now-lastPulse>=1000){ postPulse(); lastPulse=now; }
   schedule(!busy);
+}
+// ---------- islands ----------
+// Several worlds run in parallel workers. Every so often an island sends a few of its most successful yips
+// (children raised plus age) to another island, where they arrive together as a band.
+let island=0, viewing=true;
+function exportMigrants(){
+  const n=Math.min(settings.migrants|0,Math.floor(agents.length/10)); if (n<1) return;
+  const ranked=agents.filter(a=>a.age>300).sort((x,y)=>(y.kids*400+y.age)-(x.kids*400+x.age)).slice(0,n);
+  if (!ranked.length) return;
+  const pack=ranked.map(serAgent);
+  for (const a of ranked){ onDeath(a); a.dead=true; }   // they leave this island
+  agents=agents.filter(a=>!a.dead);
+  log(`${ranked.length} yips left for another island`,'info');
+  self.postMessage({type:'emigrants',from:island,pack});
+}
+function importMigrants(pack,from){
+  if (!pack.length||agents.length>=settings.popCap) return;
+  const [bx,by]=spawnPoint(fert,1), band=[];
+  for (const o of pack){
+    o.id=nextId++; o.trust=[]; o.owed=[]; o.parent=null; o.coparent=null;
+    const a=deAgent(o); a.x=wrapX(bx+rnd(-25,25)); a.y=wrapY(by+rnd(-25,25)); if (isWater(a.x,a.y)){ a.x=bx; a.y=by; }
+    a.lastBirth=ticks-150; a.origin=from; band.push(a); agents.push(a);
+  }
+  for (const p of band) for (const q of band) if (p!==q) setTrust(p,q.id,.35);
+  log(`${band.length} yips arrived from island ${'ABCD'[from]||from+1}: ${band.map(a=>a.name).join(', ')}`,'birth');
+  if (viewing) toast(`${band.length} migrants arrived from island ${'ABCD'[from]||from+1}`,'birth');
+}
+function postPulse(){
+  self.postMessage({type:'pulse',island,ticks,tps,pop:agents.length,maxGen,avgGen:avg(a=>a.gen),births,deaths,running});
 }
 function pickAgent(how){
   if (!agents.length) return;
@@ -1793,8 +1875,10 @@ self.onmessage=e=>{
     case 'speed': speed=m.speed; maxMode=!!m.max; break;
     case 'settings': Object.assign(settings,m.settings); break;
     case 'step': for (let i=0;i<(m.n||100);i++) tick(); postFrame(); postStats(true); break;
-    case 'init': if (!started){ started=true; reset(m.shape); postFrame(); postStats(true); } break;
-    case 'reset': reset(m.shape||shape); started=true; postFrame(); postStats(true); self.postMessage({type:'selected',id:0}); break;
+    case 'init': if (!started){ island=m.island||0; viewing=m.view!==false; if (m.settings) Object.assign(settings,m.settings); started=true; reset(m.shape); if (viewing){ postFrame(); postStats(true); } } break;
+    case 'view': viewing=m.on; if (viewing){ postMeta(); postFrame(); postStats(true); if (selected) postInspect(); } break;
+    case 'immigrants': importMigrants(m.pack,m.from); break;
+    case 'reset': reset(m.shape||shape); started=true; if (viewing){ postFrame(); postStats(true); self.postMessage({type:'selected',id:0}); } break;
     case 'storm': sendStorm(); break;
     case 'cold': settings.temperature=clamp(settings.temperature-12,-20,50); log('Cold snap: average temperature down 12°C','cold'); postStats(false); break;
     case 'heat': settings.temperature=clamp(settings.temperature+12,-20,50); log('Heatwave: average temperature up 12°C','heat'); postStats(false); break;
@@ -1840,22 +1924,42 @@ const hueFill = Array.from({ length: 360 }, (_, h) => `hsl(${h} 72% 66%)`);
 
 /* ================= simulation worker ================= */
 let meta = null, W = 960, H = 600;
-let sim = null, usingWorker = true;
+// Islands: each world runs in its own worker. The watched island streams frames; the others run unseen.
+let sims = [], usingWorker = true, watched = 0, turbo = false;
+const ISLAND = i => 'ABCD'[i] || String(i + 1);
+const cores = navigator.hardwareConcurrency || 2;
+const prefIslands = (() => { try { const v = JSON.parse(localStorage.getItem('alife.ui') || '{}').islands; return v; } catch { return null; } })();
+const islandCount = clamp(prefIslands || Math.min(3, Math.max(1, cores - 1)), 1, 4);
+const pulses = [];
 (function boot() {
   const src = $('simSource').textContent;
-  const handler = e => onSim(e.data);
-  try {
-    sim = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
-    sim.onmessage = handler;
-    sim.onerror = e => console.warn('Worker error', e);
-  } catch (err) {
-    usingWorker = false;
-    const fake = { onmessage: null, postMessage: m => queueMicrotask(() => handler({ data: m })) };
-    new Function('self', src)(fake);
-    sim = { postMessage: m => fake.onmessage && fake.onmessage({ data: m }) };
+  const url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
+  for (let i = 0; i < islandCount; i++) {
+    try {
+      const w = new Worker(url);
+      w.onmessage = e => onSim(e.data, i);
+      w.onerror = e => console.warn('Worker error', e);
+      sims.push(w);
+    } catch (err) {
+      if (i > 0) break;
+      usingWorker = false;
+      const fake = { onmessage: null, postMessage: m => queueMicrotask(() => onSim(m, 0)) };
+      new Function('self', src)(fake);
+      sims.push({ postMessage: m => fake.onmessage && fake.onmessage({ data: m }) });
+      break;
+    }
   }
 })();
-const send = (type, rest = {}) => sim.postMessage({ type, ...rest });
+const send = (type, rest = {}) => sims[watched].postMessage({ type, ...rest });
+const sendAll = (type, rest = {}) => sims.forEach(w => w.postMessage({ type, ...rest }));
+// background islands always run flat out; the watched one follows the speed control (or flat out in Turbo)
+function syncIslands() {
+  sims.forEach((w, i) => {
+    const me = i === watched;
+    w.postMessage({ type: 'view', on: me && !turbo });
+    w.postMessage({ type: 'speed', speed: SPEEDS[speedIdx], max: !me || turbo || maxMode });
+  });
+}
 
 /* ================= app state ================= */
 let F = null, stats = null, insp = null, names = {};
@@ -1877,9 +1981,13 @@ const wrapC = (v, L) => ((v % L) + L) % L;
 const hyper = () => maxMode || SPEEDS[speedIdx] >= 64;
 
 function preferredShape() { const w = innerWidth, h = innerHeight; return h > w * 1.15 ? 'tall' : w > h * 1.15 ? 'wide' : 'square'; }
-function onSim(m) {
+function onSim(m, isl = 0) {
+  if (m.type === 'ready') { sims[isl].postMessage({ type: 'init', island: isl, view: isl === watched, settings: currentSettings() }); if (isl !== watched) sims[isl].postMessage({ type: 'speed', speed: 1, max: true }); return; }
+  if (m.type === 'pulse') { pulses[isl] = m; renderIslands(); return; }
+  if (m.type === 'emigrants') { if (sims.length > 1) { let to = Math.floor(Math.random() * (sims.length - 1)); if (to >= isl) to++; sims[to].postMessage({ type: 'immigrants', pack: m.pack, from: isl }); } else sims[isl].postMessage({ type: 'immigrants', pack: m.pack, from: isl }); return; }
+  if (isl !== watched && m.type !== 'toast') return;
+  if (m.type === 'toast' && isl !== watched) return;
   switch (m.type) {
-    case 'ready': send('init', {}); break;
     case 'meta': {
       const first = !meta; meta = m; W = m.W; H = m.H; buildTerrain(m);
       if (first) buildClimate(m.settings); else syncSliders(m.settings);
@@ -2271,6 +2379,34 @@ function drawTile(ox, oy, z, now, dt, vx0, vx1, vy0, vy1, fast, sp) {
 function roundRect(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
 requestAnimationFrame(render);
 
+/* ================= islands & turbo ================= */
+function renderIslands() {
+  const html = sims.map((_, i) => { const p = pulses[i]; return `<button class="isl${i === watched ? ' on' : ''}" data-isl="${i}"><b>${ISLAND(i)}</b><span class="num">${p ? p.pop : '…'}</span><small>${p ? 'gen ' + p.maxGen : ''}</small></button>`; }).join('');
+  $('islands').innerHTML = html; $('islands2').innerHTML = html; $('islands').hidden = sims.length < 2;
+  if (turbo) {
+    $('turboStats').innerHTML = sims.map((_, i) => { const p = pulses[i] || {}; return `<div class="tcard${i === watched ? ' on' : ''}"><b>Island ${ISLAND(i)}</b><div><span>Tick</span><b class="num">${fmt(p.ticks || 0)}</b></div><div><span>Ticks / s</span><b class="num">${fmt(p.tps || 0)}</b></div><div><span>Living</span><b class="num">${p.pop ?? '…'}</b></div><div><span>Generation</span><b class="num">${p.maxGen ?? 0} <em>avg ${(p.avgGen || 0).toFixed(1)}</em></b></div><div><span>Births / deaths</span><b class="num">${fmt(p.births || 0)} / ${fmt(p.deaths || 0)}</b></div></div>`; }).join('');
+    const total = pulses.reduce((s, p) => s + (p ? p.tps : 0), 0);
+    $('turboTotal').textContent = `${fmt(total)} ticks per second across ${sims.length} island${sims.length > 1 ? 's' : ''}`;
+  }
+}
+function watchIsland(i) {
+  if (i === watched || !sims[i]) return;
+  watched = i; F = null; stats = null; insp = null; rpos.clear(); bpos.clear(); trail = []; terrain = null; pherCanvas = null;
+  setSelected(0); syncIslands(); renderIslands();
+  toast(`Watching island ${ISLAND(i)}`, 'info');
+}
+document.addEventListener('click', e => { const b = e.target.closest('[data-isl]'); if (b) watchIsland(+b.dataset.isl); });
+function setTurbo(on) {
+  turbo = on; $('turbo').hidden = !on; $('bTurbo').classList.toggle('hot', on);
+  if (on && !running) setRunning(true);
+  syncIslands(); renderIslands();
+}
+$('bTurbo').onclick = () => setTurbo(!turbo);
+$('turboExit').onclick = () => setTurbo(false);
+$('islandCount').value = islandCount;
+$('islandCount').onchange = () => { ui.islands = +$('islandCount').value; saveUi(); toast('Reload the page to change the number of islands', 'info'); };
+$('coreNote').textContent = `This device reports ${cores} CPU core${cores > 1 ? 's' : ''}; ${islandCount} island${islandCount > 1 ? 's are' : ' is'} running.`;
+
 /* ================= HUD ================= */
 const SEASONS = ['Spring', 'Summer', 'Autumn', 'Winter'];
 const dayLabel = p => p < .06 || p >= .94 ? 'Dawn' : p < .44 ? 'Day' : p < .56 ? 'Dusk' : 'Night';
@@ -2287,7 +2423,7 @@ function updateHud() {
   $('roTemp').innerHTML = `<span class="sun" id="sun"></span>${F.temp.toFixed(0)}°C<em>${dayLabel(p).toLowerCase()}</em>`;
   const sun = $('sun'), light = Math.sin(TAU * p);
   sun.style.background = light > 0 ? C.accent : '#9cb6ff'; sun.style.boxShadow = `0 0 ${light > 0 ? 8 : 4}px ${light > 0 ? C.accent : '#9cb6ff'}`;
-  $('perf').textContent = `${usingWorker ? 'worker' : 'main thread'} · tick ${fmt(F.ticks)} · ${fmt(simTps)} ticks/s · ${renderFps} fps`;
+  $('perf').textContent = `island ${ISLAND(watched)} of ${sims.length} · tick ${fmt(F.ticks)} · ${fmt(simTps)} ticks/s · ${renderFps} fps`;
 }
 
 /* ================= controls ================= */
@@ -2296,9 +2432,9 @@ const ICON = {
   play: '<svg class="i" viewBox="0 0 24 24"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg><span>Play</span>',
 };
 function paintPlay() { const b = $('bPlay'); b.innerHTML = ICON[running ? 'pause' : 'play']; b.dataset.tip = running ? 'Pause' : 'Resume'; b.dataset.state = String(running); }
-let setRunning = v => { running = v; send('play', { running }); paintPlay(); syncWake(); };
+let setRunning = v => { running = v; sendAll('play', { running }); paintPlay(); syncWake(); };
 function applySpeed() {
-  send('speed', { speed: SPEEDS[speedIdx], max: maxMode });
+  syncIslands();
   $('spOut').textContent = maxMode ? 'MAX' : SPEEDS[speedIdx] + '×';
   $('bMax').classList.toggle('hot', maxMode);
   $('ctx').classList.toggle('hyper', maxMode);
@@ -2508,6 +2644,7 @@ addEventListener('keydown', e => {
   else if (k === '-' || k === '_') $('spDown').click();
   else if (k === '=' || k === '+') $('spUp').click();
   else if (k === 'm' || k === 'M') $('bMax').click();
+  else if (k === 't' || k === 'T') setTurbo(!turbo);
   else if (k >= '1' && k <= '8') setTool(TOOLKEYS[+k - 1]);
   else if (k === '[' || k === ']') { ui.brushSize = clamp(ui.brushSize + (k === ']' ? 4 : -4), 8, 70); $('brushSize').value = ui.brushSize; paintMini(); saveUi(); }
   else if (k === 'f' || k === 'F') toggleFollow();
@@ -2516,6 +2653,7 @@ addEventListener('keydown', e => {
   else if (k === 'c' || k === 'C') openDrawer('dClimate');
   else if (k === 'Escape') {
     if (!$('modal').hidden) { $('modal').hidden = true; return; }
+    if (turbo) { setTurbo(false); return; }
     const open = LEFT.find(d => $(d).classList.contains('open'));
     if (open) closeDrawer(open); else setSelected(0);
   }
@@ -2547,6 +2685,8 @@ const SLIDERS2 = [
   ['beastPower', 'Beast ferocity', .3, 3, .1, v => `${(+v).toFixed(1)}×`],
   ['popCap', 'Population cap', 40, 600, 10, v => `${v} yips`],
   ['mutation', 'Mutation rate', 0, 4, .1, v => `${(+v).toFixed(1)}×`],
+  ['migrateEvery', 'Migration interval', 0, 10000, 500, v => +v ? `every ${v} ticks` : 'Never'],
+  ['migrants', 'Migrants per trip', 1, 12, 1, v => `${v} yips`],
 ];
 const ALLS = [...SLIDERS, ...SLIDERS2];
 const PRESETS = [
@@ -2557,6 +2697,11 @@ const PRESETS = [
   ['Predators', 'Hunted every day', { food: 7.5, trees: .35, stone: .25, drain: 1, decay: 1, storm: .8, temperature: 19, day: 500, season: 2600, beasts: 18, beastPower: 1.4 }],
   ['Tempest', 'Storm season', { food: 8, trees: .35, stone: .25, drain: 1, decay: 1.6, storm: 3, temperature: 15, day: 500, season: 2000, beasts: 6, beastPower: 1 }],
 ];
+function currentSettings() {
+  const o = {}; for (const [k] of (typeof ALLS !== 'undefined' ? ALLS : [])) { const el = $(k); if (el) o[k] = +el.value; }
+  const r = $('oReseed'), l = $('oLearn'); if (r) o.autoReseed = r.checked; if (l) o.learning = l.checked;
+  return o;
+}
 function paintSlider(el) { const p = (el.value - el.min) / (el.max - el.min) * 100; el.style.setProperty('--p', p + '%'); const s = ALLS.find(x => x[0] === el.id); $(el.id + 'v').textContent = s[5](el.value); }
 function buildClimate(settings) {
   for (const [boxId, list] of [['sliders', SLIDERS], ['sliders2', SLIDERS2]]) {
@@ -2566,13 +2711,13 @@ function buildClimate(settings) {
       d.innerHTML = `<label for="${key}">${label}</label><output id="${key}v"></output><input type="range" id="${key}" min="${min}" max="${max}" step="${step}" value="${settings[key]}">`;
       box.append(d);
       const el = d.querySelector('input'); paintSlider(el);
-      el.addEventListener('input', () => { paintSlider(el); send('settings', { settings: { [key]: +el.value } }); markPreset(); });
+      el.addEventListener('input', () => { paintSlider(el); sendAll('settings', { settings: { [key]: +el.value } }); markPreset(); });
     }
   }
   const pb = $('presets'); pb.innerHTML = '';
   PRESETS.forEach(([name, sub, vals]) => {
     const b = document.createElement('button'); b.className = 'preset'; b.innerHTML = `<b>${name}</b><small>${sub}</small>`;
-    b.onclick = () => { send('settings', { settings: vals }); syncSliders(vals); toast(`World set to ${name.toLowerCase()}`, 'info'); };
+    b.onclick = () => { sendAll('settings', { settings: vals }); syncSliders(vals); toast(`World set to ${name.toLowerCase()}`, 'info'); };
     pb.append(b);
   });
   $('oReseed').checked = settings.autoReseed !== false; $('oLearn').checked = settings.learning !== false;
@@ -2583,8 +2728,8 @@ function syncSliders(s) {
   if (s.autoReseed != null) $('oReseed').checked = s.autoReseed; if (s.learning != null) $('oLearn').checked = s.learning; markPreset();
 }
 function markPreset() { const cur = Object.fromEntries(ALLS.map(([k]) => [k, +$(k).value])); [...$('presets').children].forEach((b, i) => b.classList.toggle('on', Object.entries(PRESETS[i][2]).every(([k, v]) => Math.abs(cur[k] - v) < 1e-6))); }
-$('oReseed').onchange = () => send('settings', { settings: { autoReseed: $('oReseed').checked } });
-$('oLearn').onchange = () => send('settings', { settings: { learning: $('oLearn').checked } });
+$('oReseed').onchange = () => sendAll('settings', { settings: { autoReseed: $('oReseed').checked } });
+$('oLearn').onchange = () => sendAll('settings', { settings: { learning: $('oLearn').checked } });
 
 /* ================= settings ================= */
 const OPTS = { oScent: 'scent', oNight: 'night', oFx: 'fx', oSense: 'sense', oTrail: 'trail', oLegend: 'legend', oPerf: 'perf', oAuto: 'auto', oHidePause: 'hidePause', oWake: 'wake' };
@@ -2600,7 +2745,7 @@ function markShape() { document.querySelectorAll('[data-shape]').forEach(b => b.
 document.querySelectorAll('[data-shape]').forEach(b => b.onclick = () => { newShape = b.dataset.shape; markShape(); });
 $('sReset').onclick = () => { $('modal').hidden = false; $('mOk').focus(); };
 $('mCancel').onclick = () => { $('modal').hidden = true; };
-$('mOk').onclick = () => { $('modal').hidden = true; send('reset', {}); trail = []; rpos.clear(); bpos.clear(); setSelected(0); toast('New world: 120 founders released', 'birth'); };
+$('mOk').onclick = () => { $('modal').hidden = true; sendAll('reset', {}); trail = []; rpos.clear(); bpos.clear(); setSelected(0); toast('New world: 120 founders released', 'birth'); };
 function onSaved(m) {
   const kb = (m.state.length / 1024).toFixed(0), writeLocal = () => { localStorage.setItem('alife.save', m.state); localStorage.setItem('alife.saveMeta', JSON.stringify({ ticks: m.ticks, at: Date.now(), kb })); showSaveInfo(); };
   if (m.purpose === 'auto') { try { writeLocal(); } catch {} return; }
@@ -2863,7 +3008,7 @@ async function syncWake() {
 addEventListener('pointerdown', syncWake, { once: true });
 let hiddenPaused = false;
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') { if (ui.hidePause && running) { hiddenPaused = true; running = false; send('play', { running: false }); paintPlay(); } if (ui.auto) send('save', { purpose: 'auto' }); }
+  if (document.visibilityState === 'hidden') { if (ui.hidePause && running) { hiddenPaused = true; running = false; sendAll('play', { running: false }); paintPlay(); } if (ui.auto) send('save', { purpose: 'auto' }); }
   else if (hiddenPaused) { hiddenPaused = false; setRunning(true); }
   syncWake();
 });

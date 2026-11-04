@@ -282,6 +282,29 @@ button.chip:hover{border-color:var(--line-hi);background:rgba(255,255,255,.05)}
 .seg input:checked+span{background:var(--glass-hi);color:var(--fg);box-shadow:0 0 0 1px var(--line-hi)}
 .seg input:focus-visible+span{outline:2px solid var(--accent)}
 
+.islands{display:flex;gap:2px;padding:4px;height:48px;align-items:center}
+.isl{display:grid;grid-template-columns:auto auto;grid-template-rows:auto auto;column-gap:6px;align-items:baseline;padding:4px 9px;border-radius:8px;color:var(--muted);height:38px;text-align:left}
+.isl b{font:700 13px var(--f-display);grid-row:span 2;align-self:center;color:var(--fg)}
+.isl span{font-size:12px;color:var(--fg)}
+.isl small{font-size:9.5px;color:var(--dim)}
+.isl:hover{background:rgba(255,255,255,.06)}
+.isl.on{background:rgba(243,201,107,.14)}
+.isl.on b{color:var(--accent)}
+.turbo{position:absolute;inset:0;z-index:40;display:flex;align-items:center;justify-content:center;background:var(--ink);padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:16px;overflow-y:auto}
+.turboBox{display:flex;flex-direction:column;gap:14px;max-width:760px;width:100%;align-items:flex-start}
+.turboBox h2{margin:0;font:700 28px var(--f-display);letter-spacing:-.02em;color:var(--accent)}
+.tcards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;width:100%}
+.tcard{border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;display:flex;flex-direction:column;gap:6px;background:var(--glass-hi)}
+.tcard.on{border-color:rgba(243,201,107,.5)}
+.tcard>b{font:700 15px var(--f-display)}
+.tcard div{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);gap:8px}
+.tcard div b{font:500 13px var(--f-mono);color:var(--fg)}
+.tcard div b em{font-style:normal;color:var(--dim);font-size:11px}
+.sel{grid-column:1/-1;background:rgba(255,255,255,.05);border:1px solid var(--line-hi);border-radius:8px;padding:6px 8px;color:var(--fg)}
+@media (max-width:560px){ #islands{display:none} }
+@media (max-width:760px){ .islands{height:46px;padding:2px} .isl{padding:2px 6px;height:40px} .isl small{display:none} }
+@media (max-height:520px){ .islands{height:40px} .isl{height:34px} .isl small{display:none} }
+
 /* ---------- overlays ---------- */
 .legend{position:absolute;right:var(--gut);top:72px;display:flex;gap:10px;padding:7px 11px;font-size:11px;color:var(--muted);z-index:4;pointer-events:none;transition:opacity .2s}
 .legend span{display:flex;align-items:center;gap:5px;white-space:nowrap}

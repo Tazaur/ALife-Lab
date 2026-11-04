@@ -12,6 +12,12 @@ An evolution sandbox. A colony of yips, each driven by its own neural network, f
 - **Aquatic upgrades**: Webbed feet (fast, cheap swimming; slower on land) and Blubber (water barely chills it; overheats sooner).
 - **Notifications** setting: All, Important (extinctions only) or Off.
 
+## Islands and Turbo
+
+- **Islands**: up to four separate worlds, each in its own worker on its own CPU core (default: one fewer than the device's cores, at most three). The island you watch follows the speed control; the others run unseen at full speed. The A/B/C chips in the header (or Settings → Islands) switch which one you watch.
+- **Migration**: every few thousand ticks (World → Migration interval, Migrants per trip) an island sends a few of its most successful yips to another island, where they arrive together as a band.
+- **Turbo** (`T`): stops all drawing, stats and inspector updates and runs every island flat out, showing only live counters per island.
+
 ## Learning (current)
 
 Lifetime learning is a policy gradient with **eligibility traces**: every tick the gradient of the chosen action is added to a fading trace, and each reward updates the weights along it, so relief that comes later (eating) also credits the steps that led to it (walking to food, harvesting). Action preferences are linear outputs so a brain can become decisive. The first (sensory) layer is left to evolution; learning adjusts the deeper layers.

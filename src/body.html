@@ -15,6 +15,7 @@
       <div class="ro"><small id="roDayL">Day 1</small><b id="roTemp"><span class="sun" id="sun"></span>19°</b></div>
       <div class="ro opt"><small>Ticks / s</small><b id="roTps">0</b></div>
     </div>
+    <div class="islands glass" id="islands" aria-label="Islands"></div>
     <div class="grow"></div>
     <nav class="topbtns glass">
       <button class="ib" id="bStats" data-tip="Population stats" data-key="S"><svg class="i" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span class="lbl">Stats</span></button>
@@ -100,6 +101,12 @@
           <label class="toggle"><span>Performance readout</span><span class="sw"><input type="checkbox" id="oPerf" checked><i></i></span></label>
         </div>
       </section>
+      <section class="sec"><h3>Islands</h3>
+        <div class="slider"><label for="islandCount">Number of islands</label><output></output><select id="islandCount" class="sel"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></div>
+        <div class="islands" id="islands2" style="height:auto;padding:0"></div>
+        <p class="note" id="coreNote"></p>
+        <p class="note">Each island is a separate world on its own CPU core. The others run unseen at full speed, and every few thousand ticks a few of an island's most successful yips migrate to another. Migration timing is under World. Saves and the inspector cover the island you are watching.</p>
+      </section>
       <section class="sec"><h3>Running</h3>
         <label class="toggle"><span>Autosave<small>Saves to this browser every 2 minutes while running</small></span><span class="sw"><input type="checkbox" id="oAuto" checked><i></i></span></label>
         <label class="toggle"><span>Pause when hidden<small>Stops the simulation while this tab is in the background</small></span><span class="sw"><input type="checkbox" id="oHidePause" checked><i></i></span></label>
@@ -126,6 +133,7 @@
           <kbd>.</kbd><span>Advance 100 ticks</span>
           <kbd>− / +</kbd><span>Slower / faster</span>
           <kbd>M</kbd><span>Toggle hyperspeed</span>
+          <kbd>T</kbd><span>Toggle Turbo</span>
           <kbd>1–8</kbd><span>Select, food, tree, stone, wall, fire, beast, erase</span>
           <kbd>[ / ]</kbd><span>Smaller / larger brush</span>
           <kbd>F</kbd><span>Follow selected yip</span>
@@ -244,6 +252,7 @@
         <button class="tool" id="bStep" data-tip="Advance 100 ticks" data-key="."><svg class="i" viewBox="0 0 24 24"><path d="M6 5v14M10 5l9 7-9 7z"/></svg><span>+100</span></button>
         <div class="speed" data-tip="Simulation speed" data-key="− + M"><button id="spDown" aria-label="Slower"><svg class="i" viewBox="0 0 24 24"><path d="M6 12h12"/></svg></button><div class="spv"><output id="spOut">3×</output><span>speed</span></div><button id="spUp" aria-label="Faster"><svg class="i" viewBox="0 0 24 24"><path d="M12 6v12M6 12h12"/></svg></button></div>
         <button class="tool" id="bMax" data-tip="Hyperspeed: as fast as this device can go" data-key="M"><svg class="i" viewBox="0 0 24 24"><path d="M4 6l7 6-7 6zM13 6l7 6-7 6z"/></svg><span>Max</span></button>
+        <button class="tool" id="bTurbo" data-tip="Turbo: stop drawing, pure computation" data-key="T"><svg class="i" viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg><span>Turbo</span></button>
       </div>
       <div class="dsep"></div>
       <div class="dg" id="tools">
@@ -264,6 +273,15 @@
     </div>
   </div>
 
+  <div class="turbo" id="turbo" hidden>
+    <div class="turboBox">
+      <h2>Turbo</h2>
+      <p class="note" id="turboTotal"></p>
+      <div class="tcards" id="turboStats"></div>
+      <p class="note">Nothing is drawn and no stats are gathered, so every core goes to the simulation. Background islands always run flat out.</p>
+      <button class="btn pri" id="turboExit">Back to the map</button>
+    </div>
+  </div>
   <div class="hover" id="hover"></div>
   <div class="tipbox" id="tip"></div>
   <div class="modal" id="modal" hidden><div class="glass"><h2>Start a new world?</h2><p>The current colony, its brains and its history will be replaced by 150 fresh founders on a newly generated map. Save first if you want to keep it.</p><div class="row" style="justify-content:flex-end"><button class="btn" id="mCancel">Keep this world</button><button class="btn pri" id="mOk">Start new world</button></div></div></div>

@@ -19,22 +19,42 @@ const hueFill = Array.from({ length: 360 }, (_, h) => `hsl(${h} 72% 66%)`);
 
 /* ================= simulation worker ================= */
 let meta = null, W = 960, H = 600;
-let sim = null, usingWorker = true;
+// Islands: each world runs in its own worker. The watched island streams frames; the others run unseen.
+let sims = [], usingWorker = true, watched = 0, turbo = false;
+const ISLAND = i => 'ABCD'[i] || String(i + 1);
+const cores = navigator.hardwareConcurrency || 2;
+const prefIslands = (() => { try { const v = JSON.parse(localStorage.getItem('alife.ui') || '{}').islands; return v; } catch { return null; } })();
+const islandCount = clamp(prefIslands || Math.min(3, Math.max(1, cores - 1)), 1, 4);
+const pulses = [];
 (function boot() {
   const src = $('simSource').textContent;
-  const handler = e => onSim(e.data);
-  try {
-    sim = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
-    sim.onmessage = handler;
-    sim.onerror = e => console.warn('Worker error', e);
-  } catch (err) {
-    usingWorker = false;
-    const fake = { onmessage: null, postMessage: m => queueMicrotask(() => handler({ data: m })) };
-    new Function('self', src)(fake);
-    sim = { postMessage: m => fake.onmessage && fake.onmessage({ data: m }) };
+  const url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
+  for (let i = 0; i < islandCount; i++) {
+    try {
+      const w = new Worker(url);
+      w.onmessage = e => onSim(e.data, i);
+      w.onerror = e => console.warn('Worker error', e);
+      sims.push(w);
+    } catch (err) {
+      if (i > 0) break;
+      usingWorker = false;
+      const fake = { onmessage: null, postMessage: m => queueMicrotask(() => onSim(m, 0)) };
+      new Function('self', src)(fake);
+      sims.push({ postMessage: m => fake.onmessage && fake.onmessage({ data: m }) });
+      break;
+    }
   }
 })();
-const send = (type, rest = {}) => sim.postMessage({ type, ...rest });
+const send = (type, rest = {}) => sims[watched].postMessage({ type, ...rest });
+const sendAll = (type, rest = {}) => sims.forEach(w => w.postMessage({ type, ...rest }));
+// background islands always run flat out; the watched one follows the speed control (or flat out in Turbo)
+function syncIslands() {
+  sims.forEach((w, i) => {
+    const me = i === watched;
+    w.postMessage({ type: 'view', on: me && !turbo });
+    w.postMessage({ type: 'speed', speed: SPEEDS[speedIdx], max: !me || turbo || maxMode });
+  });
+}
 
 /* ================= app state ================= */
 let F = null, stats = null, insp = null, names = {};
@@ -56,9 +76,13 @@ const wrapC = (v, L) => ((v % L) + L) % L;
 const hyper = () => maxMode || SPEEDS[speedIdx] >= 64;
 
 function preferredShape() { const w = innerWidth, h = innerHeight; return h > w * 1.15 ? 'tall' : w > h * 1.15 ? 'wide' : 'square'; }
-function onSim(m) {
+function onSim(m, isl = 0) {
+  if (m.type === 'ready') { sims[isl].postMessage({ type: 'init', island: isl, view: isl === watched, settings: currentSettings() }); if (isl !== watched) sims[isl].postMessage({ type: 'speed', speed: 1, max: true }); return; }
+  if (m.type === 'pulse') { pulses[isl] = m; renderIslands(); return; }
+  if (m.type === 'emigrants') { if (sims.length > 1) { let to = Math.floor(Math.random() * (sims.length - 1)); if (to >= isl) to++; sims[to].postMessage({ type: 'immigrants', pack: m.pack, from: isl }); } else sims[isl].postMessage({ type: 'immigrants', pack: m.pack, from: isl }); return; }
+  if (isl !== watched && m.type !== 'toast') return;
+  if (m.type === 'toast' && isl !== watched) return;
   switch (m.type) {
-    case 'ready': send('init', {}); break;
     case 'meta': {
       const first = !meta; meta = m; W = m.W; H = m.H; buildTerrain(m);
       if (first) buildClimate(m.settings); else syncSliders(m.settings);
@@ -450,6 +474,34 @@ function drawTile(ox, oy, z, now, dt, vx0, vx1, vy0, vy1, fast, sp) {
 function roundRect(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
 requestAnimationFrame(render);
 
+/* ================= islands & turbo ================= */
+function renderIslands() {
+  const html = sims.map((_, i) => { const p = pulses[i]; return `<button class="isl${i === watched ? ' on' : ''}" data-isl="${i}"><b>${ISLAND(i)}</b><span class="num">${p ? p.pop : '…'}</span><small>${p ? 'gen ' + p.maxGen : ''}</small></button>`; }).join('');
+  $('islands').innerHTML = html; $('islands2').innerHTML = html; $('islands').hidden = sims.length < 2;
+  if (turbo) {
+    $('turboStats').innerHTML = sims.map((_, i) => { const p = pulses[i] || {}; return `<div class="tcard${i === watched ? ' on' : ''}"><b>Island ${ISLAND(i)}</b><div><span>Tick</span><b class="num">${fmt(p.ticks || 0)}</b></div><div><span>Ticks / s</span><b class="num">${fmt(p.tps || 0)}</b></div><div><span>Living</span><b class="num">${p.pop ?? '…'}</b></div><div><span>Generation</span><b class="num">${p.maxGen ?? 0} <em>avg ${(p.avgGen || 0).toFixed(1)}</em></b></div><div><span>Births / deaths</span><b class="num">${fmt(p.births || 0)} / ${fmt(p.deaths || 0)}</b></div></div>`; }).join('');
+    const total = pulses.reduce((s, p) => s + (p ? p.tps : 0), 0);
+    $('turboTotal').textContent = `${fmt(total)} ticks per second across ${sims.length} island${sims.length > 1 ? 's' : ''}`;
+  }
+}
+function watchIsland(i) {
+  if (i === watched || !sims[i]) return;
+  watched = i; F = null; stats = null; insp = null; rpos.clear(); bpos.clear(); trail = []; terrain = null; pherCanvas = null;
+  setSelected(0); syncIslands(); renderIslands();
+  toast(`Watching island ${ISLAND(i)}`, 'info');
+}
+document.addEventListener('click', e => { const b = e.target.closest('[data-isl]'); if (b) watchIsland(+b.dataset.isl); });
+function setTurbo(on) {
+  turbo = on; $('turbo').hidden = !on; $('bTurbo').classList.toggle('hot', on);
+  if (on && !running) setRunning(true);
+  syncIslands(); renderIslands();
+}
+$('bTurbo').onclick = () => setTurbo(!turbo);
+$('turboExit').onclick = () => setTurbo(false);
+$('islandCount').value = islandCount;
+$('islandCount').onchange = () => { ui.islands = +$('islandCount').value; saveUi(); toast('Reload the page to change the number of islands', 'info'); };
+$('coreNote').textContent = `This device reports ${cores} CPU core${cores > 1 ? 's' : ''}; ${islandCount} island${islandCount > 1 ? 's are' : ' is'} running.`;
+
 /* ================= HUD ================= */
 const SEASONS = ['Spring', 'Summer', 'Autumn', 'Winter'];
 const dayLabel = p => p < .06 || p >= .94 ? 'Dawn' : p < .44 ? 'Day' : p < .56 ? 'Dusk' : 'Night';
@@ -466,7 +518,7 @@ function updateHud() {
   $('roTemp').innerHTML = `<span class="sun" id="sun"></span>${F.temp.toFixed(0)}°C<em>${dayLabel(p).toLowerCase()}</em>`;
   const sun = $('sun'), light = Math.sin(TAU * p);
   sun.style.background = light > 0 ? C.accent : '#9cb6ff'; sun.style.boxShadow = `0 0 ${light > 0 ? 8 : 4}px ${light > 0 ? C.accent : '#9cb6ff'}`;
-  $('perf').textContent = `${usingWorker ? 'worker' : 'main thread'} · tick ${fmt(F.ticks)} · ${fmt(simTps)} ticks/s · ${renderFps} fps`;
+  $('perf').textContent = `island ${ISLAND(watched)} of ${sims.length} · tick ${fmt(F.ticks)} · ${fmt(simTps)} ticks/s · ${renderFps} fps`;
 }
 
 /* ================= controls ================= */
@@ -475,9 +527,9 @@ const ICON = {
   play: '<svg class="i" viewBox="0 0 24 24"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg><span>Play</span>',
 };
 function paintPlay() { const b = $('bPlay'); b.innerHTML = ICON[running ? 'pause' : 'play']; b.dataset.tip = running ? 'Pause' : 'Resume'; b.dataset.state = String(running); }
-let setRunning = v => { running = v; send('play', { running }); paintPlay(); syncWake(); };
+let setRunning = v => { running = v; sendAll('play', { running }); paintPlay(); syncWake(); };
 function applySpeed() {
-  send('speed', { speed: SPEEDS[speedIdx], max: maxMode });
+  syncIslands();
   $('spOut').textContent = maxMode ? 'MAX' : SPEEDS[speedIdx] + '×';
   $('bMax').classList.toggle('hot', maxMode);
   $('ctx').classList.toggle('hyper', maxMode);
@@ -687,6 +739,7 @@ addEventListener('keydown', e => {
   else if (k === '-' || k === '_') $('spDown').click();
   else if (k === '=' || k === '+') $('spUp').click();
   else if (k === 'm' || k === 'M') $('bMax').click();
+  else if (k === 't' || k === 'T') setTurbo(!turbo);
   else if (k >= '1' && k <= '8') setTool(TOOLKEYS[+k - 1]);
   else if (k === '[' || k === ']') { ui.brushSize = clamp(ui.brushSize + (k === ']' ? 4 : -4), 8, 70); $('brushSize').value = ui.brushSize; paintMini(); saveUi(); }
   else if (k === 'f' || k === 'F') toggleFollow();
@@ -695,6 +748,7 @@ addEventListener('keydown', e => {
   else if (k === 'c' || k === 'C') openDrawer('dClimate');
   else if (k === 'Escape') {
     if (!$('modal').hidden) { $('modal').hidden = true; return; }
+    if (turbo) { setTurbo(false); return; }
     const open = LEFT.find(d => $(d).classList.contains('open'));
     if (open) closeDrawer(open); else setSelected(0);
   }
@@ -726,6 +780,8 @@ const SLIDERS2 = [
   ['beastPower', 'Beast ferocity', .3, 3, .1, v => `${(+v).toFixed(1)}×`],
   ['popCap', 'Population cap', 40, 600, 10, v => `${v} yips`],
   ['mutation', 'Mutation rate', 0, 4, .1, v => `${(+v).toFixed(1)}×`],
+  ['migrateEvery', 'Migration interval', 0, 10000, 500, v => +v ? `every ${v} ticks` : 'Never'],
+  ['migrants', 'Migrants per trip', 1, 12, 1, v => `${v} yips`],
 ];
 const ALLS = [...SLIDERS, ...SLIDERS2];
 const PRESETS = [
@@ -736,6 +792,11 @@ const PRESETS = [
   ['Predators', 'Hunted every day', { food: 7.5, trees: .35, stone: .25, drain: 1, decay: 1, storm: .8, temperature: 19, day: 500, season: 2600, beasts: 18, beastPower: 1.4 }],
   ['Tempest', 'Storm season', { food: 8, trees: .35, stone: .25, drain: 1, decay: 1.6, storm: 3, temperature: 15, day: 500, season: 2000, beasts: 6, beastPower: 1 }],
 ];
+function currentSettings() {
+  const o = {}; for (const [k] of (typeof ALLS !== 'undefined' ? ALLS : [])) { const el = $(k); if (el) o[k] = +el.value; }
+  const r = $('oReseed'), l = $('oLearn'); if (r) o.autoReseed = r.checked; if (l) o.learning = l.checked;
+  return o;
+}
 function paintSlider(el) { const p = (el.value - el.min) / (el.max - el.min) * 100; el.style.setProperty('--p', p + '%'); const s = ALLS.find(x => x[0] === el.id); $(el.id + 'v').textContent = s[5](el.value); }
 function buildClimate(settings) {
   for (const [boxId, list] of [['sliders', SLIDERS], ['sliders2', SLIDERS2]]) {
@@ -745,13 +806,13 @@ function buildClimate(settings) {
       d.innerHTML = `<label for="${key}">${label}</label><output id="${key}v"></output><input type="range" id="${key}" min="${min}" max="${max}" step="${step}" value="${settings[key]}">`;
       box.append(d);
       const el = d.querySelector('input'); paintSlider(el);
-      el.addEventListener('input', () => { paintSlider(el); send('settings', { settings: { [key]: +el.value } }); markPreset(); });
+      el.addEventListener('input', () => { paintSlider(el); sendAll('settings', { settings: { [key]: +el.value } }); markPreset(); });
     }
   }
   const pb = $('presets'); pb.innerHTML = '';
   PRESETS.forEach(([name, sub, vals]) => {
     const b = document.createElement('button'); b.className = 'preset'; b.innerHTML = `<b>${name}</b><small>${sub}</small>`;
-    b.onclick = () => { send('settings', { settings: vals }); syncSliders(vals); toast(`World set to ${name.toLowerCase()}`, 'info'); };
+    b.onclick = () => { sendAll('settings', { settings: vals }); syncSliders(vals); toast(`World set to ${name.toLowerCase()}`, 'info'); };
     pb.append(b);
   });
   $('oReseed').checked = settings.autoReseed !== false; $('oLearn').checked = settings.learning !== false;
@@ -762,8 +823,8 @@ function syncSliders(s) {
   if (s.autoReseed != null) $('oReseed').checked = s.autoReseed; if (s.learning != null) $('oLearn').checked = s.learning; markPreset();
 }
 function markPreset() { const cur = Object.fromEntries(ALLS.map(([k]) => [k, +$(k).value])); [...$('presets').children].forEach((b, i) => b.classList.toggle('on', Object.entries(PRESETS[i][2]).every(([k, v]) => Math.abs(cur[k] - v) < 1e-6))); }
-$('oReseed').onchange = () => send('settings', { settings: { autoReseed: $('oReseed').checked } });
-$('oLearn').onchange = () => send('settings', { settings: { learning: $('oLearn').checked } });
+$('oReseed').onchange = () => sendAll('settings', { settings: { autoReseed: $('oReseed').checked } });
+$('oLearn').onchange = () => sendAll('settings', { settings: { learning: $('oLearn').checked } });
 
 /* ================= settings ================= */
 const OPTS = { oScent: 'scent', oNight: 'night', oFx: 'fx', oSense: 'sense', oTrail: 'trail', oLegend: 'legend', oPerf: 'perf', oAuto: 'auto', oHidePause: 'hidePause', oWake: 'wake' };
@@ -779,7 +840,7 @@ function markShape() { document.querySelectorAll('[data-shape]').forEach(b => b.
 document.querySelectorAll('[data-shape]').forEach(b => b.onclick = () => { newShape = b.dataset.shape; markShape(); });
 $('sReset').onclick = () => { $('modal').hidden = false; $('mOk').focus(); };
 $('mCancel').onclick = () => { $('modal').hidden = true; };
-$('mOk').onclick = () => { $('modal').hidden = true; send('reset', {}); trail = []; rpos.clear(); bpos.clear(); setSelected(0); toast('New world: 120 founders released', 'birth'); };
+$('mOk').onclick = () => { $('modal').hidden = true; sendAll('reset', {}); trail = []; rpos.clear(); bpos.clear(); setSelected(0); toast('New world: 120 founders released', 'birth'); };
 function onSaved(m) {
   const kb = (m.state.length / 1024).toFixed(0), writeLocal = () => { localStorage.setItem('alife.save', m.state); localStorage.setItem('alife.saveMeta', JSON.stringify({ ticks: m.ticks, at: Date.now(), kb })); showSaveInfo(); };
   if (m.purpose === 'auto') { try { writeLocal(); } catch {} return; }
@@ -1042,7 +1103,7 @@ async function syncWake() {
 addEventListener('pointerdown', syncWake, { once: true });
 let hiddenPaused = false;
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') { if (ui.hidePause && running) { hiddenPaused = true; running = false; send('play', { running: false }); paintPlay(); } if (ui.auto) send('save', { purpose: 'auto' }); }
+  if (document.visibilityState === 'hidden') { if (ui.hidePause && running) { hiddenPaused = true; running = false; sendAll('play', { running: false }); paintPlay(); } if (ui.auto) send('save', { purpose: 'auto' }); }
   else if (hiddenPaused) { hiddenPaused = false; setRunning(true); }
   syncWake();
 });

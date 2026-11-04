@@ -28,7 +28,7 @@ const BTYPES = ['house','store','wall','fire'];
 const SPECS = {house:{wood:3,stone:1,hp:450,r:16},store:{wood:5,stone:4,hp:720,r:23},wall:{wood:2,stone:1,hp:420,r:15},fire:{wood:2,stone:0,hp:180,r:12}};
 const LIMITS = {layers:6, neurons:24, inputs:32};
 const DX = [0,1,0,-1], DY = [-1,0,1,0];
-const settings = {food:7.5,trees:.3,stone:.2,drain:1,decay:1,storm:1,temperature:19,day:500,season:2600,beasts:6,beastPower:1,popCap:450,mutation:1,learning:true,autoReseed:true};
+const settings = {food:7.5,trees:.3,stone:.2,drain:1,decay:1,storm:1,temperature:19,day:500,season:2600,beasts:6,beastPower:1,popCap:450,migrateEvery:3000,migrants:4,mutation:1,learning:true,autoReseed:true};
 
 // ---------- query masks ----------
 const Q = {FRIEND:1024,FOOD:1,TREE:2,STONE:4,SHELTER:8,FIRE:16,STORM:32,OTHER:64,PRED:128,CROWD:256,WALL:512};
@@ -938,6 +938,7 @@ function tick(){
   if (ticks%4===0){ for (let y=0;y<FH;y++) for (let x=0;x<FW;x++){ const i=x+y*FW, l=((x+FW-1)%FW)+y*FW, r=((x+1)%FW)+y*FW, u=x+((y+FH-1)%FH)*FW, d=x+((y+1)%FH)*FW; mateTmp[i]=mateSc[i]*.5+(mateSc[l]+mateSc[r]+mateSc[u]+mateSc[d])*.125; } const t=mateSc; mateSc=mateTmp; mateTmp=t; }
   if (ticks%8===0){ for (let y=0;y<FH;y++) for (let x=0;x<FW;x++){ const i=x+y*FW, l=((x+FW-1)%FW)+y*FW, r=((x+1)%FW)+y*FW, u=x+((y+FH-1)%FH)*FW, d=x+((y+1)%FH)*FW; pherTmp[i]=pher[i]*.6+(pher[l]+pher[r]+pher[u]+pher[d])*.1; } const t=pher; pher=pherTmp; pherTmp=t; }
   if (ticks%25===0) pushHistory();
+  if (settings.migrateEvery>0&&ticks%settings.migrateEvery===0) exportMigrants();
 }
 function avg(f){ if (!agents.length) return 0; let s=0; for (const a of agents) s+=f(a); return s/agents.length; }
 let lastTally={...tally};
@@ -964,18 +965,22 @@ function reset(newShape){
     for (const a of band) for (const o of band) if (a!==o) setTrust(a,o.id,.3); }
   for (let i=0;i<1100;i++) addItem('food'); for (let i=0;i<420;i++) addItem('tree'); for (let i=0;i<320;i++) addItem('stone');
   for (let i=0;i<settings.beasts;i++) spawnBeast();
-  selected=0; log('300 founders released in 60 bands. Fertile valleys, forests and rocky ground are spread across the map.','birth');
-  postMeta();
+  selected=0; log(`Island ${'ABCD'[island]||island+1}: 300 founders released in 60 bands. Fertile valleys, forests and rocky ground are spread across the map.`,'birth');
+  if (viewing) postMeta();
 }
 
 // ---------- serialization ----------
 const r4 = v => Math.round(v*1e4)/1e4, r2 = v => Math.round(v*100)/100;
 const serBrain = b => ({inputs:b.inputs,sizes:b.sizes,w:b.w.map(f=>Array.from(f,r4))});
 const AGENT_KEYS=['name','gen','parent','lineage','traits','perks','stash','thanksGot','lovesGot','coparent','partners','age','lifespan','inv','tool','builds','success','kids','shared','stolen','attacks','kills','hunts','beastKills','crafts','deposits'];
+function serAgent(a){
+  const o={drv:a.drv,owed:[...a.owed],id:a.id,x:r2(a.x),y:r2(a.y),hd:r2(a.hd),energy:r2(a.energy),health:r2(a.health),memory:r4(a.memory),memA:r4(a.memA),memB:r4(a.memB),baseline:r4(a.baseline),
+    trust:[...a.trust].map(([k,v])=>[k,r4(v)]),actionCounts:Array.from(a.actionCounts),brain:serBrain(a.brain),learned:a.learned.map(f=>Array.from(f,r4))};
+  for (const k of AGENT_KEYS) o[k]=a[k]; return o;
+}
 function serialize(){
   return {version:12,shape,seed,ticks,nextId,nextBid,births,deaths,deathsBy,tally,maxGen,peakPop,selected,settings:{...settings},
-    agents:agents.map(a=>{ const o={drv:a.drv,owed:[...a.owed],id:a.id,x:r2(a.x),y:r2(a.y),hd:r2(a.hd),energy:r2(a.energy),health:r2(a.health),memory:r4(a.memory),memA:r4(a.memA),memB:r4(a.memB),baseline:r4(a.baseline),
-      trust:[...a.trust].map(([k,v])=>[k,r4(v)]),actionCounts:Array.from(a.actionCounts),brain:serBrain(a.brain),learned:a.learned.map(f=>Array.from(f,r4))}; for (const k of AGENT_KEYS) o[k]=a[k]; return o; }),
+    agents:agents.map(serAgent),
     items:items.filter(i=>!i.dead).map(i=>[i.t,r2(i.x),r2(i.y),i.life|0,i.max|0]),
     buildings:buildings.map(b=>({...b,hp:r2(b.hp)})),storms,beasts:beasts.map(z=>({...z,target:null})),events,history,elite:elite.map(e=>({...e,brain:serBrain(e.brain)}))};
 }
@@ -996,7 +1001,11 @@ function deserialize(s){
   const ow=s.version===6||s.version===10?840:s.shape==='tall'?600:s.shape==='square'?780:960, oh=s.version===6||s.version===10?520:s.shape==='tall'?960:s.shape==='square'?780:600;
   const sx=old?W/ow:1, sy=old?H/oh:1, reg=s.registry||{};
   seed=s.seed||12345; makeFields(seed);
-  const A=s.agents.map(o=>{
+  const A=s.agents.map(o=>deAgent(o,sx,sy,old,reg));
+  agents=A; repMap.clear(); for (const a of A) for (const [k,v] of a.trust) repMap.set(k,repOf(k)+v);
+  restOfDeserialize(s,A,sx,sy,old);
+}
+function deAgent(o,sx=1,sy=1,old=false,reg={}){
     const brain=deBrain(o.brain);
     const a=makeAgent(o.x*sx,o.y*sy,brain,o.gen||0,o.parent??null,{...freshTraits(),...o.traits},o.energy,[],o.perks||[]);
     a.id=o.id;
@@ -1008,8 +1017,8 @@ function deserialize(s){
     derive(a); if (o.drv) Object.assign(a.drv,o.drv); a.inWater=isWater(a.x,a.y); a.phi=wellbeing(a);
     if (!o.lineage){ const ch=[]; let id=o.parent; for (let i=0;i<12&&id&&reg[id];i++){ ch.push({id,gen:reg[id].gen,hue:0}); id=reg[id].parent; } a.lineage=ch; }
     return a;
-  });
-  agents=A; repMap.clear(); for (const a of A) for (const [k,v] of a.trust) repMap.set(k,repOf(k)+v);
+}
+function restOfDeserialize(s,A,sx,sy,old){
   ticks=s.ticks||0; nextId=Math.max(s.nextId||1,...A.map(a=>a.id+1)); births=s.births||0; deaths=s.deaths||0;
   deathsBy={age:0,hunger:0,storm:0,fire:0,beast:0,attack:0,...(s.deathsBy||{})}; Object.assign(tally,s.tally||{}); lastTally={...tally};
   maxGen=s.maxGen||Math.max(0,...A.map(a=>a.gen)); peakPop=s.peakPop||A.length;
@@ -1022,11 +1031,11 @@ function deserialize(s){
   elite=(s.elite||[]).map(e=>({...e,brain:deBrain(e.brain)}));
   Object.assign(settings,s.settings||{}); selected=s.selected||0; lastMilestone=maxGen-maxGen%10;
   log(old?'Older snapshot loaded and moved onto the new 1.5 world':'Snapshot loaded','info');
-  postMeta();
+  if (viewing) postMeta();
 }
 
 // ---------- reporting ----------
-let sendPher=false, started=false, running=true, speed=3, maxMode=false, last=performance.now(), acc=0, stepsWin=0, tps=0, lastMetrics=last, lastFrame=0, lastStats=0, lastInspect=0, inspecting=false;
+let lastPulse=0, sendPher=false, started=false, running=true, speed=3, maxMode=false, last=performance.now(), acc=0, stepsWin=0, tps=0, lastMetrics=last, lastFrame=0, lastStats=0, lastInspect=0, inspecting=false;
 function postMeta(){ self.postMessage({type:'meta',water,drives:DRIVES,bounds:TB,perks:PERKS,clash:CLASH,phys:PHYS,ment:MENT,traitInfo:TRAIT_INFO,senses:SENSES,actions:ACTIONS,short:SHORT,cont:CONT,W,H,FW,FH,FC,shape,settings,fert,forest,rock,seed}); }
 function postFrame(){
   const na=agents.length, A=new Float32Array(na*10);
@@ -1087,10 +1096,42 @@ function work(){
   }
   if (now-lastMetrics>=1000){ tps=Math.round(stepsWin*1000/(now-lastMetrics)); stepsWin=0; lastMetrics=now; }
   const frameGap=maxMode?60:30;
-  if (now-lastFrame>=frameGap){ postFrame(); lastFrame=now; }
-  if (inspecting&&selected&&now-lastInspect>=(maxMode?300:140)){ postInspect(); lastInspect=now; }
-  if (now-lastStats>=700){ postStats(true); lastStats=now; sendPher=true; }
+  if (viewing){
+    if (now-lastFrame>=frameGap){ postFrame(); lastFrame=now; }
+    if (inspecting&&selected&&now-lastInspect>=(maxMode?300:140)){ postInspect(); lastInspect=now; }
+    if (now-lastStats>=700){ postStats(true); lastStats=now; sendPher=true; }
+  }
+  if (now-lastPulse>=1000){ postPulse(); lastPulse=now; }
   schedule(!busy);
+}
+// ---------- islands ----------
+// Several worlds run in parallel workers. Every so often an island sends a few of its most successful yips
+// (children raised plus age) to another island, where they arrive together as a band.
+let island=0, viewing=true;
+function exportMigrants(){
+  const n=Math.min(settings.migrants|0,Math.floor(agents.length/10)); if (n<1) return;
+  const ranked=agents.filter(a=>a.age>300).sort((x,y)=>(y.kids*400+y.age)-(x.kids*400+x.age)).slice(0,n);
+  if (!ranked.length) return;
+  const pack=ranked.map(serAgent);
+  for (const a of ranked){ onDeath(a); a.dead=true; }   // they leave this island
+  agents=agents.filter(a=>!a.dead);
+  log(`${ranked.length} yips left for another island`,'info');
+  self.postMessage({type:'emigrants',from:island,pack});
+}
+function importMigrants(pack,from){
+  if (!pack.length||agents.length>=settings.popCap) return;
+  const [bx,by]=spawnPoint(fert,1), band=[];
+  for (const o of pack){
+    o.id=nextId++; o.trust=[]; o.owed=[]; o.parent=null; o.coparent=null;
+    const a=deAgent(o); a.x=wrapX(bx+rnd(-25,25)); a.y=wrapY(by+rnd(-25,25)); if (isWater(a.x,a.y)){ a.x=bx; a.y=by; }
+    a.lastBirth=ticks-150; a.origin=from; band.push(a); agents.push(a);
+  }
+  for (const p of band) for (const q of band) if (p!==q) setTrust(p,q.id,.35);
+  log(`${band.length} yips arrived from island ${'ABCD'[from]||from+1}: ${band.map(a=>a.name).join(', ')}`,'birth');
+  if (viewing) toast(`${band.length} migrants arrived from island ${'ABCD'[from]||from+1}`,'birth');
+}
+function postPulse(){
+  self.postMessage({type:'pulse',island,ticks,tps,pop:agents.length,maxGen,avgGen:avg(a=>a.gen),births,deaths,running});
 }
 function pickAgent(how){
   if (!agents.length) return;
@@ -1117,8 +1158,10 @@ self.onmessage=e=>{
     case 'speed': speed=m.speed; maxMode=!!m.max; break;
     case 'settings': Object.assign(settings,m.settings); break;
     case 'step': for (let i=0;i<(m.n||100);i++) tick(); postFrame(); postStats(true); break;
-    case 'init': if (!started){ started=true; reset(m.shape); postFrame(); postStats(true); } break;
-    case 'reset': reset(m.shape||shape); started=true; postFrame(); postStats(true); self.postMessage({type:'selected',id:0}); break;
+    case 'init': if (!started){ island=m.island||0; viewing=m.view!==false; if (m.settings) Object.assign(settings,m.settings); started=true; reset(m.shape); if (viewing){ postFrame(); postStats(true); } } break;
+    case 'view': viewing=m.on; if (viewing){ postMeta(); postFrame(); postStats(true); if (selected) postInspect(); } break;
+    case 'immigrants': importMigrants(m.pack,m.from); break;
+    case 'reset': reset(m.shape||shape); started=true; if (viewing){ postFrame(); postStats(true); self.postMessage({type:'selected',id:0}); } break;
     case 'storm': sendStorm(); break;
     case 'cold': settings.temperature=clamp(settings.temperature-12,-20,50); log('Cold snap: average temperature down 12°C','cold'); postStats(false); break;
     case 'heat': settings.temperature=clamp(settings.temperature+12,-20,50); log('Heatwave: average temperature up 12°C','heat'); postStats(false); break;
