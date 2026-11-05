@@ -79,6 +79,18 @@ For runs that should keep going with no browser open, the same thing works from 
 - **Saves** hold every island (yips, brains, genes, resources, settings), gzipped into the browser's IndexedDB. Autosave runs every 2 minutes; Settings has save, load, download and import. Old single-world files still load.
 - **Yip library** (Settings): keep the top yips from an island, from every island, or one yip from the inspector (Keep). A library entry stores genes, traits and the brain with everything it learned. *New world from library* starts fresh islands with one exact copy of each checked yip and fills the 300 founders with their mutated offspring. Libraries download and import as files.
 
+## Soft limits (1.8)
+
+Nothing we don't want is forbidden outright; it is made costly instead.
+
+- **Mating is a choice.** "Mate with nearest yip" is an ordinary action. The other yip says yes if it asked first, or with a chance set by how strongly its own brain leans toward mating right now. Being turned down stings a little. Sensors for "nearest yip wants to mate with me", "is ready" and "genetic similarity" let brains learn whom to pick.
+- **Inbreeding is allowed but costly.** Young of close relatives (by descent) get harmful defect genes (never better than the parents, and inherited), a weaker immune system, a shorter life and frailer health.
+- **New genetics cost more.** Every new or changed gene in a child adds to the mating cost and to how much energy the carrier must give.
+- **Thinking costs a little.** Lifetime learning burns energy in proportion to the learning rate; befriending is nearly free, but not free.
+- **Health.** Higher maximum health means a heavier, tougher body (mass, so more upkeep). In the last third of life the most health a body can hold falls to 40%.
+- **No gene limit.** Upkeep restrains genome size (a technical ceiling of 60 remains). **Traits** have soft limits: past their usual range a mutation is more likely to pull back than push further.
+- **Population** is limited by energy; the cap (now 1200) is only a performance guard. **Beasts** are back to full strength (80 health, 10 damage); how many there are depends on spare energy in the wild.
+
 ## Language (1.7)
 
 - **Eleven symbols**: ᛝ ᛟ ᚷ Ϟ Ϡ Ѫ Ҩ ᘛ ᖶ ᔑ ᓬ. Speaking is an ordinary action; a separate part of the brain picks which symbol, and another output sets how loud. Nothing gives a symbol a meaning.

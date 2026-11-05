@@ -495,7 +495,7 @@ button.chip:hover{border-color:var(--line-hi);background:rgba(255,255,255,.05)}
   <header class="top">
     <div class="brand glass">
       <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14" fill="none" stroke="#f3c96b" stroke-width="1.5" opacity=".5"/><circle cx="16" cy="16" r="9" fill="none" stroke="#7ed6b0" stroke-width="1.2" stroke-dasharray="2 3"/><circle cx="16" cy="16" r="4" fill="#f3c96b"/><circle cx="25" cy="10" r="2" fill="#8fd67a"/><circle cx="8" cy="22" r="1.6" fill="#7fd8ea"/></svg>
-      <h1>ALife <span>Lab</span><small id="ver">build 24</small></h1>
+      <h1>ALife <span>Lab</span><small id="ver">build 25</small></h1>
     </div>
     <div class="readouts glass" role="status">
       <div class="ro"><small><span class="lg">Living</span><span class="sh">Pop</span></small><b id="roPop">0</b></div>
@@ -674,7 +674,7 @@ button.chip:hover{border-color:var(--line-hi);background:rgba(255,255,255,.05)}
           <input type="file" id="lFile" accept="application/json,.json,.gz" hidden>
         </div>
       </section>
-      <section class="sec"><h3>About</h3><p class="note">ALife Lab build 24 · 2026-11-06</p></section>
+      <section class="sec"><h3>About</h3><p class="note">ALife Lab build 25 · 2026-11-06</p></section>
       <section class="sec"><h3>Shortcuts</h3>
         <div class="keys">
           <kbd>Space</kbd><span>Pause or resume</span>
@@ -863,8 +863,8 @@ const wdist = (a,b) => Math.hypot(ddx(a,b),ddy(a,b));
 const wdistXY = (x1,y1,x2,y2) => Math.hypot(wd(x2-x1,W),wd(y2-y1,H));
 
 // ---------- actions ----------
-const ACTIONS = ['Move north','Move east','Move south','Move west','Harvest','Eat','Deposit in store','Withdraw from store','Build house','Build storehouse','Build wall','Build fire','Repair','Share food','Attack yip','Fight beast','Craft tool','Rest','Drink','Show affection','Befriend nearest yip','Eat meat','Plant seeds','Speak'];
-const SHORT   = ['N','E','S','W','Harvest','Eat','Deposit','Withdraw','House','Store','Wall','Fire','Repair','Share','Attack','Hunt','Craft','Rest','Drink','Affection','Befriend','Meat','Plant','Speak'];
+const ACTIONS = ['Move north','Move east','Move south','Move west','Harvest','Eat','Deposit in store','Withdraw from store','Build house','Build storehouse','Build wall','Build fire','Repair','Share food','Attack yip','Fight beast','Craft tool','Rest','Drink','Show affection','Befriend nearest yip','Eat meat','Plant seeds','Speak','Mate with nearest yip'];
+const SHORT   = ['N','E','S','W','Harvest','Eat','Deposit','Withdraw','House','Store','Wall','Fire','Repair','Share','Attack','Hunt','Craft','Rest','Drink','Affection','Befriend','Meat','Plant','Speak','Mate'];
 const O = ACTIONS.length;            // discrete, softmax-sampled
 const CONT = ['Voice','Memory A','Memory B','Scent'];   // continuous tanh outputs
 // A small alphabet of vocal symbols. Nothing gives them meaning: a yip that speaks picks one (its brain's choice), and
@@ -876,13 +876,13 @@ const NOUT = VOL + 1;
 // Normal speech is quiet, a shout is loud, so a shout reaches yips that could never hear the same word spoken.
 const SPEAK_L = .45, SHOUT_L = 1.7;
 const NOISE_L = [.5, 1, 1.3, 1.6, .8];   // talk, fight, beast, death cry, work
-const A_ = Object.fromEntries(['N','E','S','W','HARVEST','EAT','DEPOSIT','WITHDRAW','HOUSE','STORE','WALL','FIRE','REPAIR','SHARE','ATTACK','HUNT','CRAFT','REST','DRINK','THANK','BEFRIEND','EATMEAT','PLANT','SPEAK'].map((k,i)=>[k,i]));
+const A_ = Object.fromEntries(['N','E','S','W','HARVEST','EAT','DEPOSIT','WITHDRAW','HOUSE','STORE','WALL','FIRE','REPAIR','SHARE','ATTACK','HUNT','CRAFT','REST','DRINK','THANK','BEFRIEND','EATMEAT','PLANT','SPEAK','MATE'].map((k,i)=>[k,i]));
 const ITYPES = ['food','tree','stone','carcass'];
 const BTYPES = ['house','store','wall','fire'];
 const SPECS = {house:{wood:3,stone:1,hp:450,r:16},store:{wood:5,stone:4,hp:720,r:23},wall:{wood:2,stone:1,hp:420,r:15},fire:{wood:2,stone:0,hp:180,r:12}};
 const LIMITS = {layers:6, neurons:24, inputs:32};
 const DX = [0,1,0,-1], DY = [-1,0,1,0];
-const settings = {worldEnergy:450000,disease:1,food:7.5,trees:.3,stone:.2,drain:1,decay:1,storm:1,temperature:19,day:500,season:2600,beasts:6,beastPower:1,popCap:450,migrateEvery:3000,migrants:4,mutation:1,learning:true,autoReseed:true};
+const settings = {worldEnergy:450000,disease:1,food:7.5,trees:.3,stone:.2,drain:1,decay:1,storm:1,temperature:19,day:500,season:2600,beasts:6,beastPower:1,popCap:1200,migrateEvery:3000,migrants:4,mutation:1,learning:true,autoReseed:true};
 
 // ---------- query masks ----------
 const Q = {FRIEND:1024,FOOD:1,TREE:2,STONE:4,SHELTER:8,FIRE:16,STORM:32,OTHER:64,PRED:128,CROWD:256,WALL:512,MEAT:2048,SOUND:4096,VOICE:8192};
@@ -1139,6 +1139,9 @@ const SENSOR_DEFS = [
   ['voiceY','Last voice direction Y',Q.VOICE,a=>a.voiceDy*Math.max(...a.heard)],
   ['voiceTrust','Trust in last speaker',Q.VOICE,a=>a.voiceTrust*Math.max(...a.heard)],
   ['ownWord','Symbols said in current word',0,a=>a.utter.length/4],
+  ['wantsMe','Nearest yip wants to mate with me',Q.OTHER,(a,e)=>e.other.obj&&e.other.obj.mateWant===a.id&&ticks-e.other.obj.mateAt<30?1:0],
+  ['agentReady','Nearest yip is ready to mate',Q.OTHER,(a,e)=>e.other.obj&&ready(e.other.obj)?1:0],
+  ['agentSimilar','Nearest yip\'s genetic similarity',Q.OTHER,(a,e)=>e.other.obj?similarity(a,e.other.obj):0],
   ['random','Noise',0,()=>rnd(-1,1)],
 ];
 // which way a smell is stronger: a keener nose compares points farther apart, so it can follow fainter, wider trails
@@ -1222,6 +1225,7 @@ function forward(a){
 // so relief that arrives later (eating) also credits the steps that led to it (walking to food, harvesting).
 const LEARN_EVERY=3, LAMBDA=Math.pow(.93,LEARN_EVERY);   // learn every 3rd tick; the trace fades by three ticks' worth each time
 function learn(a, reward, temp){
+  spend(a,.4*a.traits.lr);   // rewiring the brain costs energy
   const adv=clamp(reward-a.baseline,-4,4); a.baseline=.985*a.baseline+.015*reward;
   const b=a.brain, acts=a.acts, step=a.traits.lr*adv, L=b.w.length; let grad=gradA, back=gradB;
   for (let i=0;i<O;i++) grad[i]=((i===a.lastChoice?1:0)-a.probs[i])/temp;
@@ -1268,7 +1272,7 @@ function updateDrives(a,lt,moved,exertion,restBoost){
 }
 function wellbeing(a){
   const d=a.drv, t=a.traits;
-  return -(d.hunger*d.hunger + d.thirst*d.thirst + d.cold*d.cold + t.caution*d.injury*d.injury + .6*d.fatigue*d.fatigue + 1.6*t.social*d.lonely*d.lonely + (.5+t.greed)*d.insecure*d.insecure + d.grief*d.grief + .8*d.urge*d.urge);
+  return -(d.hunger*d.hunger + d.thirst*d.thirst + d.cold*d.cold + t.caution*d.injury*d.injury + .6*d.fatigue*d.fatigue + 1.6*t.social*d.lonely*d.lonely + (.5+t.greed)*d.insecure*d.insecure + d.grief*d.grief + 1.6*d.urge*d.urge);
 }
 const MATV={wood:.12,stone:.15}; let ownVal=new Map();
 const buildValue=b=>{ const s=SPECS[b.type]; return (s.wood*MATV.wood+s.stone*MATV.stone)*Math.max(0,b.hp/b.max); };
@@ -1329,14 +1333,14 @@ function grow(){
   // a large reserve feeds the wilderness: beasts appear when there is energy to spare
   // energy lying idle in the wild (reserve and soil) feeds the wilderness: beasts appear while there is energy to spare
   if (ticks%20===0){ let soil=0; for (let i=0;i<nut.length;i+=7) soil+=nut[i]; soil*=7; wildF=(reserve+soil)/Math.max(1,worldE); }
-  if (beasts.length<settings.beasts*1.5&&wildF>.2&&Math.random()<(wildF-.15)/300&&takeReserve(BEAST_E)) spawnBeast();
+  if (wildF>.2&&Math.random()<(wildF-.15)/150*Math.max(0,1-beasts.length/(settings.beasts*2.5))&&takeReserve(BEAST_E)) spawnBeast();
 }
 
 // ---------- bodies ----------
 // Everything a body is built from has mass and upkeep; metabolism is not a trait but the sum of those costs.
 const effStr = a => a.traits.strength*a.muscle;
 const effSpd = a => a.traits.speed*(.55+.45*a.muscle);
-function massOf(a){ const ph=a.ph; return 1+Math.max(0,ph.gut)/90+.22*effStr(a)+.1*effSpd(a)+.5*Math.max(0,1-ph.armor)+.04*Math.max(0,ph.carry)+ph.maxE/700+a.fat/150+load(a)*.04+(a.preg?a.preg.e/120:0); }
+function massOf(a){ const ph=a.ph; return 1+Math.max(0,ph.gut)/90+Math.max(0,ph.maxH-100)/220+.22*effStr(a)+.1*effSpd(a)+.5*Math.max(0,1-ph.armor)+.04*Math.max(0,ph.carry)+ph.maxE/700+a.fat/150+load(a)*.04+(a.preg?a.preg.e/120:0); }
 const gutCap = a => Math.max(15,45+18*a.mass+a.ph.gut);
 // organ upkeep per tick: eyes, nose, ears, immune system, healing, insulation, reproductive organs, brain and genes
 function upkeepOf(a){
@@ -1372,12 +1376,12 @@ function thermoCost(a,lt){
 // ---------- disease ----------
 // Rotting carcasses (and the sick) carry disease. It spreads only at close range, but its smell drifts much farther,
 // so a yip with a good nose can learn to keep away. A strong immune system fights it off; fighting costs energy.
-function infect(a,p){ if (a.sick>0||!settings.disease) return; if (Math.random()<p*settings.disease/(a.ph.immune*a.ph.immune)){ a.sick=.35+.4*Math.random(); tally.infections++; } }
+function infect(a,p){ if (a.sick>0||!settings.disease) return; if (Math.random()<p*settings.disease/Math.max(.15,a.ph.immune)){ a.sick=.35+.4*Math.random(); tally.infections++; } }
 function sicknessTick(a){
   if (a.sick<=0) return;
   const s=a.sick;
   spend(a,.05*s+.02*a.ph.immune); a.health-=.03*s; a.drv.fatigue=Math.min(1,a.drv.fatigue+.0008*s); a.harm='disease';
-  a.sick=s+.0005-.0017*a.ph.immune*(a.energy>30?1:.4); if (a.sick<=0) a.sick=0; else if (a.sick>1) a.sick=1;
+  a.sick=s+.0005-.0022*a.ph.immune*(a.energy>30?1:.4); if (a.sick<=0) a.sick=0; else if (a.sick>1) a.sick=1;
   miasma[cellIdx(a.x,a.y)]+=.12*s;
 }
 
@@ -1555,16 +1559,16 @@ function mutateGenes(src){
     if (Math.random()<.02*mu) g.cond=Math.random()<.5?'always':pick(COND_KEYS);
     if (Object.keys(g.fx).length) out.push(g);
   }
-  if (out.length&&Math.random()<.05*mu&&out.length<14){ const p=pick(out), d={...newGene({...p.fx},p.cond)}; const k=pick(Object.keys(d.fx)), D=DIALS[k]; d.fx[k]=+clamp(d.fx[k]+rnd(-1,1)*(D.hi-D.lo)*.1,D.lo,D.hi).toFixed(4); out.push(d); }   // duplication
+  if (out.length&&Math.random()<.05*mu&&out.length<60){ const p=pick(out), d={...newGene({...p.fx},p.cond)}; const k=pick(Object.keys(d.fx)), D=DIALS[k]; d.fx[k]=+clamp(d.fx[k]+rnd(-1,1)*(D.hi-D.lo)*.1,D.lo,D.hi).toFixed(4); out.push(d); }   // duplication
   if (out.length&&Math.random()<.03*mu) out.splice(Math.floor(Math.random()*out.length),1);   // loss
-  if (Math.random()<.04*mu&&out.length<14){ const g=newGene({},Math.random()<.7?'always':pick(COND_KEYS)); randomEffect(g); if (Math.random()<.4) randomEffect(g); out.push(g); }   // a new gene from nothing
+  if (Math.random()<.04*mu&&out.length<60){ const g=newGene({},Math.random()<.7?'always':pick(COND_KEYS)); randomEffect(g); if (Math.random()<.4) randomEffect(g); out.push(g); }   // a new gene from nothing
   return out;
 }
 function mixGenes(x,y){
   // shared genes (same lineage) come from either parent; a gene only one parent carries is inherited half the time
   const byId=new Map(); for (const g of x) byId.set(g.id,[g]); for (const g of y){ const e=byId.get(g.id); if (e) e.push(g); else byId.set(g.id,[g]); }
   const out=[]; for (const v of byId.values()){ if (v.length===2) out.push(pick(v)); else if (Math.random()<.5) out.push(v[0]); }
-  return out.slice(0,14);
+  return out.slice(0,60);
 }
 function applyFx(ph,fx){ for (const d in fx){ const D=DIALS[d]; if (!D) continue; if (D.kind==='mul') ph[d]*=1+fx[d]; else ph[d]+=fx[d]; } }
 function clampPh(ph){ ph.speed=Math.max(.3,ph.speed); ph.dmg=Math.max(.3,ph.dmg); ph.armor=Math.max(.3,ph.armor); ph.womb=Math.max(0,ph.womb); ph.seed=Math.max(0,ph.seed); ph.lifespan=clamp(ph.lifespan,.5,2.5); ph.maxE=Math.max(80,ph.maxE); ph.maxH=Math.max(40,ph.maxH); ph.regen=Math.max(0,ph.regen); ph.rest=Math.max(.2,ph.rest); ph.swim=Math.max(.3,ph.swim); ph.chill=Math.max(0,ph.chill); ph.food=Math.max(.5,ph.food); ph.predMul=Math.max(.5,ph.predMul); ph.sense=Math.max(0,ph.sense); ph.smell=Math.max(0,ph.smell); ph.hearing=Math.max(0,ph.hearing); ph.immune=Math.max(.05,ph.immune); ph.birth=Math.max(.3,ph.birth); ph.fertility=Math.max(.2,ph.fertility); }
@@ -1590,8 +1594,11 @@ function mutateTraits(src){
   for (const k in src){
     const v=src[k];
     if (k==='hue'){ t[k]=(v+rnd(-20,20)+360)%360; continue; }
-    const [lo,hi]=TB[k]||[.2,2.5], phys=PHYS.includes(k);
-    t[k]=phys&&Math.random()>.4 ? v : k==='despTrust' ? clamp(v+rnd(-.12,.12)*mu,lo,hi) : clamp(v*Math.exp(rnd(-1,1)*(phys?sP:sM))+(k==='altruism'||k==='greed'||k==='dread'?rnd(-.03,.03):0),lo,hi);
+    const [lo,hi]=TB[k]||[.2,2.5], phys=PHYS.includes(k), span=hi-lo, LO=k==='despTrust'?-3:Math.max(0,lo-span*.5), HI=hi+span*1.5;
+    // beyond the usual range a mutation is more likely to pull back than push further: a soft limit, not a wall
+    const over=v>hi?(v-hi)/span:v<lo?(lo-v)/span:0, bias=over?-Math.sign(v-hi>0?1:-1)*Math.min(.9,over*1.5):0;
+    const step=rnd(-1,1)+bias;
+    t[k]=phys&&Math.random()>.4 ? v : k==='despTrust' ? clamp(v+step*.12*mu,LO,HI) : clamp(v*Math.exp(step*(phys?sP:sM))+(k==='altruism'||k==='greed'||k==='dread'?rnd(-.03,.03):0),LO,HI);
   }
   for (const k of [...PHYS,...MENT]) if (t[k]==null) t[k]=freshTraits()[k];
   return t;
@@ -1638,7 +1645,7 @@ function socialTick(a){
 // Each partner's own standard falls as its urge rises: a yip that has met no one for a long time will pair
 // with a stranger, and one that is crowded stays choosy. Both must accept the other.
 const standard = y => .15-.3*y.drv.urge;
-function findMate(a,bonus){
+function findMate(a,bonus){   // unused since mating became a choice; kept for reference
   // a yip with a strong urge also notices partners farther away (it follows their scent to them)
   let best=null, bt=-1e9, crowd=0; const reach=50+80*a.drv.urge;
   forBins(gAgent,a.x,a.y,reach,o=>{
@@ -1662,22 +1669,50 @@ function child(a,mate){
   const brain=Math.random()<.5?a.brain:mate.brain;
   const c=makeAgent(wrapX((a.x+wd(mate.x-a.x,W)/2)+rnd(-6,6)),wrapY((a.y+wd(mate.y-a.y,H)/2)+rnd(-6,6)),mutateBrain(brain),Math.max(a.gen,mate.gen)+1,a.id,mutateTraits(traits),80,lineage,mutateGenes(genes));
   c.coparent=mate.id; c.clan=a.clan||mate.clan||a.name;
-  const inbred=kinship(a,mate); if (inbred>0){ c.lifespan*=1-.35*inbred; c.health=c.ph.maxH*(1-.3*inbred); c.inbred=inbred; }
+  inbreedingDefects(c,kinship(a,mate));   // close family by descent; distant relatives are fine
   setTrust(c,a.id,.5); setTrust(a,c.id,.5); setTrust(c,mate.id,.5); setTrust(mate,c.id,.5);
   a.kids++; mate.kids++; return c;
+}
+// how alike two genomes are: shared genes (by lineage) and close traits; 1 = identical
+function similarity(a,b){
+  let sh=0; const ids=new Set(a.genes.map(g=>g.id)); for (const g of b.genes) if (ids.has(g.id)) sh++;
+  const gs=(a.genes.length+b.genes.length)?2*sh/(a.genes.length+b.genes.length):1;
+  let td=0; for (const k of PHYS){ const [lo,hi]=TB[k]; td+=Math.abs(a.traits[k]-b.traits[k])/(hi-lo); }
+  return clamp(.6*gs+.4*(1-td/PHYS.length*3),0,1);
+}
+// Inbreeding is never forbidden, only costly: the young carries harmful defects (never better than its parents),
+// a weaker immune system, a shorter life and frailer health. Defects are ordinary genes, so they are inherited.
+function inbreedingDefects(c,inbred){
+  if (inbred<=0) return;
+  c.lifespan*=1-.35*inbred; c.inbred=inbred;
+  c.traits.immune*=1-.45*inbred;
+  const n=Math.floor(inbred*3+Math.random()*inbred*2);
+  for (let i=0;i<n;i++){
+    const d=pick(DIAL_KEYS), D=DIALS[d], v=+(D.good>0?D.lo*rnd(.3,.8):D.hi*rnd(.3,.8)).toFixed(4);
+    c.genes.push(newGene({[d]:v},'always','Defect '+geneName()));
+  }
+  derive(c); c.health=c.ph.maxH*(1-.3*inbred);
+}
+// how much is new in a child's genome compared with its parents (mutated, gained or de novo genes)
+function novelty(c,a,b){
+  const known=new Map(); for (const g of [...a.genes,...b.genes]) known.set(g.id+JSON.stringify(g.fx),1);
+  let n=0; for (const g of c.genes) if (!known.has(g.id+JSON.stringify(g.fx))) n++;
+  return n;
 }
 // ---------- reproduction ----------
 // Yips start sexless: every body can both carry young (womb) and sire them (seed). Both organs cost upkeep, and genes
 // can shrink either to nothing, so separate sexes, hermaphrodites or anything in between can evolve on their own.
-const ready = y => y.energy>60&&y.age>150&&!y.preg&&ticks-y.lastBirth>200;
+// mature and not already carrying; nothing else is required (a hungry carrier simply risks losing the young)
+const ready = y => y.age>150&&!y.preg&&y.energy>15;
 function conceive(a,b){
   const ca=a.ph.womb>.05, cb=b.ph.womb>.05;
   let carrier; if (ca&&cb) carrier=Math.random()<a.ph.womb/(a.ph.womb+b.ph.womb)?a:b; else carrier=ca?a:cb?b:null;
   if (!carrier) return false; const sire=carrier===a?b:a;
-  if (sire.ph.seed<=.05||Math.random()>Math.min(1,sire.ph.seed)*Math.min(1.2,carrier.ph.fertility)*.85){ spend(a,1); spend(b,1); a.lastBirth=b.lastBirth=ticks-120; return false; }
-  spend(a,2); spend(b,2); a.drv.urge=0; b.drv.urge=0; a.lastBirth=b.lastBirth=ticks;
-  const c=child(carrier,sire); c.energy=0; c.body=0; c.fat=0; c.gut=0;
-  carrier.preg={e:0,need:rnd(40,60)*carrier.ph.birth,t:0,starve:0,sire:sire.id,child:c}; tally.conceptions++;
+  if (sire.ph.seed<=.05||Math.random()>Math.min(1,sire.ph.seed)*Math.min(1.2,carrier.ph.fertility)*.85){ spend(a,1); spend(b,1); return false; }
+  a.drv.urge=0; b.drv.urge=0; a.lastBirth=b.lastBirth=ticks;
+  const c=child(carrier,sire), nov=novelty(c,a,b); c.energy=0; c.body=0; c.fat=0; c.gut=0;
+  spend(a,2+.4*nov); spend(b,2+.4*nov);
+  carrier.preg={e:0,need:rnd(40,60)*carrier.ph.birth*(1+.04*nov),t:0,starve:0,sire:sire.id,child:c}; tally.conceptions++;
   noise(a.x,a.y,0); return true;
 }
 // the carrier feeds the young from its own energy, losing some on the way; the young is born with what it received
@@ -1724,10 +1759,6 @@ function thank(g,b){
   gainTrust(b,g.id,.05*warmth);
   g.owed.set(b.id,Math.max(0,(g.owed.get(b.id)||0)-1));
   b.affectionGot++; tally.affection++; g.fx|=128;
-  // affection between two trusting yips who are both ready to breed can lead to mating
-  if (tr>.4&&ready(g)&&ready(b)&&kinship(g,b)<1&&(b.trust.get(g.id)||0)>standard(b)&&Math.random()<.25&&agents.length<settings.popCap){
-    if (conceive(g,b)) tally.loveBirths++;
-  }
 }
 // A death is felt by those who see it: grief rises with fear of death, more for kin and trusted yips,
 // and only a little for strangers. Then the dead are forgotten: every memory of them (trust, gratitude) is dropped.
@@ -1829,12 +1860,12 @@ function moveMeat(from,to,n){
 let nextBeast=1;
 function spawnBeast(x,y){
   if (x===undefined){ [x,y]=spawnPoint(rock,.5); }
-  beasts.push({id:nextBeast++,x,y,vx:0,vy:0,hd:0,hp:40,max:40,cd:0,energy:100,body:BEAST_E-100,sick:0,age:0,target:null,wander:rnd(0,6.28)});
+  beasts.push({id:nextBeast++,x,y,vx:0,vy:0,hd:0,hp:80,max:80,cd:0,energy:100,body:BEAST_E-100,sick:0,age:0,target:null,wander:rnd(0,6.28)});
 }
 function beastDies(z){ addCarcass(z.x,z.y,Math.max(0,z.energy)+z.body,1,z.sick>.3?ROT_AT+1:0); z.energy=0; z.body=0; }
 const _bq={}, _bf={}, _bm={};
 function tickBeasts(){
-  while (beasts.length>settings.beasts*1.5+3){ const z=beasts.shift(); beastDies(z); }
+  while (beasts.length>80){ const z=beasts.shift(); beastDies(z); }   // technical ceiling only
   const pw=settings.beastPower;
   for (const z of beasts){
     z.age++; z.cd--; z.energy-=.03; lose(.03);
@@ -1862,7 +1893,7 @@ function tickBeasts(){
     if (wallBlocks(nx,ny,4.5)||isWater(nx,ny)){ z.vx*=-.5; z.vy*=-.5; z.wander+=Math.PI/2; } else { z.x=nx; z.y=ny; }
     if (z.vx*z.vx+z.vy*z.vy>.01) z.hd=Math.atan2(z.vy,z.vx);
     const run=(sp*sp)*.004; z.energy-=run; lose(run);
-    if (tgt&&z.cd<=0&&wdist(z,tgt)<7){ const dmg=5*pw*(.6+.4*Math.random()); tgt.health-=dmg*tgt.ph.armor*tgt.ph.beastArmor; tgt.pain=1; tgt.harm='beast'; tgt.fx|=32; z.cd=18; z.energy-=.5; lose(.5); noise(z.x,z.y,2); }
+    if (tgt&&z.cd<=0&&wdist(z,tgt)<7){ const dmg=10*pw*(.6+.4*Math.random()); tgt.health-=dmg*tgt.ph.armor*tgt.ph.beastArmor; tgt.pain=1; tgt.harm='beast'; tgt.fx|=32; z.cd=18; z.energy-=.5; lose(.5); noise(z.x,z.y,2); }
   }
   for (let i=beasts.length-1;i>=0;i--){ const z=beasts[i]; if (z.hp<=0||z.energy<=0||z.age>12000){ beastDies(z); beasts.splice(i,1); } }
 }
@@ -1941,7 +1972,7 @@ function act(a,choice,e){
         const e=v.meatE/v.meat, isY=Math.random()<v.mY/v.meat, isR=Math.random()<v.mR/v.meat;
         v.meat--; v.meatE-=e; if (isY) v.mY--; if (isR) v.mR--; if (v.meat<=0){ v.meatE=0; v.mY=0; v.mR=0; }
         a.gut+=e; ok=true; spend(a,.03); tally.meals++;
-        if (isR) infect(a,.6); if (isY){ infect(a,.2); tally.cannibal++; }
+        if (isR) infect(a,.45); if (isY){ infect(a,.2); tally.cannibal++; }
         if (v!==a.inv&&insideNow.owner!==a.id) hostGrace(a,insideNow,.5+a.drv.hunger);
       }
       break;
@@ -2032,9 +2063,20 @@ function act(a,choice,e){
       noteSymbol(a,a.lastSym,shout);
       ok=true; break;
     }
+    case A_.MATE:
+      // both must want it: a yip that chooses this signals the nearest yip; if that yip chose it toward this one recently, they mate.
+      // Nothing forbids relatives or strangers; the consequences (weak young, illness) are what teach them.
+      // the other's answer is its own brain's inclination right now (how strongly it leans toward mating), or a yes if it asked first
+      if (o&&od<30&&ready(a)&&ready(o)){
+        spend(a,.05); a.mateWant=o.id; a.mateAt=ticks; ok=true;
+        const yes=(o.mateWant===a.id&&ticks-o.mateAt<30)||Math.random()<Math.min(1,o.probs[A_.MATE]*O*.6);
+        if (yes&&agents.length<settings.popCap){ if (conceive(a,o)){ a.mateWant=o.mateWant=0; } }
+        else if (!yes) a.drv.lonely=Math.min(1,a.drv.lonely+.03);   // being turned down stings a little
+      }
+      break;
     case A_.BEFRIEND:
       // a deliberate choice to trust the nearest yip a little more; steps shrink as trust grows
-      if (o&&od<30){ gainTrust(a,o.id,.06); ok=true; tally.befriends++; spend(a,.03); noise(a.x,a.y,0); }
+      if (o&&od<30){ gainTrust(a,o.id,.06); ok=true; tally.befriends++; spend(a,.008); }
       break;
     default:
       if (insideNow&&a.energy>15){ const yip=insideNow.type==='house', h=Math.min(a.ph.maxH-a.health,(yip?.1:.04)*a.traits.regen); if (h>0){ a.health+=h; spend(a,h*1.2); } ok=yip; }
@@ -2123,7 +2165,9 @@ function tick(){
     if (a.preg) pregTick(a,newborn);
     burnAvg(a);
     // healing is paid for in energy
-    if (a.health<ph.maxH&&(a.energy>40||ph.regen>.02)){ const h=Math.min(ph.maxH-a.health,ph.regen); a.health+=h; spend(a,h*1.2); }
+    // with age the body can't be kept in as good repair: in the last third of life the most health it can hold falls to 40%
+    const lifeF=a.age/a.lifespan, frail=lifeF>.67?1-.6*(lifeF-.67)/.33:1, hMax=ph.maxH*frail; if (a.health>hMax) a.health=hMax;
+    if (a.health<hMax&&(a.energy>40||ph.regen>.02)){ const h=Math.min(hMax-a.health,ph.regen); a.health+=h; spend(a,h*1.2); }
     if (storm&&!sheltered){ const wb=nearestWall(a,12)<12?.4:1; a.health-=.15*settings.storm*wb; spend(a,.12*settings.storm*wb); a.harm='storm'; }
     for (const b of fires){ const dx=wd(a.x-b.x,W), dy=wd(a.y-b.y,H); if (dx*dx+dy*dy<(b.r+2)*(b.r+2)){ a.health-=.4; spend(a,.1); a.harm='fire'; } }
     if (a.inWater){ spend(a,.015/a.ph.swim); if (a.energy<6){ a.health-=.8; a.harm="drowning"; } }
@@ -2131,7 +2175,7 @@ function tick(){
     // disease: catching it takes close contact with a rotting carcass or a sick yip; it then runs its course
     if ((a.id+ticks)%4===0&&settings.disease){
       const q=nearestIn(gMeat,a,9,_cq); if (q.obj&&q.obj.age>ROT_AT) infect(a,.02);
-      const o=env.other.obj; if (o&&o.sick>0&&env.other.dist<9) infect(a,.008*o.sick);
+      const o=env.other.obj; if (o&&o.sick>0&&env.other.dist<9) infect(a,.004*o.sick);
     }
     sicknessTick(a);
     // starving: with no energy left the body consumes itself
@@ -2157,12 +2201,6 @@ function tick(){
     a.racc=(a.racc||0)+reward;
     if (settings.learning&&(a.id+ticks)%LEARN_EVERY===0){ learn(a,a.racc,temp); a.racc=0; }
     if (ready(a)) mateSc[cellIdx(a.x,a.y)]+=.4+a.drv.urge;   // ready to breed: gives off mating scent, stronger with urge
-    // birth takes two: well-fed, unrelated yips close together who trust each other. Popular yips find it easier.
-    const pop=Math.min(1.5,Math.max(0,repOf(a.id))/4);
-    if (ready(a)&&a.energy>75-15*pop&&agents.length+newborn.length<cap&&(a.id+ticks)%2===0&&Math.random()<.04*(1+pop)*(1+a.drv.urge)/(1+Math.max(0,(a.crowdN||0)-5)*.35)){
-      const mate=findMate(a,.05*pop);
-      if (mate&&conceive(a,mate)){ updateDrives(a,lt,false,0,0); a.phi=wellbeing(a); }
-    }
     if (a.health<=0||a.age>a.lifespan){
       onDeath(a); a.dead=true; dead++; deaths++; const cause=a.age>a.lifespan?'age':a.harm; deathsBy[cause]=(deathsBy[cause]||0)+1;
       noise(a.x,a.y,3); dropInventory(a); archive(a);
@@ -2245,7 +2283,7 @@ function reset(newShape,seeds){
 // ---------- serialization ----------
 const r4 = v => Math.round(v*1e4)/1e4, r2 = v => Math.round(v*100)/100;
 const serBrain = b => ({inputs:b.inputs,sizes:b.sizes,w:b.w.map(f=>Array.from(f,r4))});
-const AGENT_KEYS=['affectionGot','saidLog','gut','fat','body','muscle','sick','clan','history','lastHurtBy','lastHurtAt','name','gen','parent','lineage','traits','genes','stash','thanksGot','lovesGot','coparent','partners','age','lifespan','inv','tool','builds','success','kids','shared','stolen','attacks','kills','hunts','beastKills','crafts','deposits'];
+const AGENT_KEYS=['inbred','affectionGot','saidLog','gut','fat','body','muscle','sick','clan','history','lastHurtBy','lastHurtAt','name','gen','parent','lineage','traits','genes','stash','thanksGot','lovesGot','coparent','partners','age','lifespan','inv','tool','builds','success','kids','shared','stolen','attacks','kills','hunts','beastKills','crafts','deposits'];
 function serAgent(a){
   const o={drv:a.drv,owed:[...a.owed],id:a.id,x:r2(a.x),y:r2(a.y),hd:r2(a.hd),energy:r2(a.energy),health:r2(a.health),memory:r4(a.memory),memA:r4(a.memA),memB:r4(a.memB),baseline:r4(a.baseline),
     trust:[...a.trust].map(([k,v])=>[k,r4(v)]),actionCounts:Array.from(a.actionCounts),brain:serBrain(a.brain),learned:a.learned.map(f=>Array.from(f,r4)),
@@ -2259,13 +2297,16 @@ function serialize(){
     buildings:buildings.map(b=>({...b,hp:r2(b.hp)})),storms,beasts:beasts.map(z=>({...z,target:null})),events,history,elite:elite.map(e=>({...e,brain:serBrain(e.brain)}))};
 }
 // Older brains had fewer outputs. Map each old discrete action and continuous output onto its new row; new rows start small.
-const OLD_LAYOUTS={27:{disc:[...Array(23).keys()],cont:4},14:{disc:[0,1,2,3,4,5,6,8,9,10,11,12,13,17],cont:0},21:{disc:[...Array(18).keys()],cont:3},24:{disc:[...Array(20).keys()],cont:4},25:{disc:[...Array(21).keys()],cont:4}};
+const OLD_LAYOUTS={40:{disc:[...Array(24).keys()],cont:4,syms:12},27:{disc:[...Array(23).keys()],cont:4},14:{disc:[0,1,2,3,4,5,6,8,9,10,11,12,13,17],cont:0},21:{disc:[...Array(18).keys()],cont:3},24:{disc:[...Array(20).keys()],cont:4},25:{disc:[...Array(21).keys()],cont:4}};
 function upgradeBrain(b){
   const L=b.sizes.length-1, cols=b.sizes[L-1], old=b.w[L-1], rowsOld=b.sizes[L];
   b.inputs=b.inputs.map(k=>k==='memory'?'trend':k);
   if (rowsOld===NOUT) return b;
   const f=randArr(NOUT*cols,.3), lay=OLD_LAYOUTS[rowsOld];
-  if (lay){ lay.disc.forEach((to,j)=>f.set(old.subarray(j*cols,(j+1)*cols),to*cols)); for (let c=0;c<lay.cont;c++){ const j=lay.disc.length+c; f.set(old.subarray(j*cols,(j+1)*cols),(O+c)*cols); } }
+  if (lay){ lay.disc.forEach((to,j)=>f.set(old.subarray(j*cols,(j+1)*cols),to*cols)); for (let c=0;c<lay.cont;c++){ const j=lay.disc.length+c; f.set(old.subarray(j*cols,(j+1)*cols),(O+c)*cols); }
+    for (let c=0;c<(lay.syms||0);c++){ const j=lay.disc.length+lay.cont+c; f.set(old.subarray(j*cols,(j+1)*cols),(SYM0+c)*cols); }
+    // brains from before mating was a choice: mating used to follow from affection, so the new row starts as a copy of that one
+    if (Math.max(...lay.disc)<A_.MATE&&lay.disc.includes(A_.THANK)) for (let i=0;i<cols;i++) f[A_.MATE*cols+i]=f[A_.THANK*cols+i]+rnd(-.05,.05); }
   b.w[L-1]=f; b.sizes[L]=NOUT; return b;
 }
 const deBrain = b => upgradeBrain(b.weights ? fromNested(b) : {inputs:b.inputs,sizes:b.sizes,w:b.w.map(x=>Float32Array.from(x))});
@@ -2294,7 +2335,13 @@ function deAgent(o,sx=1,sy=1,old=false,reg={}){
     if (o.preg&&o.preg.child){ a.preg={...o.preg,child:deAgent(o.preg.child,sx,sy,old,reg)}; }
     a.trust=new Map(Array.isArray(o.trust)?o.trust:Object.entries(o.trust||{}).map(([k,v])=>[+k,v])); a.owed=new Map(o.owed||[]);
     if (o.actionCounts&&o.actionCounts.length===O) a.actionCounts=Uint32Array.from(o.actionCounts);
-    if (o.learned&&!old){ a.learned=o.learned.map(x=>Float32Array.from(x)); a.eff=a.brain.w.map((w,l)=>{ const e=new Float32Array(w.length), d=a.learned[l]; for (let i=0;i<w.length;i++) e[i]=w[i]+(d[i]||0); return e; }); }
+    // learned weights must match the (possibly upgraded) brain layer by layer; where a layer grew, the new part starts unlearned
+    if (o.learned&&!old&&o.learned.length===a.brain.w.length){ a.learned=a.brain.w.map((w,l)=>{
+        const f=new Float32Array(w.length), src=o.learned[l]; if (src.length===w.length){ f.set(src); return f; }
+        // an output layer that gained rows: keep what was learned for the actions that kept their place, the rest starts fresh
+        const cols=a.brain.sizes[l], lay=OLD_LAYOUTS[src.length/cols];
+        if (lay&&l===w.length-1) lay.disc.forEach((to,jj)=>{ if (to===jj) f.set(src.subarray(jj*cols,(jj+1)*cols),to*cols); });
+        return f; }); a.eff=a.brain.w.map((w,l)=>{ const e=new Float32Array(w.length), d=a.learned[l]; for (let i=0;i<w.length;i++) e[i]=w[i]+(d[i]||0); return e; }); }
     derive(a); if (o.drv) Object.assign(a.drv,o.drv); a.inWater=isWater(a.x,a.y); a.phi=wellbeing(a);
     if (!o.lineage){ const ch=[]; let id=o.parent; for (let i=0;i<12&&id&&reg[id];i++){ ch.push({id,gen:reg[id].gen,hue:0}); id=reg[id].parent; } a.lineage=ch; }
     return a;
@@ -2311,7 +2358,7 @@ function restOfDeserialize(s,A,sx,sy,old){
   for (const b of buildings){ b.stock={food:0,wood:0,stone:0,meat:0,meatE:0,mY:0,mR:0,...(b.stock||{})}; if (b.e===undefined) b.e=SPECS[b.type].wood*WOOD_E*(b.type==='fire'?Math.max(.2,b.hp/b.max):1); }
   events=(s.events||[]).map(e=>typeof e==='string'?{t:0,s:e,kind:'info'}:e); history=Array.isArray(s.history)&&!old?s.history:[];
   elite=(s.elite||[]).map(e=>({...e,genes:cleanGenes(e.genes),brain:deBrain(e.brain)}));
-  Object.assign(settings,s.settings||{}); selected=s.selected||0; lastMilestone=maxGen-maxGen%10;
+  Object.assign(settings,s.settings||{}); if (settings.popCap===450) settings.popCap=1200; selected=s.selected||0; lastMilestone=maxGen-maxGen%10;
   // the energy ledger: restored as saved, or, for a save from before the physics, wrapped round what the save holds
   nut.fill(0); miasma.fill(0); gardens=Array.isArray(s.gardens)?s.gardens:[]; sounds=[]; soundsPrev=[];
   if (s.worldE){ if (Array.isArray(s.nut)&&s.nut.length===nut.length) nut.set(s.nut); worldE=s.worldE; reserve=s.reserve||0; audit(); }
@@ -2374,7 +2421,7 @@ function postInspect(){
     trustedBy:agents.filter(x=>(x.trust.get(a.id)||0)>.3).map(x=>({id:x.id,name:x.name,v:x.trust.get(a.id),hue:x.traits.hue})).sort((p,q)=>q.v-p.v).slice(0,12),coparentAlive:alive.has(a.coparent),
     lineage:a.lineage.map(l=>({...l,alive:alive.has(l.id)})),lastBirth:a.lastBirth,parent:a.parent,genes:a.genes.map(g=>({...g,cost:+geneUpkeep(g).toFixed(4),on:condOn(a,g.cond)})),
     ph:{maxE:a.ph.maxE,maxH:a.ph.maxH,speed:a.ph.speed,dmg:a.ph.dmg,armor:a.ph.armor,coldT:a.ph.coldT,hotT:a.ph.hotT,sense:a.ph.sense,smell:a.ph.smell,hearing:a.ph.hearing,immune:a.ph.immune,womb:a.ph.womb,seed:a.ph.seed,food:a.ph.food,lifespan:a.ph.lifespan},
-    body:{gut:a.gut,gutCap:gutCap(a),fat:a.fat,body:a.body,muscle:a.muscle,mass:a.mass,sick:a.sick,str:effStr(a),preg:a.preg?{e:a.preg.e,need:a.preg.need,t:a.preg.t}:null,burn:a.burn||0,
+    body:{inbred:a.inbred||0,defects:a.genes.filter(g=>g.name.startsWith('Defect')).length,frail:(()=>{ const f=a.age/a.lifespan; return f>.67?1-.6*(f-.67)/.33:1; })(),gut:a.gut,gutCap:gutCap(a),fat:a.fat,body:a.body,muscle:a.muscle,mass:a.mass,sick:a.sick,str:effStr(a),preg:a.preg?{e:a.preg.e,need:a.preg.need,t:a.preg.t}:null,burn:a.burn||0,
       upkeep:{base:.035*Math.pow(a.mass,.75),eyes:.00022*a.ph.sense,nose:.006*a.ph.smell,ears:.0001*a.ph.hearing,immune:.008*a.ph.immune,healing:.006*a.traits.regen,insulation:.004*a.traits.thermal,repro:.005*a.ph.womb+.0025*a.ph.seed,brain:.4*a.brainCost,genes:a.geneUpkeep}},
     deeds:{shared:a.shared,stolen:a.stolen,attacks:a.attacks,kills:a.kills,hunts:a.hunts,beastKills:a.beastKills,crafts:a.crafts,deposits:a.deposits,builds:a.builds},
     actionCounts:Array.from(a.actionCounts),owed:[...a.owed].sort((x,y)=>y[1]-x[1]).slice(0,6).map(([id,v])=>[nm(id)||('#'+id),v]),inWater:a.inWater,drv:a.drv,rep:repOf(a.id),admirers:agents.filter(x=>(x.trust.get(a.id)||0)>.5).length,affectionGot:a.affectionGot,said:a.saidLog.slice().reverse(),speaking:a.utter.length?(a.utterShout?'!':'')+a.utter.map(i=>SYMS[i]).join(''):'',heardNow:SYMS.filter((c,i)=>a.heard[i]>.3).join(''),coparent:a.coparent,partners:a.partners,wellbeing:a.phi,rewardAvg:a.lastReward||0,curiosityGain:a.lastBonus||0,memory:a.memory,memA:a.memA,memB:a.memB,signal:a.signal,pain:a.pain});
@@ -3827,7 +3874,7 @@ function renderStats() {
   lineChart($('cPop'), [{ values: h.map(x => x.pop), color: C.good }, { values: h.map(x => x.build), color: C.house }, { values: h.map(x => (x.beasts || 0) * 10), color: C.beast }]);
   lineChart($('cBeh'), [{ values: per100('shares'), color: C.good }, { values: per100('thefts'), color: C.bad }, { values: per100('attacks').map(v => v / 10), color: C.beast + '99' }, { values: per100('hunts'), color: C.warn }, { values: per100('crafts'), color: C.wall }, { values: per100('affection'), color: '#ff8fc8' }, { values: per100('words').map(v => v / 5), color: C.accent }]);
   lineChart($('cSocial'), [{ values: h.map(x => x.rep || 0), color: '#ff8fc8' }, { values: h.map(x => (x.lonely || 0) * 5), color: '#9cb6ff' }], { decimals: 1 });
-  $('behFigs').innerHTML = [['Gifts given', ta.shares], ['Food stolen', ta.thefts], ['Affection shown', ta.affection || 0], ['Words spoken', ta.words || 0], ['Shouts', ta.shouts || 0], ['Births', ta.pairings], ['After affection', ta.loveBirths || 0], ['Befriendings', ta.befriends], ['Beasts slain', ta.beastKills], ['Tools made', ta.crafts], ['Holding tools', Math.round(s.tools / Math.max(1, s.pop) * 100) + '%']]
+  $('behFigs').innerHTML = [['Gifts given', ta.shares], ['Food stolen', ta.thefts], ['Affection shown', ta.affection || 0], ['Words spoken', ta.words || 0], ['Shouts', ta.shouts || 0], ['Conceptions', ta.conceptions || 0], ['Births', ta.pairings], ['Miscarriages', ta.miscarriages || 0], ['Befriendings', ta.befriends], ['Beasts slain', ta.beastKills], ['Tools made', ta.crafts], ['Holding tools', Math.round(s.tools / Math.max(1, s.pop) * 100) + '%']]
     .map(([k, v]) => `<div class="fig"><b>${typeof v === 'number' ? fmt(v) : v}</b><small>${k}</small></div>`).join('');
   lineChart($('cGen'), [{ values: h.map(x => x.gen), color: C.accent }]);
   lineChart($('cBody'), [{ values: h.map(x => x.str), color: C.bad, area: false }, { values: h.map(x => x.spd), color: C.store }, { values: h.map(x => x.sense / 100), color: C.wall }, { values: h.map(x => x.agg || 0), color: C.beast }, { values: h.map(x => (x.neurons || 0) / 50), color: C.accent }], { decimals: 1 });
@@ -3930,6 +3977,8 @@ function bodyPane(m) {
     <span>Upkeep in thousandths of energy per tick, before movement, work, fighting, temperature and illness. Metabolism is just the sum.</span>
     <div class="row2"><span>Body</span><b>mass ${(bd.mass || 0).toFixed(2)} · muscle ${Math.round((bd.muscle || 0) * 100)}% · strength ${(bd.str || 0).toFixed(2)}</b></div>
     <div class="row2"><span>Reproduction</span><b>${sex}${bd.preg ? ` · carrying young ${Math.round(bd.preg.e / bd.preg.need * 100)}%` : ''}</b></div>
+    ${bd.inbred ? `<div class="row2"><span>Inbred</span><b style="color:var(--warn)">${Math.round(bd.inbred * 100)}% related parents · ${bd.defects} defect gene${bd.defects === 1 ? '' : 's'}</b></div>` : bd.defects ? `<div class="row2"><span>Inherited defects</span><b style="color:var(--warn)">${bd.defects} gene${bd.defects === 1 ? '' : 's'}</b></div>` : ''}
+    ${bd.frail < .99 ? `<div class="row2"><span>Age</span><b>frail: can hold ${Math.round(bd.frail * 100)}% of full health</b></div>` : ''}
     ${bd.sick > .02 ? `<div class="row2"><span>Illness</span><b style="color:var(--bad)">sick ${Math.round(bd.sick * 100)}%</b></div>` : ''}`;
   renderGenes(m.genes || []);
   const d = m.deeds;

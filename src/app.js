@@ -1278,7 +1278,7 @@ function renderStats() {
   lineChart($('cPop'), [{ values: h.map(x => x.pop), color: C.good }, { values: h.map(x => x.build), color: C.house }, { values: h.map(x => (x.beasts || 0) * 10), color: C.beast }]);
   lineChart($('cBeh'), [{ values: per100('shares'), color: C.good }, { values: per100('thefts'), color: C.bad }, { values: per100('attacks').map(v => v / 10), color: C.beast + '99' }, { values: per100('hunts'), color: C.warn }, { values: per100('crafts'), color: C.wall }, { values: per100('affection'), color: '#ff8fc8' }, { values: per100('words').map(v => v / 5), color: C.accent }]);
   lineChart($('cSocial'), [{ values: h.map(x => x.rep || 0), color: '#ff8fc8' }, { values: h.map(x => (x.lonely || 0) * 5), color: '#9cb6ff' }], { decimals: 1 });
-  $('behFigs').innerHTML = [['Gifts given', ta.shares], ['Food stolen', ta.thefts], ['Affection shown', ta.affection || 0], ['Words spoken', ta.words || 0], ['Shouts', ta.shouts || 0], ['Births', ta.pairings], ['After affection', ta.loveBirths || 0], ['Befriendings', ta.befriends], ['Beasts slain', ta.beastKills], ['Tools made', ta.crafts], ['Holding tools', Math.round(s.tools / Math.max(1, s.pop) * 100) + '%']]
+  $('behFigs').innerHTML = [['Gifts given', ta.shares], ['Food stolen', ta.thefts], ['Affection shown', ta.affection || 0], ['Words spoken', ta.words || 0], ['Shouts', ta.shouts || 0], ['Conceptions', ta.conceptions || 0], ['Births', ta.pairings], ['Miscarriages', ta.miscarriages || 0], ['Befriendings', ta.befriends], ['Beasts slain', ta.beastKills], ['Tools made', ta.crafts], ['Holding tools', Math.round(s.tools / Math.max(1, s.pop) * 100) + '%']]
     .map(([k, v]) => `<div class="fig"><b>${typeof v === 'number' ? fmt(v) : v}</b><small>${k}</small></div>`).join('');
   lineChart($('cGen'), [{ values: h.map(x => x.gen), color: C.accent }]);
   lineChart($('cBody'), [{ values: h.map(x => x.str), color: C.bad, area: false }, { values: h.map(x => x.spd), color: C.store }, { values: h.map(x => x.sense / 100), color: C.wall }, { values: h.map(x => x.agg || 0), color: C.beast }, { values: h.map(x => (x.neurons || 0) / 50), color: C.accent }], { decimals: 1 });
@@ -1381,6 +1381,8 @@ function bodyPane(m) {
     <span>Upkeep in thousandths of energy per tick, before movement, work, fighting, temperature and illness. Metabolism is just the sum.</span>
     <div class="row2"><span>Body</span><b>mass ${(bd.mass || 0).toFixed(2)} · muscle ${Math.round((bd.muscle || 0) * 100)}% · strength ${(bd.str || 0).toFixed(2)}</b></div>
     <div class="row2"><span>Reproduction</span><b>${sex}${bd.preg ? ` · carrying young ${Math.round(bd.preg.e / bd.preg.need * 100)}%` : ''}</b></div>
+    ${bd.inbred ? `<div class="row2"><span>Inbred</span><b style="color:var(--warn)">${Math.round(bd.inbred * 100)}% related parents · ${bd.defects} defect gene${bd.defects === 1 ? '' : 's'}</b></div>` : bd.defects ? `<div class="row2"><span>Inherited defects</span><b style="color:var(--warn)">${bd.defects} gene${bd.defects === 1 ? '' : 's'}</b></div>` : ''}
+    ${bd.frail < .99 ? `<div class="row2"><span>Age</span><b>frail: can hold ${Math.round(bd.frail * 100)}% of full health</b></div>` : ''}
     ${bd.sick > .02 ? `<div class="row2"><span>Illness</span><b style="color:var(--bad)">sick ${Math.round(bd.sick * 100)}%</b></div>` : ''}`;
   renderGenes(m.genes || []);
   const d = m.deeds;
