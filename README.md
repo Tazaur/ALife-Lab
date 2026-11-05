@@ -82,7 +82,7 @@ For runs that should keep going with no browser open, the same thing works from 
 ## Language (1.7)
 
 - **Eleven symbols**: ᛝ ᛟ ᚷ Ϟ Ϡ Ѫ Ҩ ᘛ ᖶ ᔑ ᓬ. Speaking is an ordinary action; a separate part of the brain picks which symbol, and another output sets how loud. Nothing gives a symbol a meaning.
-- **Words and shouts**: symbols said in quick succession chain into a word of up to four (shown above the yip, e.g. `! ᛝᛟϞѪ`). A shout costs more energy and carries much farther (170 vs 45), but only as far as each listener can hear.
+- **Words and shouts**: symbols said in quick succession chain into a word of up to four (shown above the yip, e.g. `! ᛝᛟϞѪ`). A shout costs more energy and is about four times louder. Hearing range is a sensitivity: a sound is heard out to the listener's hearing range times the sound's loudness (speech 0.45, shout 1.7; talk, fights, beasts, death cries and work each have their own loudness).
 - **Listening**: each heard symbol leaves a fading trace a brain can wire to, so the order of a word survives as how faded each part is. Listeners can also sense whether it was a shout, where it came from and how much they trust the speaker.
 - **The dictionary** (Stats → Language): every use is logged with the speaker's situation (beast in sight, food nearby, hungry, hurt, kin or stranger nearest, ready to mate, fighting, alone, carrying young, sick) and compared with how often that situation happens anyway. A word used far more often than chance in one situation is listed with it. Meanings are inferred from use, never assigned.
 - **Affection** replaces thank-yous and loving thank-yous: one act that eases the other's loneliness, builds its trust, settles gratitude owed, and between trusting yips ready to breed can lead to mating.

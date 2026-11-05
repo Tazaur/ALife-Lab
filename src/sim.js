@@ -26,7 +26,10 @@ const CONT = ['Voice','Memory A','Memory B','Scent'];   // continuous tanh outpu
 const SYMS = ['ᛝ','ᛟ','ᚷ','Ϟ','Ϡ','Ѫ','Ҩ','ᘛ','ᖶ','ᔑ','ᓬ'], NSYM = SYMS.length;
 const SYM0 = O + CONT.length, VOL = SYM0 + NSYM;     // output rows: which symbol, then how loud
 const NOUT = VOL + 1;
-const SPEAK_R = 45, SHOUT_R = 170;
+// Hearing is a sensitivity: a sound is heard out to (listener's hearing range × the sound's loudness).
+// Normal speech is quiet, a shout is loud, so a shout reaches yips that could never hear the same word spoken.
+const SPEAK_L = .45, SHOUT_L = 1.7;
+const NOISE_L = [.5, 1, 1.3, 1.6, .8];   // talk, fight, beast, death cry, work
 const A_ = Object.fromEntries(['N','E','S','W','HARVEST','EAT','DEPOSIT','WITHDRAW','HOUSE','STORE','WALL','FIRE','REPAIR','SHARE','ATTACK','HUNT','CRAFT','REST','DRINK','THANK','BEFRIEND','EATMEAT','PLANT','SPEAK'].map((k,i)=>[k,i]));
 const ITYPES = ['food','tree','stone','carcass'];
 const BTYPES = ['house','store','wall','fire'];
@@ -539,9 +542,10 @@ let sounds=[], soundsPrev=[];
 function noise(x,y,k){ if (sounds.length<1500) sounds.push({x,y,k}); }
 const _hear={n:0,dx:0,dy:0,d:0,k:[0,0,0,0,0,0]};
 function hear(a){
-  const r=a.ph.hearing, r2=r*r, h=_hear; h.n=0; h.d=r; h.dx=h.dy=0; h.k[0]=h.k[1]=h.k[2]=h.k[3]=h.k[4]=h.k[5]=0; let bd=r2;
-  forBins(gSound,a.x,a.y,r,s=>{ const dx=wd(s.x-a.x,W), dy=wd(s.y-a.y,H), dd=dx*dx+dy*dy; if (dd>r2||dd<1) return; h.n++; h.k[s.k]++; if (dd<bd){ bd=dd; h.dx=dx; h.dy=dy; } });
-  h.d=Math.sqrt(bd); return h;
+  const r=a.ph.hearing, h=_hear; h.n=0; h.d=r; h.dx=h.dy=0; h.k[0]=h.k[1]=h.k[2]=h.k[3]=h.k[4]=h.k[5]=0; let bd=1e18;
+  if (r<=0) return h;
+  forBins(gSound,a.x,a.y,r*1.7,s=>{ const L=s.k===5?(s.shout?SHOUT_L:SPEAK_L):NOISE_L[s.k], R=r*L, dx=wd(s.x-a.x,W), dy=wd(s.y-a.y,H), dd=dx*dx+dy*dy; if (dd>R*R||dd<1) return; h.n++; h.k[s.k]++; if (dd<bd){ bd=dd; h.dx=dx; h.dy=dy; } });
+  h.d=h.n?Math.min(r,Math.sqrt(bd)):r; return h;
 }
 
 // ---------- voices ----------
@@ -551,12 +555,12 @@ function hear(a){
 function listen(a){
   const f=Math.pow(.8,ticks-a.heardAt); a.heardAt=ticks;
   for (let i=0;i<NSYM;i++) a.heard[i]*=f; a.heardShout*=f;
-  const R=Math.min(a.ph.hearing,SHOUT_R); if (R<=0) return;
+  const R=a.ph.hearing*SHOUT_L; if (R<=0) return;
   let bd=1e9;
   forBins(gSound,a.x,a.y,R,s=>{
     if (s.k!==5||s.id===a.id) return;
     const dx=wd(s.x-a.x,W), dy=wd(s.y-a.y,H), d=Math.sqrt(dx*dx+dy*dy);
-    if (d>Math.min(a.ph.hearing,s.shout?SHOUT_R:SPEAK_R)) return;
+    if (d>a.ph.hearing*(s.shout?SHOUT_L:SPEAK_L)) return;
     a.heard[s.sym]=1; if (s.shout) a.heardShout=1;
     if (d<bd){ bd=d; a.voiceDx=dx/Math.max(1,d); a.voiceDy=dy/Math.max(1,d); a.voiceTrust=a.trust.get(s.id)||0; }
   });

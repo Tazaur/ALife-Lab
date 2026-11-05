@@ -488,7 +488,7 @@ button.chip:hover{border-color:var(--line-hi);background:rgba(255,255,255,.05)}
   <header class="top">
     <div class="brand glass">
       <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14" fill="none" stroke="#f3c96b" stroke-width="1.5" opacity=".5"/><circle cx="16" cy="16" r="9" fill="none" stroke="#7ed6b0" stroke-width="1.2" stroke-dasharray="2 3"/><circle cx="16" cy="16" r="4" fill="#f3c96b"/><circle cx="25" cy="10" r="2" fill="#8fd67a"/><circle cx="8" cy="22" r="1.6" fill="#7fd8ea"/></svg>
-      <h1>ALife <span>Lab</span><small id="ver">build 23</small></h1>
+      <h1>ALife <span>Lab</span><small id="ver">build 24</small></h1>
     </div>
     <div class="readouts glass" role="status">
       <div class="ro"><small><span class="lg">Living</span><span class="sh">Pop</span></small><b id="roPop">0</b></div>
@@ -544,7 +544,7 @@ button.chip:hover{border-color:var(--line-hi);background:rgba(255,255,255,.05)}
         <div class="lsyms" id="langSyms"></div>
         <div class="lwords" id="langWords"></div>
         <p class="note" id="langNote"></p>
-        <p class="note">Speaking is an ordinary action and nothing gives a symbol meaning. Symbols said in quick succession chain into words of up to four. A shout (!) costs more energy and carries much farther. Listeners only pick it up within their own hearing range.</p>
+        <p class="note">Speaking is an ordinary action and nothing gives a symbol meaning. Symbols said in quick succession chain into words of up to four. A shout (!) costs more energy and is about four times louder. Each yip hears a sound out to its own hearing range times the sound's loudness, so a shout reaches yips that would never hear the same word spoken.</p>
       </section>
       <section class="sec"><h3>World energy <span>where the fixed total sits right now</span></h3><div class="stack" id="ledStack"></div><div class="key" id="ledKey"></div><p class="note" id="ledNote"></p></section>
       <section class="sec"><h3>Bodies <span>reproduction, health and build</span></h3><div class="kv" id="bodyMix"></div><p class="note">Every founder can both carry and sire young. Separate sexes appear only if genes shrink one ability away.</p></section>
@@ -667,7 +667,7 @@ button.chip:hover{border-color:var(--line-hi);background:rgba(255,255,255,.05)}
           <input type="file" id="lFile" accept="application/json,.json,.gz" hidden>
         </div>
       </section>
-      <section class="sec"><h3>About</h3><p class="note">ALife Lab build 23 · 2026-11-06</p></section>
+      <section class="sec"><h3>About</h3><p class="note">ALife Lab build 24 · 2026-11-06</p></section>
       <section class="sec"><h3>Shortcuts</h3>
         <div class="keys">
           <kbd>Space</kbd><span>Pause or resume</span>
@@ -865,7 +865,10 @@ const CONT = ['Voice','Memory A','Memory B','Scent'];   // continuous tanh outpu
 const SYMS = ['ᛝ','ᛟ','ᚷ','Ϟ','Ϡ','Ѫ','Ҩ','ᘛ','ᖶ','ᔑ','ᓬ'], NSYM = SYMS.length;
 const SYM0 = O + CONT.length, VOL = SYM0 + NSYM;     // output rows: which symbol, then how loud
 const NOUT = VOL + 1;
-const SPEAK_R = 45, SHOUT_R = 170;
+// Hearing is a sensitivity: a sound is heard out to (listener's hearing range × the sound's loudness).
+// Normal speech is quiet, a shout is loud, so a shout reaches yips that could never hear the same word spoken.
+const SPEAK_L = .45, SHOUT_L = 1.7;
+const NOISE_L = [.5, 1, 1.3, 1.6, .8];   // talk, fight, beast, death cry, work
 const A_ = Object.fromEntries(['N','E','S','W','HARVEST','EAT','DEPOSIT','WITHDRAW','HOUSE','STORE','WALL','FIRE','REPAIR','SHARE','ATTACK','HUNT','CRAFT','REST','DRINK','THANK','BEFRIEND','EATMEAT','PLANT','SPEAK'].map((k,i)=>[k,i]));
 const ITYPES = ['food','tree','stone','carcass'];
 const BTYPES = ['house','store','wall','fire'];
@@ -1378,9 +1381,10 @@ let sounds=[], soundsPrev=[];
 function noise(x,y,k){ if (sounds.length<1500) sounds.push({x,y,k}); }
 const _hear={n:0,dx:0,dy:0,d:0,k:[0,0,0,0,0,0]};
 function hear(a){
-  const r=a.ph.hearing, r2=r*r, h=_hear; h.n=0; h.d=r; h.dx=h.dy=0; h.k[0]=h.k[1]=h.k[2]=h.k[3]=h.k[4]=h.k[5]=0; let bd=r2;
-  forBins(gSound,a.x,a.y,r,s=>{ const dx=wd(s.x-a.x,W), dy=wd(s.y-a.y,H), dd=dx*dx+dy*dy; if (dd>r2||dd<1) return; h.n++; h.k[s.k]++; if (dd<bd){ bd=dd; h.dx=dx; h.dy=dy; } });
-  h.d=Math.sqrt(bd); return h;
+  const r=a.ph.hearing, h=_hear; h.n=0; h.d=r; h.dx=h.dy=0; h.k[0]=h.k[1]=h.k[2]=h.k[3]=h.k[4]=h.k[5]=0; let bd=1e18;
+  if (r<=0) return h;
+  forBins(gSound,a.x,a.y,r*1.7,s=>{ const L=s.k===5?(s.shout?SHOUT_L:SPEAK_L):NOISE_L[s.k], R=r*L, dx=wd(s.x-a.x,W), dy=wd(s.y-a.y,H), dd=dx*dx+dy*dy; if (dd>R*R||dd<1) return; h.n++; h.k[s.k]++; if (dd<bd){ bd=dd; h.dx=dx; h.dy=dy; } });
+  h.d=h.n?Math.min(r,Math.sqrt(bd)):r; return h;
 }
 
 // ---------- voices ----------
@@ -1390,12 +1394,12 @@ function hear(a){
 function listen(a){
   const f=Math.pow(.8,ticks-a.heardAt); a.heardAt=ticks;
   for (let i=0;i<NSYM;i++) a.heard[i]*=f; a.heardShout*=f;
-  const R=Math.min(a.ph.hearing,SHOUT_R); if (R<=0) return;
+  const R=a.ph.hearing*SHOUT_L; if (R<=0) return;
   let bd=1e9;
   forBins(gSound,a.x,a.y,R,s=>{
     if (s.k!==5||s.id===a.id) return;
     const dx=wd(s.x-a.x,W), dy=wd(s.y-a.y,H), d=Math.sqrt(dx*dx+dy*dy);
-    if (d>Math.min(a.ph.hearing,s.shout?SHOUT_R:SPEAK_R)) return;
+    if (d>a.ph.hearing*(s.shout?SHOUT_L:SPEAK_L)) return;
     a.heard[s.sym]=1; if (s.shout) a.heardShout=1;
     if (d<bd){ bd=d; a.voiceDx=dx/Math.max(1,d); a.voiceDy=dy/Math.max(1,d); a.voiceTrust=a.trust.get(s.id)||0; }
   });
