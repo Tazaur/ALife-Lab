@@ -482,7 +482,7 @@ button.chip:hover{border-color:var(--line-hi);background:rgba(255,255,255,.05)}
   <header class="top">
     <div class="brand glass">
       <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14" fill="none" stroke="#f3c96b" stroke-width="1.5" opacity=".5"/><circle cx="16" cy="16" r="9" fill="none" stroke="#7ed6b0" stroke-width="1.2" stroke-dasharray="2 3"/><circle cx="16" cy="16" r="4" fill="#f3c96b"/><circle cx="25" cy="10" r="2" fill="#8fd67a"/><circle cx="8" cy="22" r="1.6" fill="#7fd8ea"/></svg>
-      <h1>ALife <span>Lab</span><small id="ver">build 21</small></h1>
+      <h1>ALife <span>Lab</span><small id="ver">build 22</small></h1>
     </div>
     <div class="readouts glass" role="status">
       <div class="ro"><small><span class="lg">Living</span><span class="sh">Pop</span></small><b id="roPop">0</b></div>
@@ -534,6 +534,8 @@ button.chip:hover{border-color:var(--line-hi);background:rgba(255,255,255,.05)}
       <section class="sec"><h3>Social life</h3><canvas class="chart" id="cSocial"></canvas><div class="key"><span><i style="background:#ff8fc8"></i>Avg popularity</span><span><i style="background:#9cb6ff"></i>Avg loneliness × 5</span></div></section>
       <section class="sec"><h3>Most common genes <span>share of yips carrying each</span></h3><div class="genes" id="perkBars"></div></section>
       <section class="sec"><h3>Temperament <span>population average</span></h3><div class="sec" id="mentAvg" style="gap:7px"></div></section>
+      <section class="sec"><h3>World energy <span>where the fixed total sits right now</span></h3><div class="stack" id="ledStack"></div><div class="key" id="ledKey"></div><p class="note" id="ledNote"></p></section>
+      <section class="sec"><h3>Bodies <span>reproduction, health and build</span></h3><div class="kv" id="bodyMix"></div><p class="note">Every founder can both carry and sire young. Separate sexes appear only if genes shrink one ability away.</p></section>
       <section class="sec"><h3>How they died</h3><div class="stack" id="deathStack"></div><div class="key" id="deathKey"></div></section>
       <section class="sec"><h3>What they sense <span>share of brains wired to it</span></h3><div class="bars" id="sensBars"></div></section>
       <section class="sec"><h3>What they do <span>average action mix</span></h3><div class="bars" id="actBars"></div></section>
@@ -653,7 +655,7 @@ button.chip:hover{border-color:var(--line-hi);background:rgba(255,255,255,.05)}
           <input type="file" id="lFile" accept="application/json,.json,.gz" hidden>
         </div>
       </section>
-      <section class="sec"><h3>About</h3><p class="note">ALife Lab build 21 · 2026-11-05</p></section>
+      <section class="sec"><h3>About</h3><p class="note">ALife Lab build 22 · 2026-11-06</p></section>
       <section class="sec"><h3>Shortcuts</h3>
         <div class="keys">
           <kbd>Space</kbd><span>Pause or resume</span>
@@ -721,10 +723,10 @@ button.chip:hover{border-color:var(--line-hi);background:rgba(255,255,255,.05)}
         <div class="kv" id="contKV"></div>
       </div>
       <div class="pane sec" id="pBody" hidden>
-        <h3>Physical <span>slow to evolve · heavy on the body budget</span></h3>
+        <h3>Physical <span>slow to evolve · paid for in energy</span></h3>
         <div class="sec" id="physList" style="gap:7px"></div>
         <div class="budget" id="budgetBar"></div>
-        <h3>Genes <span>what each does to the body · its budget cost</span></h3>
+        <h3>Genes <span>what each does to the body · its upkeep while on</span></h3>
         <div class="genes" id="geneList"></div>
         <p class="note">Genes arise, duplicate, mutate and disappear on their own. Conditional genes only switch on in their situation.</p>
         <h3>Mental <span>fast to evolve · nearly free</span></h3>
@@ -764,6 +766,8 @@ button.chip:hover{border-color:var(--line-hi);background:rgba(255,255,255,.05)}
     <span><i class="sq" style="background:var(--wall)"></i>Wall</span>
     <span><i style="background:var(--fire)"></i>Fire</span>
     <span><i style="background:var(--beast)"></i>Beast</span>
+    <span><i style="background:#b8574a"></i>Carcass</span>
+    <span><i style="background:#98a64c"></i>Rotting</span>
     <span><i class="sq" style="background:#1a3a54"></i>Water</span>
   </div>
   <div class="perf" id="perf">Starting…</div>
@@ -840,26 +844,26 @@ const wdist = (a,b) => Math.hypot(ddx(a,b),ddy(a,b));
 const wdistXY = (x1,y1,x2,y2) => Math.hypot(wd(x2-x1,W),wd(y2-y1,H));
 
 // ---------- actions ----------
-const ACTIONS = ['Move north','Move east','Move south','Move west','Harvest','Eat','Deposit in store','Withdraw from store','Build house','Build storehouse','Build wall','Build fire','Repair','Share food','Attack yip','Fight beast','Craft tool','Rest','Drink','Thank nearest yip','Befriend nearest yip'];
-const SHORT   = ['N','E','S','W','Harvest','Eat','Deposit','Withdraw','House','Store','Wall','Fire','Repair','Share','Attack','Hunt','Craft','Rest','Drink','Thank','Befriend'];
+const ACTIONS = ['Move north','Move east','Move south','Move west','Harvest','Eat','Deposit in store','Withdraw from store','Build house','Build storehouse','Build wall','Build fire','Repair','Share food','Attack yip','Fight beast','Craft tool','Rest','Drink','Thank nearest yip','Befriend nearest yip','Eat meat','Plant seeds'];
+const SHORT   = ['N','E','S','W','Harvest','Eat','Deposit','Withdraw','House','Store','Wall','Fire','Repair','Share','Attack','Hunt','Craft','Rest','Drink','Thank','Befriend','Meat','Plant'];
 const O = ACTIONS.length;            // discrete, softmax-sampled
 const CONT = ['Voice','Memory A','Memory B','Scent'];   // continuous tanh outputs
 const NOUT = O + CONT.length;
-const A_ = Object.fromEntries(['N','E','S','W','HARVEST','EAT','DEPOSIT','WITHDRAW','HOUSE','STORE','WALL','FIRE','REPAIR','SHARE','ATTACK','HUNT','CRAFT','REST','DRINK','THANK','BEFRIEND'].map((k,i)=>[k,i]));
-const ITYPES = ['food','tree','stone'];
+const A_ = Object.fromEntries(['N','E','S','W','HARVEST','EAT','DEPOSIT','WITHDRAW','HOUSE','STORE','WALL','FIRE','REPAIR','SHARE','ATTACK','HUNT','CRAFT','REST','DRINK','THANK','BEFRIEND','EATMEAT','PLANT'].map((k,i)=>[k,i]));
+const ITYPES = ['food','tree','stone','carcass'];
 const BTYPES = ['house','store','wall','fire'];
 const SPECS = {house:{wood:3,stone:1,hp:450,r:16},store:{wood:5,stone:4,hp:720,r:23},wall:{wood:2,stone:1,hp:420,r:15},fire:{wood:2,stone:0,hp:180,r:12}};
 const LIMITS = {layers:6, neurons:24, inputs:32};
 const DX = [0,1,0,-1], DY = [-1,0,1,0];
-const settings = {food:7.5,trees:.3,stone:.2,drain:1,decay:1,storm:1,temperature:19,day:500,season:2600,beasts:6,beastPower:1,popCap:450,migrateEvery:3000,migrants:4,mutation:1,learning:true,autoReseed:true};
+const settings = {worldEnergy:450000,disease:1,food:7.5,trees:.3,stone:.2,drain:1,decay:1,storm:1,temperature:19,day:500,season:2600,beasts:6,beastPower:1,popCap:450,migrateEvery:3000,migrants:4,mutation:1,learning:true,autoReseed:true};
 
 // ---------- query masks ----------
-const Q = {FRIEND:1024,FOOD:1,TREE:2,STONE:4,SHELTER:8,FIRE:16,STORM:32,OTHER:64,PRED:128,CROWD:256,WALL:512};
+const Q = {FRIEND:1024,FOOD:1,TREE:2,STONE:4,SHELTER:8,FIRE:16,STORM:32,OTHER:64,PRED:128,CROWD:256,WALL:512,MEAT:2048,SOUND:4096};
 
 let agents=[], items=[], buildings=[], storms=[], beasts=[], events=[], history=[], elite=[];
 let ticks=0, nextId=1, nextBid=1, births=0, deaths=0, maxGen=0, peakPop=0, selected=0, lastMilestone=0, seed=1;
-let deathsBy = {age:0,hunger:0,thirst:0,drowning:0,storm:0,fire:0,beast:0,attack:0};
-let tally = {loveBirths:0,befriends:0,gifts:0,thanks:0,loves:0,pairings:0,shares:0,thefts:0,attacks:0,hunts:0,beastKills:0,crafts:0,deposits:0,withdraws:0,builds:0};
+let deathsBy = {age:0,hunger:0,thirst:0,drowning:0,storm:0,fire:0,beast:0,attack:0,disease:0};
+let tally = {conceptions:0,miscarriages:0,infections:0,plantings:0,meals:0,cannibal:0,loveBirths:0,befriends:0,gifts:0,thanks:0,loves:0,pairings:0,shares:0,thefts:0,attacks:0,hunts:0,beastKills:0,crafts:0,deposits:0,withdraws:0,builds:0};
 let baseTemp = 19, dayS = 0, seasonS = 0;
 let fires=[], shelters=[], walls=[];
 let fert = new Float32Array(FW*FH), forest = new Float32Array(FW*FH), rock = new Float32Array(FW*FH);
@@ -921,13 +925,14 @@ function spawnPoint(f, power){
 
 // ---------- spatial grids ----------
 const mkGrid = () => Array.from({length: GC*GR}, () => []);
-let gFood, gTree, gStone, gAgent, GRIDS;
+let gFood, gTree, gStone, gMeat, gAgent, gSound, GRIDS;
 function setSize(){
   shape='square'; GC=W/CELL; GR=H/CELL; FW=W/FC; FH=H/FC;
   pher=new Float32Array(FW*FH); pherTmp=new Float32Array(FW*FH); mateSc=new Float32Array(FW*FH); mateTmp=new Float32Array(FW*FH);
-  gFood=mkGrid(); gTree=mkGrid(); gStone=mkGrid(); gAgent=mkGrid(); GRIDS=[gFood,gTree,gStone];
+  miasma=new Float32Array(FW*FH); miaTmp=new Float32Array(FW*FH); nut=new Float32Array(FW*FH);
+  gFood=mkGrid(); gTree=mkGrid(); gStone=mkGrid(); gMeat=mkGrid(); gAgent=mkGrid(); gSound=mkGrid(); GRIDS=[gFood,gTree,gStone,gMeat];
 }
-let pher, pherTmp, mateSc, mateTmp;
+let pher, pherTmp, mateSc, mateTmp, miasma, miaTmp, nut;
 setSize();
 function clearGrid(g){ for (let i=0;i<g.length;i++) g[i].length = 0; }
 function cellOf(x,y){ return (Math.floor(x/CELL)%GC+GC)%GC + ((Math.floor(y/CELL)%GR+GR)%GR)*GC; }
@@ -976,7 +981,7 @@ function nearestWall(a,r){ let d=r; for (const b of walls) if (b.hp>0&&Math.abs(
 // ---------- senses ----------
 // [key, label, query mask, fn(a,e)]
 const dir = (a,q,ax) => q.obj ? (ax==='x'?q.dx:q.dy)/Math.max(1,q.dist) : 0;
-const pro = (a,q) => q.obj ? 1-q.dist/a._r : 0;
+const pro = (a,q) => q.obj ? 1-q.dist/Math.max(1,a._r) : 0;
 function kinship(a,o){
   if (!o) return 0;
   if (o.parent===a.id||a.parent===o.id||o.coparent===a.id||a.coparent===o.id) return 1;
@@ -1004,15 +1009,18 @@ const SENSOR_DEFS = [
   ['waterX','Water direction X',0,a=>{ const v=waterVec(a.x,a.y,_wv); return v.d>1?v.dx/v.d:0; }],
   ['waterY','Water direction Y',0,a=>{ const v=waterVec(a.x,a.y,_wv); return v.d>1?v.dy/v.d:0; }],
   ['waterNear','Water proximity',0,a=>{ const v=waterVec(a.x,a.y,_wv); return Math.max(0,1-v.d/a._r); }],
-  ['scent','Scent here',0,a=>Math.min(1,pher[cellIdx(a.x,a.y)]/4)],
-  ['scentX','Scent gradient X',0,a=>clamp((pher[cellIdx(a.x+FC,a.y)]-pher[cellIdx(a.x-FC,a.y)])/2,-1,1)],
-  ['scentY','Scent gradient Y',0,a=>clamp((pher[cellIdx(a.x,a.y+FC)]-pher[cellIdx(a.x,a.y-FC)])/2,-1,1)],
+  ['scent','Scent here',0,a=>Math.min(1,pher[cellIdx(a.x,a.y)]*a.ph.smell/4)],
+  ['scentX','Scent gradient X',0,a=>smellGrad(pher,a,1,2)],
+  ['scentY','Scent gradient Y',0,a=>smellGrad(pher,a,0,2)],
   ['friendX','Most trusted yip direction X',Q.FRIEND,(a,e)=>dir(a,e.friend,'x')],
   ['friendY','Most trusted yip direction Y',Q.FRIEND,(a,e)=>dir(a,e.friend,'y')],
   ['friendNear','Most trusted yip proximity',Q.FRIEND,(a,e)=>pro(a,e.friend)],
-  ['mateScent','Mating scent here',0,a=>Math.min(1,mateSc[cellIdx(a.x,a.y)]/3)],
-  ['mateScentX','Mating scent gradient X',0,a=>clamp((mateSc[cellIdx(a.x+FC,a.y)]-mateSc[cellIdx(a.x-FC,a.y)]),-1,1)],
-  ['mateScentY','Mating scent gradient Y',0,a=>clamp((mateSc[cellIdx(a.x,a.y+FC)]-mateSc[cellIdx(a.x,a.y-FC)]),-1,1)],
+  ['mateScent','Mating scent here',0,a=>Math.min(1,mateSc[cellIdx(a.x,a.y)]*a.ph.smell/3)],
+  ['mateScentX','Mating scent gradient X',0,a=>smellGrad(mateSc,a,1,1)],
+  ['mateScentY','Mating scent gradient Y',0,a=>smellGrad(mateSc,a,0,1)],
+  ['disease','Smell of disease here',0,a=>Math.min(1,miasma[cellIdx(a.x,a.y)]*a.ph.smell/2)],
+  ['diseaseX','Smell of disease gradient X',0,a=>smellGrad(miasma,a,1,1.5)],
+  ['diseaseY','Smell of disease gradient Y',0,a=>smellGrad(miasma,a,0,1.5)],
   ['hurtBy','Nearest yip hurt me recently',Q.OTHER,(a,e)=>e.other.obj&&e.other.obj.id===a.lastHurtBy&&ticks-a.lastHurtAt<600?1:0],
   ['gratitude','Gratitude owed to nearest yip',Q.OTHER,(a,e)=>e.other.obj?Math.min(1,a.owed.get(e.other.obj.id)||0):0],
   ['coldDrive','Feeling cold or hot',0,a=>a.drv.cold],
@@ -1062,8 +1070,8 @@ const SENSOR_DEFS = [
   ['agentTool','Nearest yip holds a tool',Q.OTHER,(a,e)=>e.other.obj&&e.other.obj.tool>0?1:0],
   ['agentStrength','Nearest yip strength vs mine',Q.OTHER,(a,e)=>e.other.obj?clamp(e.other.obj.traits.strength-a.traits.strength,-1,1):0],
   ['agentHue','Nearest yip color',Q.OTHER,(a,e)=>e.other.obj?Math.cos(e.other.obj.traits.hue*Math.PI/180):0],
-  ['signal','Nearest yip\'s voice',Q.OTHER,(a,e)=>e.other.obj?e.other.obj.signal:0],
-  ['chorus','Average voice nearby',Q.CROWD,(a,e)=>e.crowd.sig],
+  ['signal','Nearest yip\'s voice',Q.OTHER,(a,e)=>e.other.obj&&e.other.dist<=a.ph.hearing?e.other.obj.signal:0],
+  ['chorus','Average voice nearby',Q.CROWD,(a,e)=>a.ph.hearing>=40?e.crowd.sig:0],
   ['crowd','Crowding',Q.CROWD,(a,e)=>Math.min(1,e.crowd.n/8)],
   ['ownHue','Own color',0,a=>Math.cos(a.traits.hue*Math.PI/180)],
   ['memA','Memory A',0,a=>a.memA],
@@ -1074,8 +1082,34 @@ const SENSOR_DEFS = [
   ['stoneStock','Carried stone',0,a=>a.inv.stone/6],
   ['time','Day phase',0,()=>dayS],
   ['season','Season phase',0,()=>seasonS],
+  ['gut','Food in stomach',0,a=>Math.min(1,a.gut/gutCap(a))],
+  ['fat','Body fat',0,a=>Math.min(1,a.fat/150)],
+  ['muscle','Muscle condition',0,a=>(a.muscle-.45)/.7],
+  ['pregnant','Carrying young',0,a=>a.preg?Math.min(1,a.preg.e/a.preg.need):0],
+  ['sick','Feeling sick',0,a=>a.sick],
+  ['ownSex','Own body: carries (+) or sires (-) young',0,a=>clamp(a.ph.womb-a.ph.seed,-1,1)],
+  ['meatStock','Carried meat',0,a=>a.inv.meat/6],
+  ['seedStock','Carried seeds',0,a=>(a.inv.seeds||0)/5],
+  ['carcassX','Carcass direction X',Q.MEAT,(a,e)=>dir(a,e.meat,'x')],
+  ['carcassY','Carcass direction Y',Q.MEAT,(a,e)=>dir(a,e.meat,'y')],
+  ['carcassNear','Carcass proximity',Q.MEAT,(a,e)=>pro(a,e.meat)],
+  ['carcassRot','Nearest carcass is rotting',Q.MEAT,(a,e)=>e.meat.obj&&e.meat.obj.age>ROT_AT?1:0],
+  ['agentSick','Nearest yip looks sick',Q.OTHER,(a,e)=>e.other.obj?e.other.obj.sick:0],
+  ['agentPregnant','Nearest yip is carrying young',Q.OTHER,(a,e)=>e.other.obj&&e.other.obj.preg?1:0],
+  ['agentSex','Nearest yip carries (+) or sires (-) young',Q.OTHER,(a,e)=>e.other.obj?clamp(e.other.obj.ph.womb-e.other.obj.ph.seed,-1,1):0],
+  ['agentFat','Nearest yip fatness',Q.OTHER,(a,e)=>e.other.obj?Math.min(1,e.other.obj.fat/150):0],
+  ['soundNear','Nearest sound proximity',Q.SOUND,(a,e)=>e.hear.n?1-e.hear.d/Math.max(1,a.ph.hearing):0],
+  ['soundX','Nearest sound direction X',Q.SOUND,(a,e)=>e.hear.n?e.hear.dx/Math.max(1,e.hear.d):0],
+  ['soundY','Nearest sound direction Y',Q.SOUND,(a,e)=>e.hear.n?e.hear.dy/Math.max(1,e.hear.d):0],
+  ['heardTalk','Talking heard',Q.SOUND,(a,e)=>Math.min(1,e.hear.k[0]/4)],
+  ['heardFight','Fighting heard',Q.SOUND,(a,e)=>Math.min(1,e.hear.k[1]/3)],
+  ['heardBeast','Beast heard',Q.SOUND,(a,e)=>Math.min(1,e.hear.k[2]/2)],
+  ['heardCry','Death cry heard',Q.SOUND,(a,e)=>Math.min(1,e.hear.k[3])],
+  ['heardWork','Work heard',Q.SOUND,(a,e)=>Math.min(1,e.hear.k[4]/4)],
   ['random','Noise',0,()=>rnd(-1,1)],
 ];
+// which way a smell is stronger: a keener nose compares points farther apart, so it can follow fainter, wider trails
+function smellGrad(f,a,xAxis,k){ const sm=a.ph.smell; if (sm<=.02) return 0; const o=FC*(1+Math.round(sm*1.5)); const d=xAxis?f[cellIdx(a.x+o,a.y)]-f[cellIdx(a.x-o,a.y)]:f[cellIdx(a.x,a.y+o)]-f[cellIdx(a.x,a.y-o)]; return clamp(d*sm/k,-1,1); }
 const SENSES = Object.fromEntries(SENSOR_DEFS.map(d=>[d[0],d[1]]));
 const KEYS = SENSOR_DEFS.map(d=>d[0]);
 const KEYIDX = Object.fromEntries(KEYS.map((k,i)=>[k,i]));
@@ -1179,7 +1213,7 @@ function learn(a, reward, temp){
 const DRIVES = ['hunger','thirst','cold','injury','fatigue','lonely','insecure','grief','urge'];
 function updateDrives(a,lt,moved,exertion,restBoost){
   const ph=a.ph, d=a.drv;
-  d.hunger=clamp(1-a.energy/(ph.maxE*.7),0,1);
+  d.hunger=clamp(1-(a.energy+.75*a.gut+.35*a.fat)/(ph.maxE*.7),0,1);   // a full stomach satisfies before its energy arrives
   d.thirst=clamp(d.thirst+.0005*(1+Math.max(0,lt-24)/12),0,1);   // grows faster in the heat; only drinking lowers it
   const disc=clamp((Math.max(0,ph.coldT-lt)+Math.max(0,lt-ph.hotT))/12,0,1);
   d.cold+=(disc-d.cold)*(disc>d.cold?.015:.12);                     // chill builds slowly, warmth relieves fast
@@ -1202,20 +1236,139 @@ const REWARD_SCALE=8;   // one wellbeing unit = one energy-100; scaled so learni
 const actFreq=new Float64Array(O).fill(1/O), okTick=new Float64Array(O);
 function updateActFreq(){ let s=0; for (let i=0;i<O;i++) s+=okTick[i]; if (s>0) for (let i=0;i<O;i++){ actFreq[i]=.995*actFreq[i]+.005*okTick[i]/s; okTick[i]=0; } }
 
+// ---------- energy physics ----------
+// The world holds a fixed amount of energy. It is only ever moved, never made or destroyed:
+//   wild reserve (heat, decay and anything unclaimed) -> plants and beasts -> yips' guts -> usable energy and fat
+//   -> work, body heat and waste -> back to the reserve or into the soil where it was lost.
+// Every transfer loses some to the reserve. Soil nutrients (from waste, rot and planting) regrow food where they lie;
+// the rest of the reserve regrows plants on fertile ground and, when it is large, spawns beasts.
+// Every so often everything is added up and the reserve absorbs any rounding, so the total stays exact.
+const FOOD_E=40, WOOD_E=12, MEAT_E=35, BEAST_E=150;
+const FAT_EFF=.9, GESTATE_EFF=.7, ROT_AT=700;
+let reserve=0, worldE=0, ledgerLast=null, auditDrift=0;
+let gardens=[], wildF=.5;
+const lose = e => { if (e>0) reserve+=e; };                                   // heat and work: straight back to the wild
+const toSoil = (e,x,y) => { if (e>0) nut[cellIdx(x,y)]+=e; };                 // waste and rot: nutrients where they fall
+function spend(a,e){ a.energy-=e; reserve+=e; a.spent+=e; }
+function burnAvg(a){ a.burn=(a.burn||0)*.97+a.spent*.03; a.spent=0; }                   // every action costs energy, and it all ends up as heat
+function takeReserve(e){ if (reserve<e) return false; reserve-=e; return true; }
+function itemE(it){ return it.t===0?FOOD_E:it.t===1?WOOD_E:it.t===3?it.e:0; }
+const invE = v => (v.food||0)*FOOD_E+(v.wood||0)*WOOD_E+(v.meat||0)*MEAT_E;
+const yipE = a => a.energy+a.gut+a.fat+a.body+(a.preg?a.preg.e:0)+invE(a.inv);
+function ledger(){
+  const L={yips:0,plants:0,meat:0,beasts:0,built:0,soil:0,reserve};
+  for (const a of agents) if (!a.dead) L.yips+=yipE(a);
+  for (const it of items){ if (it.dead) continue; if (it.t===3) L.meat+=it.e; else L.plants+=itemE(it); }
+  for (const z of beasts) L.beasts+=Math.max(0,z.energy)+z.body;
+  for (const b of buildings) L.built+=(b.e||0)+invE(b.stock);
+  for (let i=0;i<nut.length;i++) L.soil+=nut[i];
+  return L;
+}
+// add everything up; the reserve takes up any difference so the world's total never drifts
+function audit(){
+  const L=ledger(), held=L.yips+L.plants+L.meat+L.beasts+L.built+L.soil;
+  const want=worldE-held; auditDrift=want-reserve; reserve=Math.max(0,want);
+  if (want<0) worldE=held;   // only possible after a manual edit; accept the new total
+  L.reserve=reserve; L.total=worldE; L.drift=auditDrift; ledgerLast=L; return L;
+}
+// plants regrow from the reserve on fertile ground and around gardens; soil nutrients regrow food where they lie
+function grow(){
+  const k=.0008*settings.food/7.5*(1+.45*seasonS);
+  let budget=reserve*k;
+  while (budget>=FOOD_E){ budget-=FOOD_E; if (!takeReserve(FOOD_E)) break; if (!addItem('food',undefined,undefined,true)) reserve+=FOOD_E; }
+  if (Math.random()<budget/FOOD_E&&takeReserve(FOOD_E)&&!addItem('food',undefined,undefined,true)) reserve+=FOOD_E;
+  if (Math.random()<settings.trees&&takeReserve(WOOD_E)&&!addItem('tree',undefined,undefined,true)) reserve+=WOOD_E;
+  if (Math.random()<settings.stone) addItem('stone');
+  // nutrient-rich soil sprouts food on the spot (a few random cells per tick)
+  for (let n=0;n<48;n++){ const i=(Math.random()*nut.length)|0; if (water[i]!==0) continue; let k=0; while (nut[i]>=FOOD_E&&k<3&&Math.random()<.35+fert[i]){ const x=((i%FW)+Math.random())*FC, y=(((i/FW)|0)+Math.random())*FC; if (!addItem('food',x,y,true)) break; nut[i]-=FOOD_E; k++; } }
+  // gardens: planted food draws extra growth from the wild reserve onto that spot, like sunlight on a field
+  for (let i=gardens.length-1;i>=0;i--){ const g=gardens[i]; g.life--; if (g.life<=0){ gardens.splice(i,1); continue; }
+    if ((ticks+g.id)%45===0&&takeReserve(FOOD_E)&&!addItem('food',g.x+rnd(-12,12),g.y+rnd(-12,12),true)) reserve+=FOOD_E; }
+  // soil slowly leaches back into the wild reserve
+  if (ticks%50===0){ let back=0; for (let i=0;i<nut.length;i++){ const d=nut[i]*.04; nut[i]-=d; back+=d; } reserve+=back; }
+  // a large reserve feeds the wilderness: beasts appear when there is energy to spare
+  // energy lying idle in the wild (reserve and soil) feeds the wilderness: beasts appear while there is energy to spare
+  if (ticks%20===0){ let soil=0; for (let i=0;i<nut.length;i+=7) soil+=nut[i]; soil*=7; wildF=(reserve+soil)/Math.max(1,worldE); }
+  if (beasts.length<settings.beasts*1.5&&wildF>.2&&Math.random()<(wildF-.15)/300&&takeReserve(BEAST_E)) spawnBeast();
+}
+
+// ---------- bodies ----------
+// Everything a body is built from has mass and upkeep; metabolism is not a trait but the sum of those costs.
+const effStr = a => a.traits.strength*a.muscle;
+const effSpd = a => a.traits.speed*(.55+.45*a.muscle);
+function massOf(a){ const ph=a.ph; return 1+Math.max(0,ph.gut)/90+.22*effStr(a)+.1*effSpd(a)+.5*Math.max(0,1-ph.armor)+.04*Math.max(0,ph.carry)+ph.maxE/700+a.fat/150+load(a)*.04+(a.preg?a.preg.e/120:0); }
+const gutCap = a => Math.max(15,45+18*a.mass+a.ph.gut);
+// organ upkeep per tick: eyes, nose, ears, immune system, healing, insulation, reproductive organs, brain and genes
+function upkeepOf(a){
+  const t=a.traits, ph=a.ph;
+  return .00022*ph.sense+.006*ph.smell+.0001*ph.hearing+.008*ph.immune+.006*t.regen+.004*t.thermal+.005*ph.womb+.0025*ph.seed+.4*a.brainCost+a.geneUpkeep;
+}
+function bodyTick(a,resting,shelter){
+  const ph=a.ph; a.mass=massOf(a);
+  // digestion turns gut contents into usable energy over time; the gut's efficiency decides how much is kept
+  if (a.gut>0){ const dg=Math.min(a.gut,Math.max(.1,.35+.25*a.mass+.008*a.ph.gut)), eff=clamp(.85*ph.food,.3,.95); a.gut-=dg; a.energy+=dg*eff; toSoil(dg*(1-eff),a.x,a.y); }
+  // a full store spills into fat; a low one draws fat back out, each with a loss
+  const hi=ph.maxE*.85, low=ph.maxE*.3;
+  if (a.energy>hi){ const x=Math.min(a.energy-hi,.6); a.energy-=x; a.fat+=x*FAT_EFF; lose(x*(1-FAT_EFF)); }
+  else if (a.energy<low&&a.fat>0){ const y=Math.min(a.fat,.6); a.fat-=y; a.energy+=y*FAT_EFF; lose(y*(1-FAT_EFF)); }
+  // resting with a body at ease burns less
+  const restF=resting?1-.3*Math.min(1.5,a.traits.rest)/1.5*(shelter?1.2:1):1;
+  spend(a,(.035*Math.pow(a.mass,.75)*restF+upkeepOf(a))*settings.drain);
+  // muscles grow with use (which costs energy) and slowly waste away when idle
+  if ((a.id+ticks)%50===0){
+    const use=a.muscleUse; a.muscleUse=0;
+    if (use>6&&a.muscle<1.15&&a.energy>40){ a.muscle=Math.min(1.15,a.muscle+.02); spend(a,1.5); }
+    else if (use<2) a.muscle=Math.max(.45,a.muscle-.004);
+  }
+}
+// holding body temperature: below comfort a yip shivers (more if lean and large), above it sweats (more if fat) and gets thirsty
+function thermoCost(a,lt){
+  const ph=a.ph, cold=Math.max(0,ph.coldT-lt), hot=Math.max(0,lt-ph.hotT), ins=(1+a.fat/120)*a.traits.thermal;
+  const c=cold*.0025*Math.pow(a.mass,.67)/ins, h=hot*.002*(1+a.fat/160)/a.traits.thermal;
+  if (h>0) a.drv.thirst=Math.min(1,a.drv.thirst+h*.01);
+  return c+h;
+}
+
+// ---------- disease ----------
+// Rotting carcasses (and the sick) carry disease. It spreads only at close range, but its smell drifts much farther,
+// so a yip with a good nose can learn to keep away. A strong immune system fights it off; fighting costs energy.
+function infect(a,p){ if (a.sick>0||!settings.disease) return; if (Math.random()<p*settings.disease/(a.ph.immune*a.ph.immune)){ a.sick=.35+.4*Math.random(); tally.infections++; } }
+function sicknessTick(a){
+  if (a.sick<=0) return;
+  const s=a.sick;
+  spend(a,.05*s+.02*a.ph.immune); a.health-=.03*s; a.drv.fatigue=Math.min(1,a.drv.fatigue+.0008*s); a.harm='disease';
+  a.sick=s+.0005-.0017*a.ph.immune*(a.energy>30?1:.4); if (a.sick<=0) a.sick=0; else if (a.sick>1) a.sick=1;
+  miasma[cellIdx(a.x,a.y)]+=.12*s;
+}
+
+// ---------- sounds ----------
+// No sound propagation: an action that makes noise registers as a point that any yip within hearing range can pick up.
+// Kinds: 0 talk, 1 fight, 2 beast, 3 death cry, 4 work.
+let sounds=[], soundsPrev=[];
+function noise(x,y,k){ if (sounds.length<1500) sounds.push({x,y,k}); }
+const _hear={n:0,dx:0,dy:0,d:0,k:[0,0,0,0,0]};
+function hear(a){
+  const r=a.ph.hearing, r2=r*r, h=_hear; h.n=0; h.d=r; h.dx=h.dy=0; h.k[0]=h.k[1]=h.k[2]=h.k[3]=h.k[4]=0; let bd=r2;
+  forBins(gSound,a.x,a.y,r,s=>{ const dx=wd(s.x-a.x,W), dy=wd(s.y-a.y,H), dd=dx*dx+dy*dy; if (dd>r2||dd<1) return; h.n++; h.k[s.k]++; if (dd<bd){ bd=dd; h.dx=dx; h.dy=dy; } });
+  h.d=Math.sqrt(bd); return h;
+}
+
 // ---------- agents ----------
 // ---------- genetics ----------
-// Physical traits change slowly between generations and draw heavily on the body budget.
-// Mental traits (temperament and motivations) mutate fast and cost almost nothing.
-const PHYS = ['budget','strength','speed','thermal','sense','rest','regen'];
+// Physical traits change slowly between generations and are paid for in energy: muscle adds mass that must be
+// carried and fed, organs need upkeep. Mental traits (temperament and motivations) mutate fast and cost nothing.
+const PHYS = ['strength','speed','thermal','sense','smell','hearing','immune','rest','regen'];
 const MENT = ['lr','explore','curiosity','aggression','social','trustful','despTrust','dread','altruism','greed','caution'];
 const TRAIT_INFO = {
-  budget:['Body budget','Room for costly traits before metabolism suffers; larger bodies burn more at rest'],
-  strength:['Strength','Damage, carrying capacity and winning food fights'],
-  speed:['Speed','Movement per step'],
-  thermal:['Thermal tolerance','How slowly cold and heat drain energy'],
-  sense:['Sensing range','How far it can perceive food, other yips, beasts and shelter'],
-  rest:['Rest efficiency','Energy regained while resting, most of all inside a house'],
-  regen:['Regeneration','Health recovered over time while fed'],
+  strength:['Strength','Muscle for damage, carrying and fights. Muscle is mass: it costs energy to carry and keep, and wastes away if unused'],
+  speed:['Speed','Leg muscle for movement per step; also adds mass'],
+  thermal:['Insulation','How little energy it spends staying warm in the cold and cool in the heat'],
+  sense:['Sight range','How far it can see and recognise food, yips, beasts, carcasses and shelter. Eyes cost upkeep'],
+  smell:['Smell','How strongly it picks up scents: trails, mating scent and the smell of disease. Also how far away it can tell which way a smell is coming from'],
+  hearing:['Hearing range','How far away it hears talk, fights, beasts, death cries and work'],
+  immune:['Immunity','How well it resists and fights off disease. Costs upkeep'],
+  rest:['Rest','How much resting lowers its energy burn and eases fatigue'],
+  regen:['Healing','How fast it heals while fed; healing costs energy'],
   lr:['Learning rate','How fast experience reshapes its brain during life'],
   explore:['Impulsiveness','Randomness in its choices'],
   curiosity:['Curiosity','Reward for succeeding at things few yips do; fades with repetition'],
@@ -1228,9 +1381,9 @@ const TRAIT_INFO = {
   greed:['Greed','How much food in its own store counts as wealth'],
   caution:['Caution','How much its own health counts toward wellbeing'],
 };
-const TB = {budget:[2,15],strength:[.2,3],speed:[.2,3],thermal:[.2,2.5],sense:[30,210],rest:[.2,3],regen:[.2,3],
+const TB = {strength:[.2,3],speed:[.2,3],thermal:[.2,2.5],sense:[0,260],smell:[0,3],hearing:[0,300],immune:[.05,3],rest:[.1,3],regen:[.1,3],
   lr:[.0001,.15],explore:[.02,2.8],curiosity:[0,3],aggression:[.05,3],social:[.2,2.5],trustful:[.1,2],despTrust:[-1,1],dread:[0,2],altruism:[0,2],greed:[0,1.5],caution:[.1,3]};
-function freshTraits(){ return {budget:rnd(6.5,9),strength:rnd(.8,1.5),speed:rnd(.8,1.6),thermal:rnd(.6,1.4),sense:rnd(60,130),rest:rnd(.7,1.3),regen:rnd(.7,1.3),
+function freshTraits(){ return {strength:rnd(.5,1.7),speed:rnd(.5,1.8),thermal:rnd(.4,1.6),sense:Math.random()<.15?rnd(0,25):rnd(25,160),smell:Math.random()<.2?rnd(0,.15):rnd(.15,1.6),hearing:Math.random()<.2?rnd(0,20):rnd(20,170),immune:rnd(.3,1.5),rest:rnd(.4,1.5),regen:rnd(.4,1.5),
   lr:rnd(.004,.03),explore:rnd(.12,1.2),curiosity:rnd(.2,1.2),aggression:rnd(.2,1),social:rnd(.3,1.4),trustful:rnd(.5,1.2),despTrust:rnd(-.3,.3),dread:rnd(.3,1),altruism:rnd(0,.6),greed:rnd(0,.6),caution:rnd(.5,1.5),hue:rnd(0,360)}; }
 
 // ---------- genes ----------
@@ -1243,8 +1396,12 @@ const DIALS = {
   dmg:     {kind:'mul',lo:-.4, hi:.8, cost:2,   good:1,  label:'hit power'},
   armor:   {kind:'mul',lo:-.5, hi:.5, cost:2.5, good:-1, label:'damage taken'},
   carry:   {kind:'add',lo:-3,  hi:4,  cost:.3,  good:1,  label:'carry capacity'},
-  metab:   {kind:'mul',lo:-.35,hi:.4, cost:4,   good:-1, label:'metabolism'},
-  sense:   {kind:'add',lo:-40, hi:60, cost:.02, good:1,  label:'sensing range'},
+  sense:   {kind:'add',lo:-40, hi:60, cost:.02, good:1,  label:'sight range'},
+  smell:   {kind:'add',lo:-.6, hi:.8, cost:1,   good:1,  label:'sense of smell'},
+  hearing: {kind:'add',lo:-50, hi:70, cost:.017,good:1,  label:'hearing range'},
+  immune:  {kind:'add',lo:-.5, hi:.8, cost:1.3, good:1,  label:'immunity'},
+  gut:     {kind:'add',lo:-25, hi:40, cost:.035,good:1,  label:'stomach size'},
+  birth:   {kind:'mul',lo:-.4, hi:.6, cost:.8,  good:1,  label:'offspring size'},
   maxE:    {kind:'add',lo:-60, hi:80, cost:.008,good:1,  label:'max energy'},
   maxH:    {kind:'add',lo:-40, hi:50, cost:.015,good:1,  label:'max health'},
   regen:   {kind:'add',lo:-.004,hi:.03,cost:40, good:1,  label:'healing'},
@@ -1253,38 +1410,44 @@ const DIALS = {
   chill:   {kind:'mul',lo:-.8, hi:1,  cost:.8,  good:-1, label:'chill in water'},
   coldT:   {kind:'add',lo:-12, hi:8,  cost:.08, good:-1, label:'feels cold below (°C)'},
   hotT:    {kind:'add',lo:-8,  hi:12, cost:.08, good:1,  label:'overheats above (°C)'},
-  food:    {kind:'mul',lo:-.2, hi:.4, cost:3,   good:1,  label:'energy from food'},
+  food:    {kind:'mul',lo:-.2, hi:.4, cost:3,   good:1,  label:'digestion efficiency'},
   predMul: {kind:'mul',lo:-.3, hi:1,  cost:.8,  good:1,  label:'beast detection'},
   fertility:{kind:'mul',lo:-.5,hi:.8, cost:1.2, good:1,  label:'fertility'},
-  brain:   {kind:'mul',lo:-.4, hi:.4, cost:1.5, good:-1, label:'brain upkeep'},
-  lifespan:{kind:'mul',lo:-.3, hi:.3, cost:3,   good:1,  label:'lifespan'},
+  lifespan:{kind:'mul',lo:-.3, hi:.3, cost:4,   good:1,  label:'lifespan'},
+  womb:    {kind:'add',lo:-1,  hi:.6, cost:1,   good:1,  label:'ability to carry young'},
+  seed:    {kind:'add',lo:-1,  hi:.6, cost:.6,  good:1,  label:'ability to sire young'},
 };
 const DIAL_KEYS = Object.keys(DIALS);
 // a conditional gene is only switched on part of the time, so it costs proportionally less
 const CONDS = {always:1, cold:.5, hot:.5, night:.5, day:.5, young:.3, old:.3, starving:.3, fed:.6, swimming:.3, hurt:.3};
 const COND_KEYS = Object.keys(CONDS);
 const condOn = (a,c) => c==='always'||(c==='cold'&&a._t<12)||(c==='hot'&&a._t>28)||(c==='night'&&dayS<-.15)||(c==='day'&&dayS>.15)||(c==='young'&&a.age<600)||(c==='old'&&a.age>a.lifespan*.7)||(c==='starving'&&a.energy<40)||(c==='fed'&&a.energy>100)||(c==='swimming'&&a.inWater)||(c==='hurt'&&a.health<a.phBase.maxH*.5);
-function geneCost(g){
-  let c=.05;   // every gene costs a little to carry
-  for (const [d,v] of Object.entries(g.fx)){ const D=DIALS[d]; if (!D) continue; const benefit=v*D.good*D.cost; c+=benefit>0?benefit:benefit*.6; }
-  return c*CONDS[g.cond];
+// A gene's price is energy per tick while it is switched on: whatever it builds needs feeding.
+// Impairments save some upkeep (a smaller organ is cheaper), but less than an improvement costs.
+function geneUpkeep(g){
+  let c=.0004;
+  for (const [d,v] of Object.entries(g.fx)){ const D=DIALS[d]; if (!D) continue; const benefit=v*D.good*D.cost; c+=(benefit>0?benefit:benefit*.5)*.006; }
+  return Math.max(0,c);
 }
+const geneCost = g => geneUpkeep(g)*CONDS[g.cond];   // average upkeep, for display
 let nextGene=1;
 const geneName = () => { const n=makeName(); return n.length<3?n+VOW[Math.floor(Math.random()*5)]+CON[Math.floor(Math.random()*CON.length)]:n; };
 function newGene(fx,cond='always',name){ return {id:nextGene++,name:name||geneName(),cond,fx}; }
 function randomEffect(g){ const free=DIAL_KEYS.filter(d=>!(d in g.fx)); if (!free.length) return; const d=pick(free), D=DIALS[d]; g.fx[d]=+(rnd(D.lo,D.hi)*.35).toFixed(4); }
 // the old upgrades survive as a starting library of ordinary genes
 const GENE_LIBRARY = [
-  ['Dense muscle','always',{dmg:.25,metab:.06}], ['Thick hide','always',{armor:-.3,speed:-.1}], ['Long legs','always',{speed:.15,carry:-1}],
-  ['Lean frame','always',{metab:-.12,maxH:-20}], ['Deep sleeper','always',{rest:.6,sense:-10}], ['Fast healer','always',{regen:.025,metab:.05}],
-  ['Hibernator','cold',{metab:-.3,speed:-.1}], ['Keen eyes','always',{sense:30,metab:.04}], ['Night vision','night',{sense:30,hotT:-4}],
+  ['Dense muscle','always',{dmg:.25}], ['Thick hide','always',{armor:-.3,speed:-.1}], ['Long legs','always',{speed:.15,carry:-1}],
+  ['Lean frame','always',{maxH:-20,carry:-1}], ['Deep sleeper','always',{rest:.6,sense:-10}], ['Fast healer','always',{regen:.025}],
+  ['Hibernator','cold',{speed:-.3,rest:.5}], ['Keen eyes','always',{sense:30}], ['Night vision','night',{sense:30,hotT:-4}],
   ['Tremor sense','always',{predMul:.6,speed:-.05}], ['Fur coat','always',{coldT:-10,hotT:-5}], ['Sweat glands','always',{hotT:8,coldT:3}],
-  ['Webbed feet','always',{swim:.7,speed:-.06}], ['Blubber','always',{chill:-.8,hotT:-4,metab:.05}], ['Efficient gut','always',{food:.25,maxE:-25}],
-  ['Fat reserves','always',{maxE:60,speed:-.08}], ['Sprinter','fed',{speed:.2,metab:.06}], ['Juggernaut','always',{carry:3,armor:-.2,speed:-.15,metab:.08}],
+  ['Webbed feet','always',{swim:.7,speed:-.06}], ['Blubber','always',{chill:-.8,hotT:-4}], ['Efficient gut','always',{food:.25,maxE:-25}],
+  ['Fat reserves','always',{maxE:60,speed:-.08}], ['Sprinter','fed',{speed:.2}], ['Juggernaut','always',{carry:3,armor:-.2,speed:-.15}],
 ];
 const PERK_TO_GENE = {muscle:0,hide:1,legs:2,lean:3,sleeper:4,healer:5,hibernate:6,eyes:7,night:8,tremor:9,fur:10,sweat:11,webbed:12,blubber:13,gut:14,fat:15,sprint:16,jugg:17};
 const libGene = i => { const [n,c,fx]=GENE_LIBRARY[i]; return newGene({...fx},c,n); };
 function founderGenes(){ const g=[]; const k=Math.floor(Math.random()*3); for (let i=0;i<k;i++) g.push(libGene(Math.floor(Math.random()*GENE_LIBRARY.length))); if (Math.random()<.5){ const x=newGene({},Math.random()<.7?'always':pick(COND_KEYS)); randomEffect(x); g.push(x); } return g; }
+// genes from older saves may touch dials that no longer exist (metabolism, brain upkeep are now emergent); drop those effects
+function cleanGenes(gs){ const out=[]; for (const g of gs||[]){ const fx={}; for (const k in g.fx) if (DIALS[k]) fx[k]=g.fx[k]; if (Object.keys(fx).length) out.push({...g,fx,cond:CONDS[g.cond]?g.cond:'always'}); } return out; }
 function mutateGenes(src){
   const mu=settings.mutation, out=[];
   for (const s0 of src){
@@ -1306,25 +1469,23 @@ function mixGenes(x,y){
   const out=[]; for (const v of byId.values()){ if (v.length===2) out.push(pick(v)); else if (Math.random()<.5) out.push(v[0]); }
   return out.slice(0,14);
 }
-const genesCost = genes => genes.reduce((s,g)=>s+geneCost(g),0);
-const traitCost = (t,genes=[]) => t.strength*1.7+t.speed*1.5+t.thermal*.8+t.sense/95+t.rest*.6+t.regen*.7+genesCost(genes)+(t.social+t.aggression)*.12;
-const traitMetab = (t,genes=[]) => { const c=traitCost(t,genes); return .7+.12*t.budget+.13*Math.max(0,c-t.budget)+.025*c; };
 function applyFx(ph,fx){ for (const d in fx){ const D=DIALS[d]; if (!D) continue; if (D.kind==='mul') ph[d]*=1+fx[d]; else ph[d]+=fx[d]; } }
-function clampPh(ph){ ph.speed=Math.max(.3,ph.speed); ph.dmg=Math.max(.3,ph.dmg); ph.armor=Math.max(.3,ph.armor); ph.metab=Math.max(.5,ph.metab); ph.maxE=Math.max(80,ph.maxE); ph.maxH=Math.max(40,ph.maxH); ph.regen=Math.max(0,ph.regen); ph.rest=Math.max(.2,ph.rest); ph.swim=Math.max(.3,ph.swim); ph.chill=Math.max(0,ph.chill); ph.food=Math.max(.5,ph.food); ph.predMul=Math.max(.5,ph.predMul); ph.sense=Math.max(20,ph.sense); ph.brain=Math.max(.4,ph.brain); ph.fertility=Math.max(.2,ph.fertility); }
+function clampPh(ph){ ph.speed=Math.max(.3,ph.speed); ph.dmg=Math.max(.3,ph.dmg); ph.armor=Math.max(.3,ph.armor); ph.womb=Math.max(0,ph.womb); ph.seed=Math.max(0,ph.seed); ph.lifespan=clamp(ph.lifespan,.5,2.5); ph.maxE=Math.max(80,ph.maxE); ph.maxH=Math.max(40,ph.maxH); ph.regen=Math.max(0,ph.regen); ph.rest=Math.max(.2,ph.rest); ph.swim=Math.max(.3,ph.swim); ph.chill=Math.max(0,ph.chill); ph.food=Math.max(.5,ph.food); ph.predMul=Math.max(.5,ph.predMul); ph.sense=Math.max(0,ph.sense); ph.smell=Math.max(0,ph.smell); ph.hearing=Math.max(0,ph.hearing); ph.immune=Math.max(.05,ph.immune); ph.birth=Math.max(.3,ph.birth); ph.fertility=Math.max(.2,ph.fertility); }
 // derived physiology: traits plus always-on genes are fixed at birth; conditional genes are layered on each tick
 function derive(a){
   const t=a.traits;
-  const ph={speed:1,dmg:1,armor:1,beastArmor:1,carry:0,metab:1,coldT:15,hotT:31,food:1,maxE:200,maxH:100,rest:t.rest,regen:.004*t.regen,predMul:1,swim:1,chill:1,sense:t.sense,fertility:1,brain:1,lifespan:1};
-  a.condGenes=[];
-  for (const g of a.genes){ if (g.cond==='always') applyFx(ph,g.fx); else a.condGenes.push(g); }
+  const ph={speed:1,dmg:1,armor:1,beastArmor:1,carry:0,coldT:15,hotT:31,food:1,maxE:200,maxH:100,rest:t.rest,regen:.004*t.regen,predMul:1,swim:1,chill:1,sense:t.sense,smell:t.smell,hearing:t.hearing,immune:t.immune,gut:0,birth:1,fertility:1,lifespan:1,womb:1,seed:1};
+  a.condGenes=[]; let up=0;
+  for (const g of a.genes){ if (g.cond==='always'){ applyFx(ph,g.fx); up+=geneUpkeep(g); } else a.condGenes.push(g); }
   clampPh(ph);
-  ph.baseMetab=traitMetab(t,a.genes);
+  a.baseUpkeep=up; a.geneUpkeep=up;
   a.phBase=ph; a.ph=ph; a.health=Math.min(a.health,ph.maxH);
 }
 function expressGenes(a){
+  a.geneUpkeep=a.baseUpkeep;
   if (!a.condGenes.length) { a.ph=a.phBase; return; }
   let ph=null;
-  for (const g of a.condGenes) if (condOn(a,g.cond)){ if (!ph) ph={...a.phBase}; applyFx(ph,g.fx); }
+  for (const g of a.condGenes) if (condOn(a,g.cond)){ if (!ph) ph={...a.phBase}; applyFx(ph,g.fx); a.geneUpkeep+=geneUpkeep(g); }
   if (ph){ clampPh(ph); a.ph=ph; } else a.ph=a.phBase;
 }
 function mutateTraits(src){
@@ -1348,10 +1509,10 @@ function makeName(){
 }
 function makeAgent(x,y,brain=freshBrain(),gen=0,parent=null,traits=freshTraits(),energy=90,lineage=[],genes=null){
   const a={id:nextId++,name:makeName(),x,y,vx:0,vy:0,hd:rnd(0,6.283),brain,gen,parent,lineage,traits,energy,health:100,prevHealth:100,lastBirth:-1e9,lastHurtBy:0,lastHurtAt:-1e9,clan:null,history:[],age:0,lifespan:rnd(3600,5100),
-    inv:{food:0,wood:0,stone:0},tool:0,memory:0,memA:0,memB:0,signal:0,pain:0,trust:new Map(),lastChoice:O-1,probs:new Float32Array(O),
+    inv:{food:0,wood:0,stone:0,meat:0,meatE:0,mY:0,mR:0,seeds:0},tool:0,gut:0,fat:0,body:40,muscle:1,muscleUse:0,mass:1.5,preg:null,sick:0,spent:0,memory:0,memA:0,memB:0,signal:0,pain:0,trust:new Map(),lastChoice:O-1,probs:new Float32Array(O),
     builds:0,success:0,kids:0,shared:0,stolen:0,attacks:0,kills:0,hunts:0,beastKills:0,crafts:0,deposits:0,
     genes:[],condGenes:[],actionCounts:new Uint32Array(O),okCounts:new Uint32Array(O),stash:0,shareHeat:0,phi:0,baseline:0,
-    drv:{urge:0,grief:0,hunger:0,thirst:.2,cold:0,injury:0,fatigue:.1,lonely:.2,insecure:.8},owed:new Map(),inWater:false,thanked:new Map(),thanksGot:0,lovesGot:0,coparent:null,partners:0,sheltered:false,harm:'hunger',fx:0,_t:20};
+    geneUpkeep:0,baseUpkeep:0,drv:{urge:0,grief:0,hunger:0,thirst:.2,cold:0,injury:0,fatigue:.1,lonely:.2,insecure:.8},owed:new Map(),inWater:false,thanked:new Map(),thanksGot:0,lovesGot:0,coparent:null,partners:0,sheltered:false,harm:'hunger',fx:0,_t:20};
   for (const k of [...PHYS,...MENT]) if (a.traits[k]==null) a.traits[k]=freshTraits()[k];
   a.genes=genes||founderGenes(); derive(a); a.lifespan*=a.phBase.lifespan; updateDrives(a,20,false,0,0); a.phi=wellbeing(a);
   compileBrain(a); if (gen>maxGen) maxGen=gen; return a;
@@ -1385,7 +1546,7 @@ function findMate(a,bonus){
   let best=null, bt=-1e9, crowd=0; const reach=50+80*a.drv.urge;
   forBins(gAgent,a.x,a.y,reach,o=>{
     if (o===a||o.dead) return; const d=wdist(a,o); if (d>reach) return; if (d<40) crowd++;
-    if (o.energy<60||o.age<150||ticks-o.lastBirth<=200||kinship(a,o)>=1) return;
+    if (!ready(o)||kinship(a,o)>=1) return;
     const ta=a.trust.get(o.id)||0, to=o.trust.get(a.id)||0;
     if (ta<standard(a)-bonus||to<standard(o)) return;
     const m=Math.min(ta,to); if (m>bt){ bt=m; best=o; }
@@ -1408,12 +1569,39 @@ function child(a,mate){
   setTrust(c,a.id,.5); setTrust(a,c.id,.5); setTrust(c,mate.id,.5); setTrust(mate,c.id,.5);
   a.kids++; mate.kids++; return c;
 }
+// ---------- reproduction ----------
+// Yips start sexless: every body can both carry young (womb) and sire them (seed). Both organs cost upkeep, and genes
+// can shrink either to nothing, so separate sexes, hermaphrodites or anything in between can evolve on their own.
+const ready = y => y.energy>60&&y.age>150&&!y.preg&&ticks-y.lastBirth>200;
+function conceive(a,b){
+  const ca=a.ph.womb>.05, cb=b.ph.womb>.05;
+  let carrier; if (ca&&cb) carrier=Math.random()<a.ph.womb/(a.ph.womb+b.ph.womb)?a:b; else carrier=ca?a:cb?b:null;
+  if (!carrier) return false; const sire=carrier===a?b:a;
+  if (sire.ph.seed<=.05||Math.random()>Math.min(1,sire.ph.seed)*Math.min(1.2,carrier.ph.fertility)*.85){ spend(a,1); spend(b,1); a.lastBirth=b.lastBirth=ticks-120; return false; }
+  spend(a,2); spend(b,2); a.drv.urge=0; b.drv.urge=0; a.lastBirth=b.lastBirth=ticks;
+  const c=child(carrier,sire); c.energy=0; c.body=0; c.fat=0; c.gut=0;
+  carrier.preg={e:0,need:rnd(40,60)*carrier.ph.birth,t:0,starve:0,sire:sire.id,child:c}; tally.conceptions++;
+  noise(a.x,a.y,0); return true;
+}
+// the carrier feeds the young from its own energy, losing some on the way; the young is born with what it received
+function pregTick(a,newborn){
+  const p=a.preg; p.t++;
+  if (a.energy>22){ const x=Math.min(.3*Math.sqrt(a.ph.birth),a.energy-22); a.energy-=x; p.e+=x*GESTATE_EFF; lose(x*(1-GESTATE_EFF)); p.starve=Math.max(0,p.starve-1); }
+  else p.starve++;
+  if (p.starve>260){ a.energy+=p.e*.5; lose(p.e*.5); a.preg=null; tally.miscarriages++; a.drv.grief=Math.min(1,a.drv.grief+.4*a.traits.dread); return; }
+  if (p.e>=p.need){
+    const c=p.child; a.preg=null;
+    c.x=wrapX(a.x+rnd(-5,5)); c.y=wrapY(a.y+rnd(-5,5)); c.energy=p.e*.6; c.body=p.e*.4; c.age=0;
+    newborn.push(c); births++;
+    if (c.gen>=lastMilestone+10){ lastMilestone=c.gen-c.gen%10; toast(`Generation ${lastMilestone} reached`,'birth'); log(`Generation ${lastMilestone} reached`,'birth'); }
+  }
+}
 function soloChild(a){   // only used when reseeding from the archive
   const c=makeAgent(wrapX(a.x+rnd(-13,13)),wrapY(a.y+rnd(-13,13)),mutateBrain(a.brain),a.gen+1,a.id,mutateTraits(a.traits),80,[{id:a.id,name:a.name,gen:a.gen,hue:a.traits.hue},...a.lineage].slice(0,12),mutateGenes(a.genes));
   a.kids++; return c;
 }
-const load = a => a.inv.food+a.inv.wood*1.4+a.inv.stone*2;
-const capacity = a => Math.max(1,2+a.traits.strength*4+a.ph.carry);
+const load = a => a.inv.food+a.inv.wood*1.4+a.inv.stone*2+(a.inv.meat||0)*1.2;
+const capacity = a => Math.max(1,2+effStr(a)*4+a.ph.carry);
 const repMap=new Map();   // id -> sum of trust other living yips hold toward it
 const repOf = id => repMap.get(id)||0;
 function setTrust(a,id,v){
@@ -1441,9 +1629,8 @@ function thank(g,b){
   if (tr>.55){
     b.lovesGot++; tally.loves++; g.fx|=256;
     // a loving thank-you between two yips ready to breed can lead to a child
-    const ready=y=>y.energy>60&&y.age>150&&ticks-y.lastBirth>200;
-    if (ready(g)&&ready(b)&&kinship(g,b)<1&&(b.trust.get(g.id)||0)>standard(b)&&Math.random()<.25&&agents.length+pendingBirths.length<settings.popCap){
-      g.energy-=30; b.energy-=30; g.lastBirth=b.lastBirth=ticks; g.drv.urge=0; b.drv.urge=0; pendingBirths.push(child(g,b)); births++; tally.loveBirths++;
+    if (ready(g)&&ready(b)&&kinship(g,b)<1&&(b.trust.get(g.id)||0)>standard(b)&&Math.random()<.25&&agents.length<settings.popCap){
+      if (conceive(g,b)) tally.loveBirths++;
     }
   } else { b.thanksGot++; tally.thanks++; g.fx|=128; }
 }
@@ -1482,13 +1669,21 @@ function witnessGood(helper,helped,amount){
   });
 }
 
+// Items hold energy (food and wood). Callers that create one are responsible for where its energy came from:
+// growth takes it from the reserve, drops and spills move it from whatever held it. Returns null if it couldn't be placed.
 function addItem(type,x,y){
-  if (items.length>4500) return;
   const t=ITYPES.indexOf(type);
+  if (t!==3&&items.length>7000) return null;
   if (x===undefined){ [x,y]=spawnPoint(t===0?fert:t===1?forest:rock,t===0?1.6:2.2); }
   const life=t===0?rnd(400,1100):t===1?rnd(1600,3600):rnd(2500,6000);
-  x=wrapX(x); y=wrapY(y); if (isWater(x,y)) return;
-  items.push({t,type,x,y,life,max:life,dead:false});
+  x=wrapX(x); y=wrapY(y); if (isWater(x,y)) return null;
+  const it={t,type,x,y,life,max:life,dead:false}; items.push(it); return it;
+}
+// a body left behind: its energy stays in it, slowly returning to the soil as it decomposes
+function addCarcass(x,y,e,src,rot=0){
+  if (e<1){ toSoil(e,x,y); return; }
+  if (isWater(x,y)){ lose(e); return; }
+  items.push({t:3,type:'carcass',x:wrapX(x),y:wrapY(y),e,max:e,src,age:rot,life:1e9,dead:false});
 }
 function occupied(x,y,r,type){
   for (const b of buildings){
@@ -1500,7 +1695,8 @@ function occupied(x,y,r,type){
 }
 function placeBuilding(type,x,y,owner,ang=0){
   const s=SPECS[type];
-  const b={id:nextBid++,type,x,y,r:s.r,hp:s.hp,max:s.hp,owner,stock:{food:0,wood:0,stone:0},life:type==='fire'?600:10000,max_life:type==='fire'?600:10000,ang,c:Math.cos(ang),s:Math.sin(ang)};
+  // the wood in a structure keeps its energy until the structure falls; a fire burns its wood as fuel
+  const b={id:nextBid++,type,x,y,r:s.r,hp:s.hp,max:s.hp,owner,stock:{food:0,wood:0,stone:0,meat:0,meatE:0,mY:0,mR:0},e:s.wood*WOOD_E,life:10000,max_life:10000,ang,c:Math.cos(ang),s:Math.sin(ang)};
   buildings.push(b); return b;
 }
 function build(type,a){
@@ -1512,45 +1708,68 @@ function build(type,a){
   x=wrapX(x); y=wrapY(y);
   if (isWater(x,y)||occupied(x,y,r,type)) return false;
   a.inv.wood-=s.wood; a.inv.stone-=s.stone; placeBuilding(type,x,y,a.id,ang); a.builds++; tally.builds++;
+  spend(a,{house:2.5,store:3.5,wall:1.4,fire:.8}[type]); a.muscleUse+=2; noise(a.x,a.y,4);
   if (buildings.length%20===0) log(`${buildings.length} structures standing`,'build');
   return true;
 }
 function log(s,kind='info'){ events.unshift({t:ticks,s,kind}); if (events.length>80) events.length=80; }
 function toast(s,kind,important=false){ self.postMessage({type:'toast',s,kind,important}); }
-function dropInventory(a){
-  for (const k of ['food','wood','stone']) for (let i=0;i<a.inv[k];i++) addItem(k==='wood'?'tree':k,a.x+rnd(-6,6),a.y+rnd(-6,6));
-  a.inv.food=a.inv.wood=a.inv.stone=0;
+function dropInventory(a){ dropStock(a.inv,a.x,a.y,6); }
+// spill a set of goods on the ground; whatever can't be placed goes into the soil, so no energy is lost
+function dropStock(v,x,y,spread){
+  for (const k of ['food','wood','stone']) for (let i=0;i<(v[k]||0);i++){ const it=addItem(k==='wood'?'tree':k,x+rnd(-spread,spread),y+rnd(-spread,spread)); if (!it) toSoil(k==='food'?FOOD_E:k==='wood'?WOOD_E:0,x,y); }
+  if (v.meat>0) addCarcass(x+rnd(-3,3),y+rnd(-3,3),v.meatE,v.mY>0?0:1,v.mR>0?ROT_AT+1:0);
+  v.food=v.wood=v.stone=0; v.meat=0; v.meatE=0; v.mY=0; v.mR=0;
+}
+// move n pieces of meat (with their energy and history) from one holder to another
+function moveMeat(from,to,n){
+  n=Math.min(n,from.meat); if (n<=0) return 0;
+  const e=from.meatE*n/from.meat, y=Math.min(from.mY,Math.round(from.mY*n/from.meat)), rr=Math.min(from.mR,Math.round(from.mR*n/from.meat));
+  from.meat-=n; from.meatE-=e; from.mY-=y; from.mR-=rr; to.meat=(to.meat||0)+n; to.meatE=(to.meatE||0)+e; to.mY=(to.mY||0)+y; to.mR=(to.mR||0)+rr;
+  if (from.meat<=0){ from.meatE=0; from.mY=0; from.mR=0; }
+  return n;
 }
 
 // ---------- beasts ----------
 let nextBeast=1;
 function spawnBeast(x,y){
   if (x===undefined){ [x,y]=spawnPoint(rock,.5); }
-  beasts.push({id:nextBeast++,x,y,vx:0,vy:0,hd:0,hp:40,max:40,cd:0,energy:100,age:0,target:null,wander:rnd(0,6.28)});
+  beasts.push({id:nextBeast++,x,y,vx:0,vy:0,hd:0,hp:40,max:40,cd:0,energy:100,body:BEAST_E-100,sick:0,age:0,target:null,wander:rnd(0,6.28)});
 }
-const _bq={}, _bf={};
+function beastDies(z){ addCarcass(z.x,z.y,Math.max(0,z.energy)+z.body,1,z.sick>.3?ROT_AT+1:0); z.energy=0; z.body=0; }
+const _bq={}, _bf={}, _bm={};
 function tickBeasts(){
-  if (beasts.length<settings.beasts&&Math.random()<1/600) spawnBeast();
-  while (beasts.length>settings.beasts+3) beasts.shift();
+  while (beasts.length>settings.beasts*1.5+3){ const z=beasts.shift(); beastDies(z); }
   const pw=settings.beastPower;
   for (const z of beasts){
-    z.age++; z.cd--; z.energy-=.03;
-    let tgt=z.target&&!z.target.dead&&!z.target.sheltered&&!z.target.inWater&&wdist(z,z.target)<160?z.target:null;
-    if (!tgt){ const q=nearestIn(gAgent,z,110,_bq); tgt=q.obj&&!q.obj.sheltered&&!q.obj.inWater?q.obj:null; }
+    z.age++; z.cd--; z.energy-=.03; lose(.03);
+    if (z.sick>0){ z.energy-=.04*z.sick; lose(.04*z.sick); z.hp-=.02*z.sick; z.sick=Math.max(0,z.sick-.0008); }
+    const hungry=z.energy<115;
+    // a hungry beast eats what it finds: carcasses first, then plant food
+    let meal=null; if (hungry){ const q=nearestIn(gMeat,z,110,_bm); meal=q.obj; if (!meal&&z.energy<70){ const q2=nearestIn(gFood,z,50,_bm); meal=q2.obj; } }
+    if (meal&&wdist(z,meal)<6&&!meal.dead){
+      const x=meal.t===3?Math.min(meal.e,25):FOOD_E;
+      if (meal.t===3){ meal.e-=x; if (meal.age>ROT_AT&&Math.random()<.3*settings.disease) z.sick=Math.max(z.sick,.6); if (meal.e<1){ toSoil(meal.e,meal.x,meal.y); meal.e=0; meal.dead=true; } } else meal.dead=true;
+      z.energy+=x*.75; toSoil(x*.25,z.x,z.y); continue;
+    }
+    let tgt=hungry&&z.target&&!z.target.dead&&!z.target.sheltered&&!z.target.inWater&&wdist(z,z.target)<160?z.target:null;
+    if (!tgt&&hungry&&!meal){ const q=nearestIn(gAgent,z,110,_bq); tgt=q.obj&&!q.obj.sheltered&&!q.obj.inWater?q.obj:null; }
     z.target=tgt;
     let ax, ay, sp;
     const f=nearestList(fires,z,48,_bf);
     if (f.obj){ ax=-f.dx; ay=-f.dy; sp=1.9; }
-    else if (tgt){ ax=ddx(z,tgt); ay=ddy(z,tgt); sp=1.55*(.8+.2*pw); }
+    else if (meal){ ax=ddx(z,meal); ay=ddy(z,meal); sp=1.3; }
+    else if (tgt){ ax=ddx(z,tgt); ay=ddy(z,tgt); sp=1.55*(.8+.2*pw); if ((z.id+ticks)%20===0) noise(z.x,z.y,2); }
     else { z.wander+=rnd(-.3,.3); ax=Math.cos(z.wander); ay=Math.sin(z.wander); sp=.6; }
     const n=Math.hypot(ax,ay)||1; z.vx=z.vx*.7+ax/n*sp*.3; z.vy=z.vy*.7+ay/n*sp*.3;
     const nx=wrapX(z.x+z.vx), ny=wrapY(z.y+z.vy);
     // beasts cannot swim: water stops them like a wall
     if (wallBlocks(nx,ny,4.5)||isWater(nx,ny)){ z.vx*=-.5; z.vy*=-.5; z.wander+=Math.PI/2; } else { z.x=nx; z.y=ny; }
     if (z.vx*z.vx+z.vy*z.vy>.01) z.hd=Math.atan2(z.vy,z.vx);
-    if (tgt&&z.cd<=0&&wdist(z,tgt)<7){ const dmg=5*pw*(.6+.4*Math.random()); tgt.health-=dmg*tgt.ph.armor*tgt.ph.beastArmor; tgt.pain=1; tgt.harm='beast'; tgt.fx|=32; z.cd=18; z.energy=Math.min(140,z.energy+8); }
+    const run=(sp*sp)*.004; z.energy-=run; lose(run);
+    if (tgt&&z.cd<=0&&wdist(z,tgt)<7){ const dmg=5*pw*(.6+.4*Math.random()); tgt.health-=dmg*tgt.ph.armor*tgt.ph.beastArmor; tgt.pain=1; tgt.harm='beast'; tgt.fx|=32; z.cd=18; z.energy-=.5; lose(.5); noise(z.x,z.y,2); }
   }
-  for (let i=beasts.length-1;i>=0;i--){ const z=beasts[i]; if (z.hp<=0||z.energy<=0||z.age>12000){ if (z.hp<=0) for (let k=0;k<4;k++) addItem('food',z.x+rnd(-8,8),z.y+rnd(-8,8)); beasts.splice(i,1); } }
+  for (let i=beasts.length-1;i>=0;i--){ const z=beasts[i]; if (z.hp<=0||z.energy<=0||z.age>12000){ beastDies(z); beasts.splice(i,1); } }
 }
 
 // ---------- environment ----------
@@ -1566,13 +1785,15 @@ function tempAt(a){
   if (isWater(a.x,a.y)) t=Math.min(t,baseTemp*.8)-(isSea(a.x,a.y)?9:6)*a.ph.chill;      // water is colder than the air and steals body heat
   return t;
 }
-const env = {friend:{},food:{},tree:{},stone:{},shelter:{},fire:{},storm:{},other:{},pred:{},crowd:{n:0,sig:0},wall:30};
+const env = {friend:{},food:{},tree:{},stone:{},meat:{},shelter:{},fire:{},storm:{},other:{},pred:{},crowd:{n:0,sig:0},wall:30,hear:_hear};
 function sense(a){
   expressGenes(a);
   const r=a.ph.sense*(dayS<-.15?.75:1), m=a.qmask; a._r=r;
   if (m&Q.FOOD) nearestIn(gFood,a,r,env.food);
   if (m&Q.TREE) nearestIn(gTree,a,r,env.tree);
   if (m&Q.STONE) nearestIn(gStone,a,r,env.stone);
+  if (m&Q.MEAT) nearestIn(gMeat,a,r,env.meat);
+  if (m&Q.SOUND) env.hear=hear(a);
   if (m&Q.SHELTER) nearestList(shelters,a,r,env.shelter,isShelter);
   if (m&Q.FIRE) nearestList(fires,a,r,env.fire);
   if (m&Q.STORM) nearestList(storms,a,r,env.storm);
@@ -1584,7 +1805,7 @@ function sense(a){
   const inp=a.acts[0], codes=a.codes;
   for (let i=0;i<codes.length;i++) inp[i]=SFN[codes[i]](a,env);
 }
-const _h={}, _r={}, _z={}, _f2={}, _fw={}, _wv={};
+const _h={}, _h2={}, _r={}, _z={}, _f2={}, _fw={}, _wv={}, _cq={};
 let byId=new Map(), pendingBirths=[];
 const graveNames=new Map();   // recent deaths, so the inspector can still name a yip that just died
 function act(a,choice,e){
@@ -1593,33 +1814,61 @@ function act(a,choice,e){
   switch (choice){
     case 0: case 1: case 2: case 3: {
       const swim=a.inWater?.45*a.ph.swim:1;
-      const sp=(.7+a.traits.speed*1.7)*a.ph.speed*swim/(1+load(a)/(capacity(a)*1.2));
-      a.vx=a.vx*.35+DX[choice]*sp*.65; a.vy=a.vy*.35+DY[choice]*sp*.65; a.energy-=.008*sp*(a.inWater?2.5/a.ph.swim:1); moved=true; break;
+      const sp=(.7+effSpd(a)*1.7)*a.ph.speed*swim/(1+load(a)/(capacity(a)*1.2))/Math.sqrt(a.mass/1.5);
+      a.vx=a.vx*.35+DX[choice]*sp*.65; a.vy=a.vy*.35+DY[choice]*sp*.65; spend(a,.0032*a.mass*sp*sp*(a.inWater?2.5/a.ph.swim:1)); moved=true;
+      if (load(a)>capacity(a)*.5||a.inWater) a.muscleUse+=.15; break;
     }
     case A_.HARVEST: {
       let best=null, bd=16;
-      for (let t=0;t<3;t++){ const q=nearestIn(GRIDS[t],a,16,_h); if (q.obj&&q.dist<bd){ bd=q.dist; best=q.obj; } }
-      if (best && load(a)+1<=capacity(a)){
-        const k=best.t===1?'wood':best.type; a.inv[k]++; if (best.t>0&&a.tool>0&&load(a)+1.5<=capacity(a)){ a.inv[k]++; a.tool--; }
-        best.dead=true; ok=true; a.success++;
+      for (let t=0;t<4;t++){ const q=nearestIn(GRIDS[t],a,16,_h); if (q.obj&&q.dist<bd){ bd=q.dist; best=q.obj; } }
+      if (best&&best.t===3){
+        // cutting a piece off a carcass to carry like any other supply
+        if (load(a)+1.2<=capacity(a)){ const x=Math.min(best.e,MEAT_E); best.e-=x; const v=a.inv; v.meat++; v.meatE+=x; if (best.src===0) v.mY++; if (best.age>ROT_AT) v.mR++; if (best.e<1){ toSoil(best.e,best.x,best.y); best.e=0; best.dead=true; } ok=true; a.success++; spend(a,.3); a.muscleUse+=1; if (best.age>ROT_AT) infect(a,.05); }
+      } else if (best && load(a)+1<=capacity(a)){
+        const k=best.t===1?'wood':best.type; a.inv[k]++;
+        // a tool brings in a second piece; the extra must still exist, so it takes another nearby item of the same kind
+        if (best.t>0&&a.tool>0&&load(a)+1.5<=capacity(a)){ const q=nearestIn(GRIDS[best.t],a,22,_h2); if (q.obj&&q.obj!==best){ q.obj.dead=true; a.inv[k]++; } a.tool--; }
+        best.dead=true; ok=true; a.success++; spend(a,best.t===0?.15:.35*(a.tool>0?.7:1)); a.muscleUse+=best.t?1:.3; if (best.t) noise(a.x,a.y,4);
       }
       break;
     }
-    case A_.EAT:
-      if (a.inv.food>0&&a.energy<a.ph.maxE-30){ a.inv.food--; a.energy+=30*a.ph.food; a.drv.thirst=Math.max(0,a.drv.thirst-.12); ok=true; }
-      else if (insideNow&&insideNow.stock.food>0&&a.energy<a.ph.maxE-30){ insideNow.stock.food--; if (insideNow.owner===a.id) a.stash=Math.max(0,a.stash-1); else hostGrace(a,insideNow,.5+a.drv.hunger); a.energy+=30*a.ph.food; a.drv.thirst=Math.max(0,a.drv.thirst-.12); ok=true; }
+    case A_.EAT: {
+      const room=a.gut+FOOD_E<=gutCap(a)+8;
+      if (room&&a.inv.food>0){ a.inv.food--; a.inv.seeds=Math.min(5,(a.inv.seeds||0)+1); a.gut+=FOOD_E; a.drv.thirst=Math.max(0,a.drv.thirst-.12); ok=true; spend(a,.02); tally.meals++; }
+      else if (room&&insideNow&&insideNow.stock.food>0){ insideNow.stock.food--; if (insideNow.owner===a.id) a.stash=Math.max(0,a.stash-1); else hostGrace(a,insideNow,.5+a.drv.hunger); a.gut+=FOOD_E; a.drv.thirst=Math.max(0,a.drv.thirst-.12); ok=true; spend(a,.02); tally.meals++; }
+      break;
+    }
+    case A_.EATMEAT: {
+      // meat from a rotting carcass, or from another yip, can make the eater sick
+      let v=a.inv.meat>0?a.inv:insideNow&&insideNow.stock.meat>0?insideNow.stock:null;
+      if (v&&a.gut+v.meatE/v.meat<=gutCap(a)+8){
+        const e=v.meatE/v.meat, isY=Math.random()<v.mY/v.meat, isR=Math.random()<v.mR/v.meat;
+        v.meat--; v.meatE-=e; if (isY) v.mY--; if (isR) v.mR--; if (v.meat<=0){ v.meatE=0; v.mY=0; v.mR=0; }
+        a.gut+=e; ok=true; spend(a,.03); tally.meals++;
+        if (isR) infect(a,.6); if (isY){ infect(a,.2); tally.cannibal++; }
+        if (v!==a.inv&&insideNow.owner!==a.id) hostGrace(a,insideNow,.5+a.drv.hunger);
+      }
+      break;
+    }
+    case A_.PLANT:
+      // eating food leaves its seeds; planting one makes this spot a garden that draws extra growth from the wild for a long time
+      if (a.inv.seeds>0&&!a.inWater&&!isWater(a.x,a.y)){
+        a.inv.seeds--; spend(a,.25);
+        const g=gardens.find(g=>wdistXY(g.x,g.y,a.x,a.y)<20); if (g) g.life=Math.min(6000,g.life+1500); else if (gardens.length<160) gardens.push({id:nextBid++,x:a.x,y:a.y,life:3000,owner:a.id});
+        ok=true; tally.plantings++; noise(a.x,a.y,4);
+      }
       break;
     case A_.DEPOSIT:
-      if (insideNow){ let n=0; for (const k of ['food','wood','stone']) if (a.inv[k]>0){ insideNow.stock[k]+=a.inv[k]; n+=a.inv[k]; a.inv[k]=0; } if (n){ ok=true; a.stash+=insideNow.owner===a.id?n:0; a.deposits+=n; tally.deposits+=n; a.fx|=64; if (insideNow.owner&&insideNow.owner!==a.id){ const ow=byId.get(insideNow.owner); if (ow){ gainTrust(ow,a.id,.04*n); owe(ow,a,.3+.1*n); } } } }
+      if (insideNow){ let n=0; for (const k of ['food','wood','stone']) if (a.inv[k]>0){ insideNow.stock[k]+=a.inv[k]; n+=a.inv[k]; a.inv[k]=0; } n+=moveMeat(a.inv,insideNow.stock,a.inv.meat); if (n){ spend(a,.05); ok=true; a.stash+=insideNow.owner===a.id?n:0; a.deposits+=n; tally.deposits+=n; a.fx|=64; if (insideNow.owner&&insideNow.owner!==a.id){ const ow=byId.get(insideNow.owner); if (ow){ gainTrust(ow,a.id,.04*n); owe(ow,a,.3+.1*n); } } } }
       break;
     case A_.WITHDRAW:
-      if (insideNow){ let n=0; for (const k of ['wood','stone','food']) while (insideNow.stock[k]>0&&load(a)+(k==='stone'?2:k==='wood'?1.4:1)<=capacity(a)&&n<4){ insideNow.stock[k]--; a.inv[k]++; n++; } if (n){ ok=true; if (insideNow.owner===a.id) a.stash=Math.max(0,a.stash-n); tally.withdraws+=n; if (insideNow.owner&&insideNow.owner!==a.id){ const ow=byId.get(insideNow.owner); if (ow){ if ((ow.trust.get(a.id)||0)>.3) hostGrace(a,insideNow,.4+.5*a.drv.insecure); else loseTrust(ow,a.id,.2*n/2); } } } }
+      if (insideNow){ let n=0; for (const k of ['wood','stone','food']) while (insideNow.stock[k]>0&&load(a)+(k==='stone'?2:k==='wood'?1.4:1)<=capacity(a)&&n<4){ insideNow.stock[k]--; a.inv[k]++; n++; } if (n<4&&insideNow.stock.meat>0&&load(a)+1.2<=capacity(a)) n+=moveMeat(insideNow.stock,a.inv,1); if (n){ spend(a,.05); ok=true; if (insideNow.owner===a.id) a.stash=Math.max(0,a.stash-n); tally.withdraws+=n; if (insideNow.owner&&insideNow.owner!==a.id){ const ow=byId.get(insideNow.owner); if (ow){ if ((ow.trust.get(a.id)||0)>.3) hostGrace(a,insideNow,.4+.5*a.drv.insecure); else loseTrust(ow,a.id,.2*n/2); } } } }
       break;
     case A_.HOUSE: case A_.STORE: case A_.WALL: case A_.FIRE:
       ok=build(BTYPES[choice-A_.HOUSE],a); break;
     case A_.REPAIR: {
       const b=nearestList(buildings,a,17,_r,isDamaged).obj;
-      if (b&&a.inv.wood>=1&&(b.type==='fire'||a.inv.stone>=1)){ a.inv.wood--; if (b.type!=='fire') a.inv.stone--; b.hp=Math.min(b.max,b.hp+110); ok=true; if (b.owner&&b.owner!==a.id){ const ow=byId.get(b.owner); if (ow){ gainTrust(ow,a.id,.06); owe(ow,a,.5); } } }
+      if (b&&a.inv.wood>=1&&(b.type==='fire'||a.inv.stone>=1)){ a.inv.wood--; if (b.type!=='fire') a.inv.stone--; b.e+=WOOD_E; b.hp=Math.min(b.max,b.hp+110); ok=true; spend(a,.6); a.muscleUse+=1; noise(a.x,a.y,4); if (b.owner&&b.owner!==a.id){ const ow=byId.get(b.owner); if (ow){ gainTrust(ow,a.id,.06); owe(ow,a,.5); } } }
       break;
     }
     case A_.SHARE:
@@ -1634,20 +1883,20 @@ function act(a,choice,e){
         if (k&&load(o)+wt<=capacity(o)){
           a.inv[k]--; o.inv[k]++;
           const value=k==='food'?.4+o.drv.hunger:.3+.5*o.drv.insecure;
-          gainTrust(o,a.id,.15*value+.05); gainTrust(a,o.id,.03); owe(o,a,value); witnessGood(a,o,.02);
+          gainTrust(o,a.id,.15*value+.05); gainTrust(a,o.id,.03); owe(o,a,value); witnessGood(a,o,.02); spend(a,.05); noise(a.x,a.y,0);
           ok=true; a.shared++; tally.shares++; if (k!=='food') tally.gifts++; a.fx|=1;
         }
       }
       break;
     case A_.ATTACK:
       if (o&&od<14){
-        const dmg=3*a.traits.strength*a.ph.dmg*o.ph.armor*(a.tool>0?2.2:1)*(o.sheltered?.3:1)*(.6+.4*a.traits.aggression);
+        const dmg=3*effStr(a)*a.ph.dmg*o.ph.armor*(a.tool>0?2.2:1)*(o.sheltered?.3:1)*(.6+.4*a.traits.aggression);
         o.health-=dmg; o.pain=1; o.harm='attack'; o.lastHurtBy=a.id; o.lastHurtAt=ticks;
         // fights hurt both sides: the target strikes back in proportion to its own strength
-        const recoil=2.5*o.traits.strength*o.ph.dmg*a.ph.armor*(o.tool>0?1.5:1)*(.5+Math.random()); a.health-=recoil; a.pain=Math.max(a.pain,.6); if (a.health<=0) a.harm='attack'; a.energy-=.8+.5*a.traits.aggression; a.attacks++; tally.attacks++; a.fx|=2; o.fx|=32;
+        const recoil=2.5*effStr(o)*o.ph.dmg*a.ph.armor*(o.tool>0?1.5:1)*(.5+Math.random()); a.health-=recoil; a.pain=Math.max(a.pain,.6); if (a.health<=0) a.harm='attack'; spend(a,.6+.4*effStr(a)*(.5+.5*a.traits.aggression)); spend(o,.3*effStr(o)); a.muscleUse+=2; o.muscleUse+=1; noise(a.x,a.y,1); a.attacks++; tally.attacks++; a.fx|=2; o.fx|=32;
         if (a.tool>0) a.tool--;
         loseTrust(o,a.id,.6); loseTrust(a,o.id,.15); witness(a,o,.15);
-        if (o.inv.food>0&&a.traits.strength>o.traits.strength*.8&&load(a)+1<=capacity(a)){ o.inv.food--; a.inv.food++; a.stolen++; tally.thefts++; loseTrust(o,a.id,.3); witness(a,o,.1); }
+        if (o.inv.food>0&&effStr(a)>effStr(o)*.8&&load(a)+1<=capacity(a)){ o.inv.food--; a.inv.food++; a.stolen++; tally.thefts++; loseTrust(o,a.id,.3); witness(a,o,.1); }
         ok=true;
         if (o.health<=0) a.kills++;
       }
@@ -1655,35 +1904,34 @@ function act(a,choice,e){
     case A_.HUNT: {
       const z=nearestList(beasts,a,16,_z).obj;
       if (z){
-        const dmg=5*a.traits.strength*a.ph.dmg*(a.tool>0?2.2:1)*(.7+.3*a.traits.aggression);
+        const dmg=5*effStr(a)*a.ph.dmg*(a.tool>0?2.2:1)*(.7+.3*a.traits.aggression);
         const prey=z.target&&z.target!==a&&!z.target.dead?z.target:null;
         if (prey){ gainTrust(prey,a.id,.1); owe(prey,a,.6+prey.drv.injury); }
         witnessGood(a,prey,.015);
-        z.hp-=dmg; z.target=a; a.energy-=1; a.hunts++; tally.hunts++; a.fx|=4; if (a.tool>0) a.tool--;
+        z.hp-=dmg; z.target=a; spend(a,.8+.4*effStr(a)); a.muscleUse+=2; noise(a.x,a.y,1); a.hunts++; tally.hunts++; a.fx|=4; if (a.tool>0) a.tool--;
         ok=true;
         if (z.hp<=0){ a.beastKills++; tally.beastKills++; log(`${a.name} slew a beast`,'beast'); }
       }
       break;
     }
     case A_.CRAFT:
-      if (a.tool<=0&&a.inv.wood>=1&&a.inv.stone>=1){ a.inv.wood--; a.inv.stone--; a.tool=40; a.crafts++; tally.crafts++; ok=true; a.fx|=8; }
+      if (a.tool<=0&&a.inv.wood>=1&&a.inv.stone>=1){ a.inv.wood--; a.inv.stone--; lose(WOOD_E); spend(a,.5); noise(a.x,a.y,4); a.tool=40; a.crafts++; tally.crafts++; ok=true; a.fx|=8; }
       break;
     case A_.DRINK: {
       // drinking works in the water or right at its edge
       const v=waterVec(a.x,a.y,_wv);
-      if ((a.inWater&&!isSea(a.x,a.y))||v.d<FC*.9){ a.drv.thirst=Math.max(0,a.drv.thirst-.35); ok=true; }
+      if ((a.inWater&&!isSea(a.x,a.y))||v.d<FC*.9){ a.drv.thirst=Math.max(0,a.drv.thirst-.35); ok=true; spend(a,.02); }
       break;
     }
     case A_.THANK:
-      if (o&&od<22){ thank(a,o); ok=true; }
+      if (o&&od<22){ thank(a,o); ok=true; spend(a,.03); noise(a.x,a.y,0); }
       break;
     case A_.BEFRIEND:
       // a deliberate choice to trust the nearest yip a little more; steps shrink as trust grows
-      if (o&&od<30){ gainTrust(a,o.id,.06); ok=true; tally.befriends++; }
+      if (o&&od<30){ gainTrust(a,o.id,.06); ok=true; tally.befriends++; spend(a,.03); noise(a.x,a.y,0); }
       break;
     default:
-      if (insideNow){ const yip=insideNow.type==='house'; a.energy+=(yip?.24:.12)*a.ph.rest; a.health=Math.min(a.ph.maxH,a.health+(yip?.12:.05)*a.traits.regen); ok=yip; }
-      else { a.energy+=(nearestList(fires,a,18,_f2).obj?.05:.02)*a.ph.rest; }
+      if (insideNow&&a.energy>15){ const yip=insideNow.type==='house', h=Math.min(a.ph.maxH-a.health,(yip?.1:.04)*a.traits.regen); if (h>0){ a.health+=h; spend(a,h*1.2); } ok=yip; }
   }
   if (!moved){ a.vx*=.5; a.vy*=.5; }
   if (a.vx*a.vx+a.vy*a.vy>.0004){
@@ -1718,6 +1966,7 @@ function reseed(){
     const nb=src?makeAgent(x,y,mutateBrain(src.brain),src.gen+1,null,mutateTraits(src.traits),90,[{id:src.id,name:src.name,gen:src.gen,hue:src.traits.hue}],mutateGenes(src.genes||[])):makeAgent(x,y); agents.push(nb); band.push(nb); if (band.length===1) band.clanName=nb.name; nb.clan=band.clanName;
   }
   for (const p of band) for (const q of band) if (p!==q) setTrust(p,q.id,.3);
+  for (const a of agents) reserve-=yipE(a); if (reserve<0) reserve=0;
   log(`Extinction. ${n} colonists reseeded from ${elite.length?elite.length+' archived genomes':'scratch'}`,'death');
   toast('Extinction: colony reseeded from the archive','death',true);
 }
@@ -1725,23 +1974,27 @@ function reseed(){
 function tick(){
   ticks++;
   dayS=Math.sin(2*Math.PI*ticks/settings.day); seasonS=settings.season?Math.sin(2*Math.PI*ticks/settings.season):0; baseTemp=temperature();
-  const rate=settings.food*(1+.45*seasonS);
-  for (let i=0;i<Math.floor(rate);i++) addItem('food');
-  if (Math.random()<rate%1) addItem('food');
-  if (Math.random()<settings.trees) addItem('tree');
-  if (Math.random()<settings.stone) addItem('stone');
-  let w=0; for (let i=0;i<items.length;i++){ const it=items[i]; if (it.dead) continue; it.life-=settings.decay; if (it.life<=0) continue; items[w++]=it; } items.length=w;
+  grow();
+  // plants rot back into the soil; carcasses decompose into it and, once rotten, give off the smell of disease
+  let w=0; for (let i=0;i<items.length;i++){ const it=items[i]; if (it.dead) continue;
+    if (it.t===3){ it.age++; const d=Math.min(it.e,.012*settings.decay+it.e*.00015); it.e-=d; toSoil(d,it.x,it.y); if (it.age>ROT_AT) miasma[cellIdx(it.x,it.y)]+=.35; if (it.e<1){ toSoil(it.e,it.x,it.y); continue; } }
+    else { it.life-=settings.decay; if (it.life<=0){ toSoil(itemE(it),it.x,it.y); continue; } }
+    items[w++]=it; } items.length=w;
   for (let i=buildings.length-1;i>=0;i--){
     const b=buildings[i], prot=b.type==='store'?4:b.type==='house'?2:1;
-    b.hp-=settings.decay*(b.type==='fire'?.6:b.type==='wall'?.09:.045); b.life-=settings.decay;
-    if (b.stock.food&&Math.random()<.0004*b.stock.food*settings.decay/prot) b.stock.food--;
-    if (b.hp<=0||b.life<=0){ buildings.splice(i,1); if (b.type==='store'&&b.stock.food+b.stock.wood+b.stock.stone>0) for (const k of ['food','wood','stone']) for (let n=0;n<Math.min(6,b.stock[k]);n++) addItem(k==='wood'?'tree':k,b.x+rnd(-10,10),b.y+rnd(-10,10)); }
+    if (b.type==='fire'){ const burn=Math.min(b.e,.06*settings.decay); b.e-=burn; lose(burn); b.hp=b.max*Math.min(1,b.e/(2*WOOD_E)); }
+    else { b.hp-=settings.decay*(b.type==='wall'?.09:.045); b.life-=settings.decay; }
+    const st=b.stock;
+    if (st.food&&Math.random()<.0004*st.food*settings.decay/prot){ st.food--; toSoil(FOOD_E,b.x,b.y); }
+    if (st.meat>st.mR&&Math.random()<.0006*(st.meat-st.mR)*settings.decay/prot) st.mR++;
+    if (b.hp<=0||b.life<=0||(b.type==='fire'&&b.e<=0)){ buildings.splice(i,1); toSoil(b.e,b.x,b.y); b.e=0; dropStock(st,b.x,b.y,10); }
   }
   for (let i=storms.length-1;i>=0;i--){ const s=storms[i]; s.x=wrapX(s.x+s.vx); s.y=wrapY(s.y+s.vy); s.life--; if (s.life<=0) storms.splice(i,1); }
   if (ticks%1500===0&&Math.random()<.7) sendStorm();
 
-  clearGrid(gFood); clearGrid(gTree); clearGrid(gStone); clearGrid(gAgent);
+  clearGrid(gFood); clearGrid(gTree); clearGrid(gStone); clearGrid(gMeat); clearGrid(gAgent); clearGrid(gSound);
   for (const it of items) GRIDS[it.t][cellOf(it.x,it.y)].push(it);
+  soundsPrev=sounds; sounds=[]; for (const sd of soundsPrev) gSound[cellOf(sd.x,sd.y)].push(sd);   // last tick's sounds are what yips hear now
   for (const a of agents) gAgent[cellOf(a.x,a.y)].push(a);
   fires=[]; shelters=[]; walls=[];
   for (const b of buildings){ if (b.type==='fire') fires.push(b); else if (b.type==='wall') walls.push(b); else shelters.push(b); }
@@ -1749,27 +2002,40 @@ function tick(){
   byId=new Map(); for (const a of agents){ a.fx=0; byId.set(a.id,a); }
   tickBeasts();
 
-  const newborn=[], cap=settings.popCap, drainK=.085*settings.drain; let dead=0;
+  const newborn=[], cap=settings.popCap; let dead=0;
   for (const a of agents){
     if (a.dead) continue;
     a.age++; a.pain*=.9;
     sense(a);   // uses a._t from the end of the previous tick
     const temp=forward(a);
     const preDrv=a.drv.cold, choice=a.lastChoice, bonus=act(a,choice,env);
-    const sheltered=inside(a), storm=stormAt(a), lt=tempAt(a), ph=a.ph, cold=Math.max(0,ph.coldT-lt), hot=Math.max(0,lt-ph.hotT), thermal=(cold+hot)/(16*a.traits.thermal); a._t=lt;
+    const sheltered=inside(a), storm=stormAt(a), lt=tempAt(a), ph=a.ph; a._t=lt;
     a.sheltered=!!sheltered; a.inWater=isWater(a.x,a.y);
-    a.energy-=drainK*ph.baseMetab*ph.metab+a.brainCost*ph.brain+thermal*(sheltered?.006:.045);
-    if (a.energy>40||ph.regen>.02) a.health=Math.min(ph.maxH,a.health+ph.regen);
-    if (storm&&!sheltered){ const wb=nearestWall(a,12)<12?.4:1; a.health-=.15*settings.storm*wb; a.energy-=.12*settings.storm*wb; a.harm='storm'; }
-    for (const b of fires){ const dx=wd(a.x-b.x,W), dy=wd(a.y-b.y,H); if (dx*dx+dy*dy<(b.r+2)*(b.r+2)){ a.health-=.4; a.energy-=.1; a.harm='fire'; } }
-    if (a.inWater){ a.energy-=.015/a.ph.swim; if (a.energy<6){ a.health-=.8; a.harm="drowning"; } }
+    const resting=choice===A_.REST;
+    // the body's running costs: resting burn, organs, genes, digestion, fat, muscle, then holding body temperature
+    bodyTick(a,resting,sheltered); spend(a,thermoCost(a,lt));
+    if (a.preg) pregTick(a,newborn);
+    burnAvg(a);
+    // healing is paid for in energy
+    if (a.health<ph.maxH&&(a.energy>40||ph.regen>.02)){ const h=Math.min(ph.maxH-a.health,ph.regen); a.health+=h; spend(a,h*1.2); }
+    if (storm&&!sheltered){ const wb=nearestWall(a,12)<12?.4:1; a.health-=.15*settings.storm*wb; spend(a,.12*settings.storm*wb); a.harm='storm'; }
+    for (const b of fires){ const dx=wd(a.x-b.x,W), dy=wd(a.y-b.y,H); if (dx*dx+dy*dy<(b.r+2)*(b.r+2)){ a.health-=.4; spend(a,.1); a.harm='fire'; } }
+    if (a.inWater){ spend(a,.015/a.ph.swim); if (a.energy<6){ a.health-=.8; a.harm="drowning"; } }
     if (a.drv.thirst>=1){ a.health-=.08; a.harm='thirst'; }
-    if (a.energy<0){ a.health+=a.energy*.08; a.energy=0; a.harm='hunger'; }
-    if (a.energy>ph.maxE) a.energy=ph.maxE;
-    if (a.inv.food&&Math.random()<.0012*a.inv.food) a.inv.food--;   // carried food spoils; stores keep it better
+    // disease: catching it takes close contact with a rotting carcass or a sick yip; it then runs its course
+    if ((a.id+ticks)%4===0&&settings.disease){
+      const q=nearestIn(gMeat,a,9,_cq); if (q.obj&&q.obj.age>ROT_AT) infect(a,.02);
+      const o=env.other.obj; if (o&&o.sick>0&&env.other.dist<9) infect(a,.008*o.sick);
+    }
+    sicknessTick(a);
+    // starving: with no energy left the body consumes itself
+    if (a.energy<0){ a.body+=a.energy; a.health+=a.energy*.08; a.energy=0; if (a.body<0){ a.health+=a.body*.2; a.body=0; } if (a.harm!=='disease') a.harm='hunger'; }
+    if (a.energy>ph.maxE){ const x=a.energy-ph.maxE; a.energy=ph.maxE; a.fat+=x*FAT_EFF; lose(x*(1-FAT_EFF)); }
+    if (a.inv.food&&Math.random()<.0012*a.inv.food){ a.inv.food--; toSoil(FOOD_E,a.x,a.y); }   // carried food spoils; stores keep it better
+    if (a.inv.meat>a.inv.mR&&Math.random()<.001*(a.inv.meat-a.inv.mR)) a.inv.mR++;            // carried meat goes off
     a.memory=clamp(.96*a.memory+.04*(a.energy/100-1),-1,1);
     a.prevHealth=a.health; a.shareHeat*=.99;
-    const resting=choice===A_.REST, exert=(choice===A_.ATTACK||choice===A_.HUNT)?.003:0;
+    const exert=(choice===A_.ATTACK||choice===A_.HUNT)?.003:0;
     updateDrives(a,lt,choice<4,exert,resting?(sheltered&&sheltered.type==='house'?.014:.006)*a.traits.rest:0);
     if (a.drv.fatigue>.8) a.vx*=.8, a.vy*=.8;
     // gratitude for warmth and shelter that someone else provided
@@ -1782,20 +2048,20 @@ function tick(){
     const phi=wellbeing(a), reward=(phi-a.phi+bonus)*REWARD_SCALE; a.phi=phi; a.lastReward=.9*(a.lastReward||0)+.1*reward; a.lastBonus=bonus;
     a.racc=(a.racc||0)+reward;
     if (settings.learning&&(a.id+ticks)%LEARN_EVERY===0){ learn(a,a.racc,temp); a.racc=0; }
-    if (a.energy>60&&a.age>150&&ticks-a.lastBirth>200) mateSc[cellIdx(a.x,a.y)]+=.4+a.drv.urge;   // ready to breed: gives off mating scent, stronger with urge
+    if (ready(a)) mateSc[cellIdx(a.x,a.y)]+=.4+a.drv.urge;   // ready to breed: gives off mating scent, stronger with urge
     // birth takes two: well-fed, unrelated yips close together who trust each other. Popular yips find it easier.
     const pop=Math.min(1.5,Math.max(0,repOf(a.id))/4);
-    if (a.energy>75-15*pop&&a.age>150&&ticks-a.lastBirth>200&&agents.length+newborn.length<cap&&(a.id+ticks)%2===0&&Math.random()<.04*(1+pop)*(1+a.drv.urge)/(1+Math.max(0,(a.crowdN||0)-5)*.35)){
+    if (ready(a)&&a.energy>75-15*pop&&agents.length+newborn.length<cap&&(a.id+ticks)%2===0&&Math.random()<.04*(1+pop)*(1+a.drv.urge)/(1+Math.max(0,(a.crowdN||0)-5)*.35)){
       const mate=findMate(a,.05*pop);
-      if (mate){
-      a.drv.urge=0; mate.drv.urge=0;
-      a.energy-=30; mate.energy-=30; a.lastBirth=mate.lastBirth=ticks;
-      const c=child(a,mate); newborn.push(c); births++;
-      updateDrives(a,lt,false,0,0); a.phi=wellbeing(a);
-      if (c.gen>=lastMilestone+10){ lastMilestone=c.gen-c.gen%10; toast(`Generation ${lastMilestone} reached`,'birth'); log(`Generation ${lastMilestone} reached`,'birth'); }
-      }
+      if (mate&&conceive(a,mate)){ updateDrives(a,lt,false,0,0); a.phi=wellbeing(a); }
     }
-    if (a.health<=0||a.age>a.lifespan){ onDeath(a); a.dead=true; dead++; deaths++; deathsBy[a.age>a.lifespan?'age':a.harm]=(deathsBy[a.age>a.lifespan?'age':a.harm]||0)+1; dropInventory(a); archive(a); }
+    if (a.health<=0||a.age>a.lifespan){
+      onDeath(a); a.dead=true; dead++; deaths++; const cause=a.age>a.lifespan?'age':a.harm; deathsBy[cause]=(deathsBy[cause]||0)+1;
+      noise(a.x,a.y,3); dropInventory(a); archive(a);
+      // the body stays behind with all the energy it held (an unborn young dies with it)
+      addCarcass(a.x,a.y,Math.max(0,a.energy)+a.gut+a.fat+a.body+(a.preg?a.preg.e:0),0,a.sick>.3?ROT_AT+1:0);
+      a.energy=a.gut=a.fat=a.body=0; a.preg=null;
+    }
   }
   updateActFreq();
   if (dead) agents=agents.filter(a=>!a.dead);
@@ -1804,7 +2070,9 @@ function tick(){
   if (agents.length>peakPop) peakPop=agents.length;
   if (!agents.length&&settings.autoReseed) reseed();
   // scent fades every tick and spreads to neighbouring cells every 8 ticks (wrapping)
-  for (let i=0;i<pher.length;i++){ pher[i]*=.993; mateSc[i]*=.985; }
+  for (let i=0;i<pher.length;i++){ pher[i]*=.993; mateSc[i]*=.985; miasma[i]*=.985; }
+  if (ticks%6===0){ for (let y=0;y<FH;y++) for (let x=0;x<FW;x++){ const i=x+y*FW, l=((x+FW-1)%FW)+y*FW, r=((x+1)%FW)+y*FW, u=x+((y+FH-1)%FH)*FW, d=x+((y+1)%FH)*FW; miaTmp[i]=miasma[i]*.4+(miasma[l]+miasma[r]+miasma[u]+miasma[d])*.15; } const t=miasma; miasma=miaTmp; miaTmp=t; }
+  if (ticks%200===0) audit();
   if (ticks%4===0){ for (let y=0;y<FH;y++) for (let x=0;x<FW;x++){ const i=x+y*FW, l=((x+FW-1)%FW)+y*FW, r=((x+1)%FW)+y*FW, u=x+((y+FH-1)%FH)*FW, d=x+((y+1)%FH)*FW; mateTmp[i]=mateSc[i]*.5+(mateSc[l]+mateSc[r]+mateSc[u]+mateSc[d])*.125; } const t=mateSc; mateSc=mateTmp; mateTmp=t; }
   if (ticks%8===0){ for (let y=0;y<FH;y++) for (let x=0;x<FW;x++){ const i=x+y*FW, l=((x+FW-1)%FW)+y*FW, r=((x+1)%FW)+y*FW, u=x+((y+FH-1)%FH)*FW, d=x+((y+1)%FH)*FW; pherTmp[i]=pher[i]*.6+(pher[l]+pher[r]+pher[u]+pher[d])*.1; } const t=pher; pher=pherTmp; pherTmp=t; }
   if (ticks%25===0) pushHistory();
@@ -1817,7 +2085,8 @@ function pushHistory(){
   let stocked=0; for (const b of buildings) stocked+=b.stock.food;
   const d={}; for (const k in tally){ d[k]=tally[k]-(lastTally[k]||0); } lastTally={...tally};
   const rel={}; for (const k in relWin){ const v=relWin[k], sm=v[0]+v[1]+v[2]+v[3]; rel[k]=sm?v.map(x=>x/sm):null; } relWin={share:[0,0,0,0],attack:[0,0,0,0],thank:[0,0,0,0],befriend:[0,0,0,0]};
-  history.push({t:ticks,rel,pop:agents.length,rep:avg(a=>Math.max(0,repOf(a.id))),lonely:avg(a=>a.drv.lonely),food,build:buildings.length,beasts:beasts.length,stocked,gen:avg(a=>a.gen),str:avg(a=>a.traits.strength),spd:avg(a=>a.traits.speed),sense:avg(a=>a.traits.sense),agg:avg(a=>a.traits.aggression),
+  let both=0, carry=0, sire=0, sick=0; for (const a of agents){ const c=a.ph.womb>.05, si=a.ph.seed>.05; if (c&&si) both++; else if (c) carry++; else if (si) sire++; if (a.sick>.05) sick++; }
+  history.push({t:ticks,reserveF:worldE?reserve/worldE:0,both,carry,sire,sick,fat:avg(a=>a.fat),mass:avg(a=>a.mass),burn:avg(a=>a.burn||0),rel,pop:agents.length,rep:avg(a=>Math.max(0,repOf(a.id))),lonely:avg(a=>a.drv.lonely),food,build:buildings.length,beasts:beasts.length,stocked,gen:avg(a=>a.gen),str:avg(a=>a.traits.strength),spd:avg(a=>a.traits.speed),sense:avg(a=>a.traits.sense),agg:avg(a=>a.traits.aggression),
     neurons:avg(a=>a.brain.sizes.reduce((s,n)=>s+n,0)),tools:avg(a=>a.tool>0?1:0),births,deaths,...d});
   if (history.length>600){ // keep long runs readable: thin the older half
     const half=history.length>>1, old=history.slice(0,half).filter((_,i)=>i%2===0); history=old.concat(history.slice(half));
@@ -1840,10 +2109,10 @@ function reset(newShape,seeds){
   seed=(Math.random()*2**31)|0; makeFields(seed);
   agents=[]; items=[]; buildings=[]; storms=[]; beasts=[]; events=[]; history=[]; elite=[]; repMap.clear();
   ticks=0; nextId=1; nextBid=1; births=0; deaths=0; maxGen=0; peakPop=0; lastMilestone=0;
-  deathsBy={age:0,hunger:0,thirst:0,drowning:0,storm:0,fire:0,beast:0,attack:0}; for (const k in tally) tally[k]=0; lastTally={...tally}; for (const k in relTally) relTally[k]=[0,0,0,0];
+  deathsBy={age:0,hunger:0,thirst:0,drowning:0,storm:0,fire:0,beast:0,attack:0,disease:0}; for (const k in tally) tally[k]=0; nut.fill(0); miasma.fill(0); gardens=[]; sounds=[]; soundsPrev=[]; lastTally={...tally}; for (const k in relTally) relTally[k]=[0,0,0,0];
   // founders arrive in bands of five who already trust each other a little
   // with library seeds: one exact copy of each, the rest are mutated offspring of them
-  const lib=(seeds||[]).map(g=>({...g,brain:deBrain(g.brain)})); let k=0;
+  const lib=(seeds||[]).map(g=>({...g,genes:cleanGenes(g.genes),brain:deBrain(g.brain)})); let k=0;
   const founder=(x,y)=>{
     if (!lib.length) return makeAgent(x,y);
     const src=lib[k%lib.length], exact=k<lib.length; k++;
@@ -1854,10 +2123,12 @@ function reset(newShape,seeds){
     return a;
   };
   for (let b=0;b<60;b++){ const [bx,by]=spawnPoint(fert,1), band=[];
-    for (let i=0;i<5;i++){ let x=wrapX(bx+rnd(-25,25)), y=wrapY(by+rnd(-25,25)); if (isWater(x,y)){ x=bx; y=by; } const a=founder(x,y); band.push(a); agents.push(a); }
+    for (let i=0;i<5;i++){ let x=wrapX(bx+rnd(-25,25)), y=wrapY(by+rnd(-25,25)); if (isWater(x,y)){ x=bx; y=by; } const a=founder(x,y); a.energy=120; a.fat=30; band.push(a); agents.push(a); }
     for (const a of band) a.clan=band[0].name;
     for (const a of band) for (const o of band) if (a!==o) setTrust(a,o.id,.3); }
   for (let i=0;i<1100;i++) addItem('food'); for (let i=0;i<420;i++) addItem('tree'); for (let i=0;i<320;i++) addItem('stone');
+  // the world's energy is fixed from here on: whatever the founders, plants and beasts don't hold is the wild reserve
+  worldE=settings.worldEnergy; reserve=0; audit(); auditDrift=0; ledgerLast.drift=0;
   for (let i=0;i<settings.beasts;i++) spawnBeast();
   selected=0; if (lib.length) log(`Island ${'ABCD'[island]||island+1}: 300 founders bred from ${lib.length} library yip${lib.length>1?'s':''}: ${lib.slice(0,8).map(g=>g.name).join(', ')}${lib.length>8?'…':''}`,'birth'); else log(`Island ${'ABCD'[island]||island+1}: 300 founders released in 60 bands. Fertile valleys, forests and rocky ground are spread across the map.`,'birth');
   if (viewing) postMeta();
@@ -1866,20 +2137,21 @@ function reset(newShape,seeds){
 // ---------- serialization ----------
 const r4 = v => Math.round(v*1e4)/1e4, r2 = v => Math.round(v*100)/100;
 const serBrain = b => ({inputs:b.inputs,sizes:b.sizes,w:b.w.map(f=>Array.from(f,r4))});
-const AGENT_KEYS=['clan','history','lastHurtBy','lastHurtAt','name','gen','parent','lineage','traits','genes','stash','thanksGot','lovesGot','coparent','partners','age','lifespan','inv','tool','builds','success','kids','shared','stolen','attacks','kills','hunts','beastKills','crafts','deposits'];
+const AGENT_KEYS=['gut','fat','body','muscle','sick','clan','history','lastHurtBy','lastHurtAt','name','gen','parent','lineage','traits','genes','stash','thanksGot','lovesGot','coparent','partners','age','lifespan','inv','tool','builds','success','kids','shared','stolen','attacks','kills','hunts','beastKills','crafts','deposits'];
 function serAgent(a){
   const o={drv:a.drv,owed:[...a.owed],id:a.id,x:r2(a.x),y:r2(a.y),hd:r2(a.hd),energy:r2(a.energy),health:r2(a.health),memory:r4(a.memory),memA:r4(a.memA),memB:r4(a.memB),baseline:r4(a.baseline),
-    trust:[...a.trust].map(([k,v])=>[k,r4(v)]),actionCounts:Array.from(a.actionCounts),brain:serBrain(a.brain),learned:a.learned.map(f=>Array.from(f,r4))};
+    trust:[...a.trust].map(([k,v])=>[k,r4(v)]),actionCounts:Array.from(a.actionCounts),brain:serBrain(a.brain),learned:a.learned.map(f=>Array.from(f,r4)),
+    preg:a.preg?{e:r2(a.preg.e),need:r2(a.preg.need),t:a.preg.t,starve:a.preg.starve,sire:a.preg.sire,child:serAgent(a.preg.child)}:null};
   for (const k of AGENT_KEYS) o[k]=a[k]; return o;
 }
 function serialize(){
-  return {version:12,shape,seed,ticks,nextId,nextBid,births,deaths,deathsBy,tally,maxGen,peakPop,selected,settings:{...settings},
+  return {version:13,reserve:Math.round(reserve),worldE:Math.round(worldE),nut:Array.from(nut,v=>Math.round(v*10)/10),gardens,shape,seed,ticks,nextId,nextBid,births,deaths,deathsBy,tally,maxGen,peakPop,selected,settings:{...settings},
     agents:agents.map(serAgent),
-    items:items.filter(i=>!i.dead).map(i=>[i.t,r2(i.x),r2(i.y),i.life|0,i.max|0]),
+    items:items.filter(i=>!i.dead).map(i=>i.t===3?[3,r2(i.x),r2(i.y),0,0,r2(i.e),i.src,i.age]:[i.t,r2(i.x),r2(i.y),i.life|0,i.max|0]),
     buildings:buildings.map(b=>({...b,hp:r2(b.hp)})),storms,beasts:beasts.map(z=>({...z,target:null})),events,history,elite:elite.map(e=>({...e,brain:serBrain(e.brain)}))};
 }
 // Older brains had fewer outputs. Map each old discrete action and continuous output onto its new row; new rows start small.
-const OLD_LAYOUTS={14:{disc:[0,1,2,3,4,5,6,8,9,10,11,12,13,17],cont:0},21:{disc:[...Array(18).keys()],cont:3},24:{disc:[...Array(20).keys()],cont:4}};
+const OLD_LAYOUTS={14:{disc:[0,1,2,3,4,5,6,8,9,10,11,12,13,17],cont:0},21:{disc:[...Array(18).keys()],cont:3},24:{disc:[...Array(20).keys()],cont:4},25:{disc:[...Array(21).keys()],cont:4}};
 function upgradeBrain(b){
   const L=b.sizes.length-1, cols=b.sizes[L-1], old=b.w[L-1], rowsOld=b.sizes[L];
   b.inputs=b.inputs.map(k=>k==='memory'?'trend':k);
@@ -1890,7 +2162,7 @@ function upgradeBrain(b){
 }
 const deBrain = b => upgradeBrain(b.weights ? fromNested(b) : {inputs:b.inputs,sizes:b.sizes,w:b.w.map(x=>Float32Array.from(x))});
 function deserialize(s){
-  if (!s||!Array.isArray(s.agents)||![6,10,11,12].includes(s.version)) throw Error('Not an ALife Lab save (expected version 0.6 to 1.5)');
+  if (!s||!Array.isArray(s.agents)||![6,10,11,12,13].includes(s.version)) throw Error('Not an ALife Lab save (expected version 0.6 to 1.6)');
   const legacy=s.version<11, old=s.version<12; setSize();
   const ow=s.version===6||s.version===10?840:s.shape==='tall'?600:s.shape==='square'?780:960, oh=s.version===6||s.version===10?520:s.shape==='tall'?960:s.shape==='square'?780:600;
   const sx=old?W/ow:1, sy=old?H/oh:1, reg=s.registry||{};
@@ -1901,12 +2173,16 @@ function deserialize(s){
 }
 function deAgent(o,sx=1,sy=1,old=false,reg={}){
     const brain=deBrain(o.brain);
-    const genes=o.genes||(o.perks||[]).filter(p=>p in PERK_TO_GENE).map(p=>libGene(PERK_TO_GENE[p]));
+    const genes=cleanGenes(o.genes||(o.perks||[]).filter(p=>p in PERK_TO_GENE).map(p=>libGene(PERK_TO_GENE[p])));
     for (const g of genes) if (g.id>=nextGene) nextGene=g.id+1;
     const a=makeAgent(o.x*sx,o.y*sy,brain,o.gen||0,o.parent??null,{...freshTraits(),...o.traits},o.energy,[],genes);
     a.id=o.id;
     for (const k of AGENT_KEYS) if (o[k]!==undefined&&k!=='traits'&&k!=='gen'&&k!=='parent'&&k!=='genes') a[k]=o[k];
-    Object.assign(a,{health:o.health,prevHealth:o.health,memory:o.memory||0,memA:o.memA||0,memB:o.memB||0,baseline:o.baseline||0,hd:o.hd||0,lifespan:o.lifespan||rnd(3600,5100),inv:o.inv||{food:0,wood:0,stone:0}});
+    Object.assign(a,{health:o.health,prevHealth:o.health,memory:o.memory||0,memA:o.memA||0,memB:o.memB||0,baseline:o.baseline||0,hd:o.hd||0,lifespan:o.lifespan||rnd(3600,5100),inv:{food:0,wood:0,stone:0,meat:0,meatE:0,mY:0,mR:0,...(o.inv||{})}});
+    if (o.body===undefined){ a.body=40; const old=a.lifespan; a.lifespan=Math.min(old,rnd(3600,5100)*a.phBase.lifespan); a.age=Math.round(a.age*a.lifespan/old); }   // bodies from before the energy physics keep their relative age
+    delete a.traits.budget;
+    a.gut=a.gut||0; a.fat=a.fat||0; a.muscle=a.muscle||1; a.sick=a.sick||0;
+    if (o.preg&&o.preg.child){ a.preg={...o.preg,child:deAgent(o.preg.child,sx,sy,old,reg)}; }
     a.trust=new Map(Array.isArray(o.trust)?o.trust:Object.entries(o.trust||{}).map(([k,v])=>[+k,v])); a.owed=new Map(o.owed||[]);
     if (o.actionCounts&&o.actionCounts.length===O) a.actionCounts=Uint32Array.from(o.actionCounts);
     if (o.learned&&!old){ a.learned=o.learned.map(x=>Float32Array.from(x)); a.eff=a.brain.w.map((w,l)=>{ const e=new Float32Array(w.length), d=a.learned[l]; for (let i=0;i<w.length;i++) e[i]=w[i]+(d[i]||0); return e; }); }
@@ -1918,14 +2194,19 @@ function restOfDeserialize(s,A,sx,sy,old){
   ticks=s.ticks||0; nextId=Math.max(s.nextId||1,...A.map(a=>a.id+1)); births=s.births||0; deaths=s.deaths||0;
   deathsBy={age:0,hunger:0,storm:0,fire:0,beast:0,attack:0,...(s.deathsBy||{})}; Object.assign(tally,s.tally||{}); lastTally={...tally};
   maxGen=s.maxGen||Math.max(0,...A.map(a=>a.gen)); peakPop=s.peakPop||A.length;
-  items=(s.items||[]).map(i=>Array.isArray(i)?{t:i[0],type:ITYPES[i[0]],x:i[1]*sx,y:i[2]*sy,life:i[3],max:i[4]||i[3],dead:false}:{t:ITYPES.indexOf(i.type),type:i.type,x:i.x*sx,y:i.y*sy,life:i.life,max:i.life,dead:false});
+  items=(s.items||[]).map(i=>Array.isArray(i)?(i[0]===3?{t:3,type:'carcass',x:i[1]*sx,y:i[2]*sy,e:i[5],max:i[5],src:i[6],age:i[7],life:1e9,dead:false}:{t:i[0],type:ITYPES[i[0]],x:i[1]*sx,y:i[2]*sy,life:i[3],max:i[4]||i[3],dead:false}):{t:ITYPES.indexOf(i.type),type:i.type,x:i.x*sx,y:i.y*sy,life:i.life,max:i.life,dead:false});
   nextBid=1;
   buildings=(s.buildings||[]).filter(b=>!isWater(b.x*sx,b.y*sy)).map(b=>{ const ang=b.ang||0; return {...b,x:b.x*sx,y:b.y*sy,r:b.type==='wall'?SPECS.wall.r:b.r,id:b.id||nextBid++,ang,c:Math.cos(ang),s:Math.sin(ang),max_life:b.max_life||(b.type==='fire'?600:10000)}; });
   nextBid=Math.max(nextBid,...buildings.map(b=>b.id+1),1);
-  storms=(s.storms||[]).map(x=>({max:650,...x})); beasts=(s.beasts||[]).map(z=>({...z,target:null}));
+  storms=(s.storms||[]).map(x=>({max:650,...x})); beasts=(s.beasts||[]).map(z=>({body:BEAST_E-100,sick:0,...z,target:null}));
+  for (const b of buildings){ b.stock={food:0,wood:0,stone:0,meat:0,meatE:0,mY:0,mR:0,...(b.stock||{})}; if (b.e===undefined) b.e=SPECS[b.type].wood*WOOD_E*(b.type==='fire'?Math.max(.2,b.hp/b.max):1); }
   events=(s.events||[]).map(e=>typeof e==='string'?{t:0,s:e,kind:'info'}:e); history=Array.isArray(s.history)&&!old?s.history:[];
-  elite=(s.elite||[]).map(e=>({...e,genes:e.genes||[],brain:deBrain(e.brain)}));
+  elite=(s.elite||[]).map(e=>({...e,genes:cleanGenes(e.genes),brain:deBrain(e.brain)}));
   Object.assign(settings,s.settings||{}); selected=s.selected||0; lastMilestone=maxGen-maxGen%10;
+  // the energy ledger: restored as saved, or, for a save from before the physics, wrapped round what the save holds
+  nut.fill(0); miasma.fill(0); gardens=Array.isArray(s.gardens)?s.gardens:[]; sounds=[]; soundsPrev=[];
+  if (s.worldE){ if (Array.isArray(s.nut)&&s.nut.length===nut.length) nut.set(s.nut); worldE=s.worldE; reserve=s.reserve||0; audit(); }
+  else { worldE=0; const L=ledger(), held=L.yips+L.plants+L.meat+L.beasts+L.built+L.soil; worldE=held+Math.max(settings.worldEnergy-held,held*.6); audit(); }
   log(old?'Older snapshot loaded and moved onto the new 1.5 world':'Snapshot loaded','info');
   if (viewing) postMeta();
 }
@@ -1936,10 +2217,10 @@ function postMeta(){ self.postMessage({type:'meta',water,drives:DRIVES,bounds:TB
 function postFrame(){
   const na=agents.length, A=new Float32Array(na*10);
   for (let i=0,o=0;i<na;i++,o+=10){ const a=agents[i]; A[o]=a.id; A[o+1]=a.x; A[o+2]=a.y; A[o+3]=a.traits.hue; A[o+4]=a.hd; A[o+5]=a.energy/200; A[o+6]=a.health/100;
-    A[o+7]=(a.sheltered?1:0)|(a.inv.food+a.inv.wood+a.inv.stone>0?2:0)|(a.tool>0?4:0)|(repOf(a.id)>3?8:0)|(a.inWater?16:0); A[o+8]=a._r||a.ph.sense; A[o+9]=a.fx; }
+    A[o+7]=(a.sheltered?1:0)|(a.inv.food+a.inv.wood+a.inv.stone+a.inv.meat>0?2:0)|(a.tool>0?4:0)|(repOf(a.id)>3?8:0)|(a.inWater?16:0)|(a.sick>.05?32:0)|(a.preg?64:0); A[o+8]=a._r||a.ph.sense; A[o+9]=a.fx; }
   let ni=0; for (const it of items) if (!it.dead) ni++;
   const I=new Float32Array(ni*4); let o=0;
-  for (const it of items){ if (it.dead) continue; I[o]=it.t; I[o+1]=it.x; I[o+2]=it.y; I[o+3]=it.life/it.max; o+=4; }
+  for (const it of items){ if (it.dead) continue; I[o]=it.t===3&&it.age>ROT_AT?4:it.t; I[o+1]=it.x; I[o+2]=it.y; I[o+3]=it.t===3?Math.min(1,it.e/150):it.life/it.max; o+=4; }
   const nb=buildings.length, B=new Float32Array(nb*9);
   for (let i=0,p=0;i<nb;i++,p+=9){ const b=buildings[i]; B[p]=BTYPES.indexOf(b.type); B[p+1]=b.x; B[p+2]=b.y; B[p+3]=b.r; B[p+4]=b.hp/b.max; B[p+5]=b.id; B[p+6]=b.stock.food+b.stock.wood+b.stock.stone; B[p+7]=b.life/(b.max_life||10000); B[p+8]=b.ang||0; }
   const S=new Float32Array(storms.length*5);
@@ -1959,14 +2240,15 @@ function postStats(withHistory){
   let layers=0, neurons=0, inputs=0, tools=0, stocked=0;
   for (const a of agents){ for (const k of a.brain.inputs) sensUse[k]=(sensUse[k]||0)+1; let tot=0; for (let i=0;i<O;i++) tot+=a.actionCounts[i]; if (tot) for (let i=0;i<O;i++) act[i]+=a.actionCounts[i]/tot; layers+=a.brain.sizes.length-2; for (let l=1;l<a.brain.sizes.length-1;l++) neurons+=a.brain.sizes[l]; inputs+=a.brain.inputs.length; if (a.tool>0) tools++; }
   for (const b of buildings){ byType[b.type]++; stocked+=b.stock.food; }
-  const counts=[0,0,0]; for (const it of items) if (!it.dead) counts[it.t]++;
+  const counts=[0,0,0,0]; for (const it of items) if (!it.dead) counts[it.t]++;
+  let sexC=0, sexS=0, both=0, sick=0, preg=0; for (const a of agents){ const c=a.ph.womb>.05, si=a.ph.seed>.05; if (c&&si) both++; else if (c) sexC++; else if (si) sexS++; if (a.sick>.05) sick++; if (a.preg) preg++; }
   const t=k=>avg(a=>a.traits[k]);
   const names={}; for (const a of agents) names[a.id]=a.name;
   const fam=new Map();
   for (const a of agents){ const k=a.clan||a.name; let f=fam.get(k); if (!f){ f={clan:k,n:0,gen:0,act:new Float64Array(O),hue:0}; fam.set(k,f); } f.n++; f.gen=Math.max(f.gen,a.gen); f.hue+=a.traits.hue; let tot=0; for (let i=0;i<O;i++) tot+=a.actionCounts[i]; if (tot) for (let i=0;i<O;i++) f.act[i]+=a.actionCounts[i]/tot; }
   const families=[...fam.values()].sort((x,y)=>y.n-x.n).slice(0,10).map(f=>({clan:f.clan,n:f.n,gen:f.gen,hue:f.hue/f.n,mix:Array.from(f.act,v=>v/f.n)}));
   self.postMessage({type:'stats',families,relTally,names,ticks,pop:agents.length,peakPop,births,deaths,deathsBy,tally,maxGen,avgGen:avg(a=>a.gen),byType,counts,temp:baseTemp,beasts:beasts.length,tools,stocked,
-    traits:Object.fromEntries([...PHYS,...MENT].map(k=>[k,t(k)])),geneUse:topGenes(),
+    traits:Object.fromEntries([...PHYS,...MENT].map(k=>[k,t(k)])),geneUse:topGenes(),ledger:{...ledger(),total:worldE,drift:auditDrift},gardens:gardens.length,carcasses:counts[3],bodies:{both,carry:sexC,sire:sexS,neither:agents.length-both-sexC-sexS,sick,preg},avgFat:avg(a=>a.fat),avgMass:avg(a=>a.mass),avgBurn:avg(a=>a.burn||0),
     brain:{layers:layers/n,neurons:neurons/n,inputs:inputs/n},sensUse:Object.entries(sensUse).sort((a,b)=>b[1]-a[1]).map(([k,v])=>[k,v/n]),
     actMix:Array.from(act,v=>v/n),events,eliteTop:elite.slice(0,6).map(e=>({id:e.id,name:e.name||('#'+e.id),gen:e.gen,score:e.score|0,hue:e.traits.hue})),history:withHistory?history:null,settings});
 }
@@ -1981,7 +2263,10 @@ function postInspect(){
     builds:a.builds,success:a.success,kids:a.kids,livingKids:kids,sheltered:a.sheltered,temp:a._t,lastChoice:a.lastChoice,probs:Array.from(a.probs),inputs:b.inputs,sizes:b.sizes,ws,
     acts:a.acts.map(x=>Array.from(x)),trust:[...a.trust].sort((x,y)=>Math.abs(y[1])-Math.abs(x[1])).slice(0,10).map(([id,v])=>({id,v,name:nm(id),alive:alive.has(id)})),
     trustedBy:agents.filter(x=>(x.trust.get(a.id)||0)>.3).map(x=>({id:x.id,name:x.name,v:x.trust.get(a.id),hue:x.traits.hue})).sort((p,q)=>q.v-p.v).slice(0,12),coparentAlive:alive.has(a.coparent),
-    lineage:a.lineage.map(l=>({...l,alive:alive.has(l.id)})),lastBirth:a.lastBirth,parent:a.parent,cost:traitCost(a.traits,a.genes),genes:a.genes.map(g=>({...g,cost:+geneCost(g).toFixed(2),on:condOn(a,g.cond)})),metab:a.ph.baseMetab*a.ph.metab,perks:a.perks,ph:{maxE:a.ph.maxE,maxH:a.ph.maxH,speed:a.ph.speed,dmg:a.ph.dmg,armor:a.ph.armor,coldT:a.ph.coldT,hotT:a.ph.hotT,sense:a.ph.sense},brainCost:a.brainCost,
+    lineage:a.lineage.map(l=>({...l,alive:alive.has(l.id)})),lastBirth:a.lastBirth,parent:a.parent,genes:a.genes.map(g=>({...g,cost:+geneUpkeep(g).toFixed(4),on:condOn(a,g.cond)})),
+    ph:{maxE:a.ph.maxE,maxH:a.ph.maxH,speed:a.ph.speed,dmg:a.ph.dmg,armor:a.ph.armor,coldT:a.ph.coldT,hotT:a.ph.hotT,sense:a.ph.sense,smell:a.ph.smell,hearing:a.ph.hearing,immune:a.ph.immune,womb:a.ph.womb,seed:a.ph.seed,food:a.ph.food,lifespan:a.ph.lifespan},
+    body:{gut:a.gut,gutCap:gutCap(a),fat:a.fat,body:a.body,muscle:a.muscle,mass:a.mass,sick:a.sick,str:effStr(a),preg:a.preg?{e:a.preg.e,need:a.preg.need,t:a.preg.t}:null,burn:a.burn||0,
+      upkeep:{base:.035*Math.pow(a.mass,.75),eyes:.00022*a.ph.sense,nose:.006*a.ph.smell,ears:.0001*a.ph.hearing,immune:.008*a.ph.immune,healing:.006*a.traits.regen,insulation:.004*a.traits.thermal,repro:.005*a.ph.womb+.0025*a.ph.seed,brain:.4*a.brainCost,genes:a.geneUpkeep}},
     deeds:{shared:a.shared,stolen:a.stolen,attacks:a.attacks,kills:a.kills,hunts:a.hunts,beastKills:a.beastKills,crafts:a.crafts,deposits:a.deposits,builds:a.builds},
     actionCounts:Array.from(a.actionCounts),owed:[...a.owed].sort((x,y)=>y[1]-x[1]).slice(0,6).map(([id,v])=>[nm(id)||('#'+id),v]),inWater:a.inWater,drv:a.drv,rep:repOf(a.id),admirers:agents.filter(x=>(x.trust.get(a.id)||0)>.5).length,thanksGot:a.thanksGot,lovesGot:a.lovesGot,coparent:a.coparent,partners:a.partners,wellbeing:a.phi,rewardAvg:a.lastReward||0,curiosityGain:a.lastBonus||0,memory:a.memory,memA:a.memA,memB:a.memB,signal:a.signal,pain:a.pain});
 }
@@ -2024,6 +2309,7 @@ function exportMigrants(){
   const ranked=agents.filter(a=>a.age>300).sort((x,y)=>(y.kids*400+y.age)-(x.kids*400+x.age)).slice(0,n);
   if (!ranked.length) return;
   const pack=ranked.map(serAgent);
+  for (const a of ranked) worldE-=yipE(a);   // their energy leaves with them
   for (const a of ranked){ onDeath(a); a.dead=true; }   // they leave this island
   agents=agents.filter(a=>!a.dead);
   log(`${ranked.length} yips left for another island`,'info');
@@ -2035,7 +2321,7 @@ function importMigrants(pack,from){
   for (const o of pack){
     o.id=nextId++; o.trust=[]; o.owed=[]; o.parent=null; o.coparent=null;
     const a=deAgent(o); a.x=wrapX(bx+rnd(-25,25)); a.y=wrapY(by+rnd(-25,25)); if (isWater(a.x,a.y)){ a.x=bx; a.y=by; }
-    a.lastBirth=ticks-150; a.origin=from; a.history=[]; band.push(a); agents.push(a);
+    a.lastBirth=ticks-150; a.origin=from; a.history=[]; band.push(a); agents.push(a); worldE+=yipE(a);
   }
   for (const p of band) for (const q of band) if (p!==q) setTrust(p,q.id,.35);
   log(`${band.length} yips arrived from island ${'ABCD'[from]||from+1}: ${band.map(a=>a.name).join(', ')}`,'birth');
@@ -2077,17 +2363,17 @@ self.onmessage=e=>{
     case 'storm': sendStorm(); break;
     case 'cold': settings.temperature=clamp(settings.temperature-12,-20,50); log('Cold snap: average temperature down 12°C','cold'); postStats(false); break;
     case 'heat': settings.temperature=clamp(settings.temperature+12,-20,50); log('Heatwave: average temperature up 12°C','heat'); postStats(false); break;
-    case 'bloom': for (let i=0;i<220;i++) addItem('food'); log('Food bloom: 220 food scattered over fertile ground','food'); break;
+    case 'bloom': { let n=0; for (let i=0;i<220&&takeReserve(FOOD_E);i++){ if (addItem('food')) n++; else reserve+=FOOD_E; } log(`Food bloom: ${n} food grown from the wild reserve`,'food'); break; }
     case 'select': selected=m.id||0; if (selected) postInspect(); break;
     case 'inspect': inspecting=m.on; break;
     case 'pick': pickAgent(m.how); break;
     case 'paint': {
       const {x,y,k,r=20,n=1}=m;
-      if (k==='erase'){ for (const it of items) if (wdistXY(it.x,it.y,x,y)<=r) it.dead=true; buildings=buildings.filter(b=>wdistXY(b.x,b.y,x,y)>r); beasts=beasts.filter(z=>wdistXY(z.x,z.y,x,y)>r); }
+      if (k==='erase'){ for (const it of items) if (wdistXY(it.x,it.y,x,y)<=r){ it.dead=true; lose(itemE(it)); } buildings=buildings.filter(b=>wdistXY(b.x,b.y,x,y)>r); beasts=beasts.filter(z=>wdistXY(z.x,z.y,x,y)>r); }
       else if (k==='fire'){ if (!occupied(x,y,12,'fire')) placeBuilding('fire',x,y,null); }
-      else if (k==='beast'){ if (beasts.length<40) spawnBeast(x,y); }
+      else if (k==='beast'){ if (beasts.length<40&&takeReserve(BEAST_E)) spawnBeast(x,y); }
       else if (k==='wall'){ const ang=m.ang||0; if (!occupied(x,y,15,'wall')) placeBuilding('wall',x,y,null,ang); }
-      else { const cnt=Math.round((k==='food'?12:4)*n*(r/20)); for (let i=0;i<cnt;i++){ const t=rnd(0,6.283), d=Math.sqrt(Math.random())*r; addItem(k,x+Math.cos(t)*d,y+Math.sin(t)*d); } }
+      else { const cnt=Math.round((k==='food'?12:4)*n*(r/20)), ie=k==='food'?FOOD_E:k==='tree'?WOOD_E:0; for (let i=0;i<cnt;i++){ if (ie&&!takeReserve(ie)) break; const t=rnd(0,6.283), d=Math.sqrt(Math.random())*r; if (!addItem(k,x+Math.cos(t)*d,y+Math.sin(t)*d)) reserve+=ie; } }
       break;
     }
     case 'save': self.postMessage({type:'saved',state:JSON.stringify(serialize()),ticks,purpose:m.purpose}); break;
@@ -2600,7 +2886,15 @@ const sprStone = sprite(SP, (g, s) => {
   g.fillStyle = gr; g.beginPath(); pts.forEach(([x, y], i) => g[i ? 'lineTo' : 'moveTo'](c + x * s, c + y * s)); g.closePath(); g.fill();
   g.strokeStyle = 'rgba(255,255,255,.35)'; g.lineWidth = s * .03; g.beginPath(); g.moveTo(c - .2 * s, c - .26 * s); g.lineTo(c + .12 * s, c - .33 * s); g.stroke();
 });
-const ISPR = [[sprFood, 2.6], [sprTree, 4.6], [sprStone, 3.2]];
+const sprCarcass = rot => sprite(SP, (g, s) => {
+  const c = s / 2;
+  if (rot) { const h = g.createRadialGradient(c, c, 0, c, c, s * .5); h.addColorStop(0, 'rgba(150,190,70,.45)'); h.addColorStop(1, 'rgba(150,190,70,0)'); g.fillStyle = h; g.fillRect(0, 0, s, s); }
+  g.fillStyle = 'rgba(0,0,0,.35)'; g.beginPath(); g.ellipse(c + 2, c + 3, s * .3, s * .2, 0, 0, TAU); g.fill();
+  const gr = g.createLinearGradient(0, c - s * .2, 0, c + s * .2); gr.addColorStop(0, rot ? '#9aa457' : '#c9715c'); gr.addColorStop(1, rot ? '#4f5a24' : '#6e2a22');
+  g.fillStyle = gr; g.beginPath(); g.ellipse(c, c, s * .3, s * .19, -.3, 0, TAU); g.fill();
+  g.strokeStyle = rot ? 'rgba(220,235,160,.6)' : 'rgba(255,220,200,.55)'; g.lineWidth = s * .035; g.beginPath(); for (let k = -1; k <= 1; k++) { g.moveTo(c + k * s * .08 - s * .05, c - s * .12); g.lineTo(c + k * s * .08 + s * .03, c + s * .1); } g.stroke();
+});
+const ISPR = [[sprFood, 2.6], [sprTree, 4.6], [sprStone, 3.2], [sprCarcass(false), 4.2], [sprCarcass(true), 4.6]];
 const sprGlow = col => sprite(128, (g, s) => { const gr = g.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2); gr.addColorStop(0, col); gr.addColorStop(.35, col.replace(/[\d.]+\)$/, '.35)')); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(0, 0, s, s); });
 const glowFire = sprGlow('rgba(255,150,70,1)'), glowHouse = sprGlow('rgba(255,210,140,1)');
 
@@ -2695,13 +2989,13 @@ function drawTile(ox, oy, z, now, dt, vx0, vx1, vy0, vy1, fast, sp) {
   // resources
   const I = F.I;
   if (z < .7) {
-    const s = 1.4 / Math.max(.25, z) * .9, cols = [C.food, C.tree, C.stone];
-    for (let ty = 0; ty < 3; ty++) { ctx.fillStyle = cols[ty]; for (let o = 0; o < I.length; o += 4) { if (I[o] !== ty) continue; const x = I[o + 1], y = I[o + 2]; if (inView(x, y)) ctx.fillRect(x - s / 2, y - s / 2, s, s); } }
+    const s = 1.4 / Math.max(.25, z) * .9, cols = [C.food, C.tree, C.stone, '#b8574a', '#98a64c'];
+    for (let ty = 0; ty < 5; ty++) { ctx.fillStyle = cols[ty]; for (let o = 0; o < I.length; o += 4) { if (I[o] !== ty) continue; const x = I[o + 1], y = I[o + 2]; if (inView(x, y)) ctx.fillRect(x - s / 2, y - s / 2, s, s); } }
   } else for (let o = 0; o < I.length; o += 4) {
     const x = I[o + 1], y = I[o + 2]; if (!inView(x, y)) continue;
     const [img, r0] = ISPR[I[o]], life = I[o + 3];
-    const r = fast ? r0 : r0 * (life > .985 ? .4 + (1 - life) / .015 * .6 : 1);
-    ctx.globalAlpha = life < .15 ? .25 + life / .15 * .75 : 1;
+    const carc = I[o] >= 3, r = carc ? r0 * (.55 + .6 * life) : fast ? r0 : r0 * (life > .985 ? .4 + (1 - life) / .015 * .6 : 1);
+    ctx.globalAlpha = !carc && life < .15 ? .25 + life / .15 * .75 : 1;
     ctx.drawImage(img, x - r, y - r, r * 2, r * 2);
   }
   ctx.globalAlpha = 1;
@@ -2790,6 +3084,12 @@ function drawTile(ox, oy, z, now, dt, vx0, vx1, vy0, vy1, fast, sp) {
   ctx.strokeStyle = 'rgba(170,215,255,.7)'; ctx.lineWidth = .6; ctx.beginPath();
   for (let i = 0; i < list.length; i += 2) { const o = list[i], p = list[i + 1]; if (!(A[o + 7] & 16)) continue; const rr = R + 2.5 + Math.sin(now * 5 + p.x) * .8; ctx.moveTo(p.x + rr, p.y); ctx.arc(p.x, p.y, rr, 0, TAU); }
   ctx.stroke();
+  ctx.strokeStyle = 'rgba(170,200,80,.85)'; ctx.lineWidth = .7; ctx.setLineDash([1.2, 1]); ctx.beginPath();
+  for (let i = 0; i < list.length; i += 2) { const o = list[i], p = list[i + 1]; if (!(A[o + 7] & 32)) continue; ctx.moveTo(p.x + R + 1.2, p.y); ctx.arc(p.x, p.y, R + 1.2, 0, TAU); }
+  ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle = 'rgba(255,214,150,.9)'; ctx.beginPath();
+  for (let i = 0; i < list.length; i += 2) { const o = list[i], p = list[i + 1]; if (!(A[o + 7] & 64)) continue; ctx.moveTo(p.x + .9, p.y + R * .2); ctx.arc(p.x, p.y + R * .2, .9, 0, TAU); }
+  ctx.fill();
   ctx.strokeStyle = 'rgba(255,143,200,.8)'; ctx.lineWidth = .8; ctx.beginPath();
   for (let i = 0; i < list.length; i += 2) { const o = list[i], p = list[i + 1]; if (!(A[o + 7] & 8)) continue; ctx.moveTo(p.x + R + 1.8, p.y); ctx.arc(p.x, p.y, R + 1.8, 0, TAU); }
   ctx.stroke();
@@ -3362,13 +3662,26 @@ function lineChart(c, series, { min = 0, decimals = 'auto' } = {}) {
 const smooth = (a, k = 4) => a.map((_, i) => { let s = 0, n = 0; for (let j = Math.max(0, i - k); j <= i; j++) { s += a[j]; n++; } return s / n; });
 
 /* ================= stats drawer ================= */
-const DEATHC = { thirst: '#6fb6e8', drowning: '#3f7fb5', age: C.muted, hunger: C.warn, storm: C.storm, fire: C.fire, beast: C.beast, attack: '#b04a8a' };
-const DEATHL = { thirst: 'Thirst', drowning: 'Drowning', age: 'Old age', hunger: 'Starvation', storm: 'Storms', fire: 'Burns', beast: 'Beasts', attack: 'Killed by yips' };
+const DEATHC = { disease: '#98a64c', thirst: '#6fb6e8', drowning: '#3f7fb5', age: C.muted, hunger: C.warn, storm: C.storm, fire: C.fire, beast: C.beast, attack: '#b04a8a' };
+const DEATHL = { disease: 'Disease', thirst: 'Thirst', drowning: 'Drowning', age: 'Old age', hunger: 'Starvation', storm: 'Storms', fire: 'Burns', beast: 'Beasts', attack: 'Killed by yips' };
+const LEDC = { reserve: '#3d4a5c', soil: '#7a5a3a', plants: '#8fd67a', meat: '#b8574a', beasts: '#e05a4e', yips: '#f3c96b', built: '#c9b3e6' };
+const LEDL = { reserve: 'Wild reserve', soil: 'Soil', plants: 'Plants', meat: 'Carcasses', beasts: 'Beasts', yips: 'Yips', built: 'Structures' };
+function renderLedger(s) {
+  const L = s.ledger; if (!L) return;
+  const keys = ['yips', 'plants', 'meat', 'beasts', 'built', 'soil', 'reserve'], tot = L.total || keys.reduce((x, k) => x + (L[k] || 0), 0) || 1;
+  $('ledStack').innerHTML = keys.map(k => `<i style="width:${(L[k] || 0) / tot * 100}%;background:${LEDC[k]}"></i>`).join('');
+  $('ledKey').innerHTML = keys.map(k => `<span><i style="background:${LEDC[k]}"></i>${LEDL[k]} <b class="num">${((L[k] || 0) / tot * 100).toFixed(1)}%</b></span>`).join('');
+  $('ledNote').textContent = `${fmt(tot)} energy in this world, fixed. It moves between these and is never made or destroyed${Math.abs(L.drift || 0) > 1 ? ` (last check corrected ${fmt(Math.abs(L.drift))} of rounding)` : ''}.`;
+  const b = s.bodies || {}, n = Math.max(1, s.pop);
+  $('bodyMix').innerHTML = [['Carry and sire', b.both], ['Carry only', b.carry], ['Sire only', b.sire], ['Neither', b.neither], ['Carrying young', b.preg], ['Sick', b.sick]].map(([k, v]) => `<div><span>${k}</span><b>${v || 0}${k === 'Sick' || k === 'Carrying young' ? '' : ` · ${Math.round((v || 0) / n * 100)}%`}</b></div>`).join('') +
+    `<div><span>Avg fat / mass</span><b>${fmt(s.avgFat || 0)} / ${(s.avgMass || 0).toFixed(2)}</b></div><div><span>Avg burn per tick</span><b>${(s.avgBurn || 0).toFixed(3)}</b></div><div><span>Gardens / carcasses</span><b>${s.gardens || 0} / ${s.carcasses || 0}</b></div>`;
+}
 function renderStats() {
   if (!stats) return;
   updateHud();
   if (!$('dStats').classList.contains('open')) return;
   const s = stats, ta = s.tally;
+  renderLedger(s);
   $('fPop').textContent = s.pop; $('fPeak').textContent = s.peakPop;
   $('fGen').innerHTML = `${s.maxGen}<em> avg ${s.avgGen.toFixed(1)}</em>`;
   $('fBD').innerHTML = `${fmt(s.births)}<em> / ${fmt(s.deaths)}</em>`;
@@ -3406,7 +3719,7 @@ function renderStats() {
 /* ================= inspector ================= */
 let pane = 'pMind'; const lastName = {};
 document.querySelectorAll('[data-pane]').forEach(b => b.onclick = () => { pane = b.dataset.pane; document.querySelectorAll('[data-pane]').forEach(x => x.classList.toggle('on', x === b)); document.querySelectorAll('.pane').forEach(p => p.hidden = p.id !== pane); renderInspector(); });
-const DIGITS = { lr: 4, sense: 0, budget: 1 };
+const DIGITS = { lr: 4, sense: 0, hearing: 0 };
 function traitRows(keys, vals, avg) {
   return keys.map(k => {
     const [label, info] = meta.traitInfo[k], [lo, hi] = meta.bounds[k], v = vals[k] ?? 0, d = DIGITS[k] ?? 2;
@@ -3416,11 +3729,11 @@ function traitRows(keys, vals, avg) {
 }
 // describe a gene by what it does to the body, using the simulation's own dial definitions
 function fxText(fx) {
-  return Object.entries(fx).map(([d, v]) => { const D = meta.dials[d]; if (!D) return ''; const good = v * D.good > 0, val = D.kind === 'mul' ? `${v > 0 ? '+' : '−'}${Math.abs(v * 100).toFixed(0)}%` : `${v > 0 ? '+' : '−'}${Math.abs(v) < 1 ? Math.abs(v).toFixed(3) : Math.abs(v).toFixed(0)}`; return `<span class="${good ? 'g' : 'x'}">${val} ${D.label}</span>`; }).join(' · ');
+  return Object.entries(fx).map(([d, v]) => { const D = meta.dials[d]; if (!D) return ''; const good = v * D.good > 0, val = D.kind === 'mul' ? `${v > 0 ? '+' : '−'}${Math.abs(v * 100).toFixed(0)}%` : `${v > 0 ? '+' : '−'}${Math.abs(v) < 1 ? Math.abs(v).toFixed(3) : Math.abs(v).toFixed(0)}`; return `<span class="${good ? 'g' : 'x'}">${val} ${D.label}</span>`; }).filter(Boolean).join(' · ');
 }
 const CONDL = { always: 'always', cold: 'when cold', hot: 'when hot', night: 'at night', day: 'by day', young: 'while young', old: 'when old', starving: 'when starving', fed: 'when well fed', swimming: 'while swimming', hurt: 'when badly hurt' };
 function renderGenes(genes) {
-  $('geneList').innerHTML = genes.length ? genes.map(g => `<div class="gene${g.on ? ' on' : ''}"><div><b>${esc(g.name)}</b><span class="badge${g.cond === 'always' ? '' : g.on ? ' good' : ''}">${CONDL[g.cond] || g.cond}${g.cond !== 'always' ? (g.on ? ' · on' : ' · off') : ''}</span><em class="num">${g.cost >= 0 ? 'costs ' + g.cost.toFixed(2) : 'frees ' + (-g.cost).toFixed(2)} budget</em></div><p>${fxText(g.fx)}</p></div>`).join('') : '<p class="note">No genes: this yip runs on its base traits alone.</p>';
+  $('geneList').innerHTML = genes.length ? genes.map(g => `<div class="gene${g.on ? ' on' : ''}"><div><b>${esc(g.name)}</b><span class="badge${g.cond === 'always' ? '' : g.on ? ' good' : ''}">${CONDL[g.cond] || g.cond}${g.cond !== 'always' ? (g.on ? ' · on' : ' · off') : ''}</span><em class="num">${(g.cost * 1000).toFixed(1)} mE/tick</em></div><p>${fxText(g.fx)}</p></div>`).join('') : '<p class="note">No genes: this yip runs on its base traits alone.</p>';
 }
 function renderInspector() {
   const m = insp; if (!m || !$('dInspect').classList.contains('open')) return;
@@ -3428,7 +3741,7 @@ function renderInspector() {
   $('iBody').hidden = dead; $('iEmpty').hidden = !dead;
   if (dead) {
     const g = m.grave, nm = (g && g.name) || lastName[m.id] || `Yip #${m.id}`;
-    const CAUSE = { age: 'of old age', hunger: 'of starvation', thirst: 'of thirst', drowning: 'by drowning', storm: 'in a storm', fire: 'in a fire', beast: 'to a beast', attack: 'at the hands of another yip' };
+    const CAUSE = { disease: 'of disease', age: 'of old age', hunger: 'of starvation', thirst: 'of thirst', drowning: 'by drowning', storm: 'in a storm', fire: 'in a fire', beast: 'to a beast', attack: 'at the hands of another yip' };
     $('iTitle').textContent = nm; $('iSub').textContent = g ? `Died ${CAUSE[g.cause] || ''} at age ${fmt(g.age)} · generation ${g.gen} · ${g.kids} offspring` : 'No longer alive'; $('iBadges').innerHTML = '<span class="badge bad">Dead</span>';
     $('iEmptyTitle').textContent = `${nm} has died`; return;
   }
@@ -3474,14 +3787,23 @@ function bodyPane(m) {
   const avg = stats ? stats.traits : null;
   $('physList').innerHTML = traitRows(meta.phys, m.traits, avg);
   $('mentList').innerHTML = traitRows(meta.ment, m.traits, avg);
-  const budget = m.traits.budget, cost = m.cost, over = cost > budget, pct = v => clamp(v / Math.max(budget, cost) * 100, 0, 100);
-  $('budgetBar').innerHTML = `<div class="row2"><span>Body budget used</span><b>${cost.toFixed(1)} / ${budget.toFixed(1)}${over ? ' · over budget' : ''}</b></div><div class="bb"><i style="width:${pct(cost)}%;background:${over ? 'var(--bad)' : 'var(--good)'};opacity:.7"></i><u style="left:${pct(budget)}%"></u></div><span>Going over the budget raises metabolism. Upgrades and strong physical traits use it up.</span>`;
+  const bd = m.body || {}, up = bd.upkeep || {}, ph0 = m.ph || {};
+  const UPL = { base: 'Resting body (mass)', brain: 'Brain', eyes: 'Eyes', ears: 'Ears', nose: 'Nose', immune: 'Immune system', healing: 'Healing', insulation: 'Insulation', repro: 'Reproductive organs', genes: 'Genes switched on' };
+  const ups = Object.entries(up).sort((x, y) => y[1] - x[1]), umax = Math.max(.0001, ...ups.map(u => u[1])), tot = ups.reduce((s0, u) => s0 + u[1], 0);
+  const sex = ph0.womb > .05 && ph0.seed > .05 ? 'Can carry and sire young' : ph0.womb > .05 ? 'Can only carry young' : ph0.seed > .05 ? 'Can only sire young' : 'Cannot reproduce';
+  $('budgetBar').innerHTML = `<div class="row2"><span>Energy held</span><b>${fmt(m.energy)} usable · ${fmt(bd.gut)} in stomach · ${fmt(bd.fat)} fat · ${fmt(bd.body)} body</b></div>
+    <div class="row2"><span>Burns per tick</span><b>${(bd.burn || 0).toFixed(3)} (at rest ${tot.toFixed(3)})</b></div>
+    <div class="bars">${ups.map(([k, v]) => `<div class="bar"><div class="bt"><i style="width:${v / umax * 100}%"></i><span>${UPL[k] || k}</span></div><b>${(v * 1000).toFixed(1)}</b></div>`).join('')}</div>
+    <span>Upkeep in thousandths of energy per tick, before movement, work, fighting, temperature and illness. Metabolism is just the sum.</span>
+    <div class="row2"><span>Body</span><b>mass ${(bd.mass || 0).toFixed(2)} · muscle ${Math.round((bd.muscle || 0) * 100)}% · strength ${(bd.str || 0).toFixed(2)}</b></div>
+    <div class="row2"><span>Reproduction</span><b>${sex}${bd.preg ? ` · carrying young ${Math.round(bd.preg.e / bd.preg.need * 100)}%` : ''}</b></div>
+    ${bd.sick > .02 ? `<div class="row2"><span>Illness</span><b style="color:var(--bad)">sick ${Math.round(bd.sick * 100)}%</b></div>` : ''}`;
   renderGenes(m.genes || []);
   const d = m.deeds;
   $('deedKV').innerHTML = [['Gifts given', d.shared], ['Food stolen', d.stolen], ['Attacks', d.attacks], ['Yips killed', d.kills], ['Beast hits', d.hunts], ['Beasts slain', d.beastKills], ['Tools made', d.crafts], ['Items stored', d.deposits], ['Built', d.builds], ['Harvested', m.success]]
     .map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join('');
   const ph = m.ph || {};
-  const kv = [['Wellbeing', m.wellbeing.toFixed(2)], ['Avg reward', (m.rewardAvg >= 0 ? '+' : '') + m.rewardAvg.toFixed(3)], ['Food carried', m.inv.food], ['Wood / stone', `${m.inv.wood} / ${m.inv.stone}`], ['Tool uses left', m.tool], ['Metabolism', m.metab.toFixed(2) + '×'], ['Brain upkeep', m.brainCost.toFixed(3)], ['Comfort range', `${ph.coldT}–${ph.hotT}°C`], ['Felt temp.', m.temp.toFixed(1) + '°C'], ['Max energy / health', `${ph.maxE} / ${ph.maxH}`], ['Lifespan', fmt(m.lifespan)], ['Last act', meta.short[m.lastChoice]]];
+  const kv = [['Wellbeing', m.wellbeing.toFixed(2)], ['Avg reward', (m.rewardAvg >= 0 ? '+' : '') + m.rewardAvg.toFixed(3)], ['Food carried', m.inv.food], ['Meat carried', m.inv.meat ? `${m.inv.meat}${m.inv.mR ? ` (${m.inv.mR} rotten)` : ''}` : 0], ['Seeds', m.inv.seeds || 0], ['Wood / stone', `${m.inv.wood} / ${m.inv.stone}`], ['Tool uses left', m.tool], ['Stomach', `${fmt((m.body || {}).gut || 0)} / ${fmt((m.body || {}).gutCap || 0)}`], ['Digestion', `${Math.round(Math.min(95, 85 * (ph.food || 1)))}% kept`], ['Comfort range', `${ph.coldT}–${ph.hotT}°C`], ['Felt temp.', m.temp.toFixed(1) + '°C'], ['Max energy / health', `${ph.maxE} / ${ph.maxH}`], ['Lifespan', fmt(m.lifespan)], ['Last act', meta.short[m.lastChoice]]];
   $('bodyKV').innerHTML = kv.map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join('');
 }
 function socialPane(m) {

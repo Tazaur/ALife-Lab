@@ -57,6 +57,8 @@
       <section class="sec"><h3>Social life</h3><canvas class="chart" id="cSocial"></canvas><div class="key"><span><i style="background:#ff8fc8"></i>Avg popularity</span><span><i style="background:#9cb6ff"></i>Avg loneliness × 5</span></div></section>
       <section class="sec"><h3>Most common genes <span>share of yips carrying each</span></h3><div class="genes" id="perkBars"></div></section>
       <section class="sec"><h3>Temperament <span>population average</span></h3><div class="sec" id="mentAvg" style="gap:7px"></div></section>
+      <section class="sec"><h3>World energy <span>where the fixed total sits right now</span></h3><div class="stack" id="ledStack"></div><div class="key" id="ledKey"></div><p class="note" id="ledNote"></p></section>
+      <section class="sec"><h3>Bodies <span>reproduction, health and build</span></h3><div class="kv" id="bodyMix"></div><p class="note">Every founder can both carry and sire young. Separate sexes appear only if genes shrink one ability away.</p></section>
       <section class="sec"><h3>How they died</h3><div class="stack" id="deathStack"></div><div class="key" id="deathKey"></div></section>
       <section class="sec"><h3>What they sense <span>share of brains wired to it</span></h3><div class="bars" id="sensBars"></div></section>
       <section class="sec"><h3>What they do <span>average action mix</span></h3><div class="bars" id="actBars"></div></section>
@@ -244,10 +246,10 @@
         <div class="kv" id="contKV"></div>
       </div>
       <div class="pane sec" id="pBody" hidden>
-        <h3>Physical <span>slow to evolve · heavy on the body budget</span></h3>
+        <h3>Physical <span>slow to evolve · paid for in energy</span></h3>
         <div class="sec" id="physList" style="gap:7px"></div>
         <div class="budget" id="budgetBar"></div>
-        <h3>Genes <span>what each does to the body · its budget cost</span></h3>
+        <h3>Genes <span>what each does to the body · its upkeep while on</span></h3>
         <div class="genes" id="geneList"></div>
         <p class="note">Genes arise, duplicate, mutate and disappear on their own. Conditional genes only switch on in their situation.</p>
         <h3>Mental <span>fast to evolve · nearly free</span></h3>
@@ -287,6 +289,8 @@
     <span><i class="sq" style="background:var(--wall)"></i>Wall</span>
     <span><i style="background:var(--fire)"></i>Fire</span>
     <span><i style="background:var(--beast)"></i>Beast</span>
+    <span><i style="background:#b8574a"></i>Carcass</span>
+    <span><i style="background:#98a64c"></i>Rotting</span>
     <span><i class="sq" style="background:#1a3a54"></i>Water</span>
   </div>
   <div class="perf" id="perf">Starting…</div>

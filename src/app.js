@@ -446,7 +446,15 @@ const sprStone = sprite(SP, (g, s) => {
   g.fillStyle = gr; g.beginPath(); pts.forEach(([x, y], i) => g[i ? 'lineTo' : 'moveTo'](c + x * s, c + y * s)); g.closePath(); g.fill();
   g.strokeStyle = 'rgba(255,255,255,.35)'; g.lineWidth = s * .03; g.beginPath(); g.moveTo(c - .2 * s, c - .26 * s); g.lineTo(c + .12 * s, c - .33 * s); g.stroke();
 });
-const ISPR = [[sprFood, 2.6], [sprTree, 4.6], [sprStone, 3.2]];
+const sprCarcass = rot => sprite(SP, (g, s) => {
+  const c = s / 2;
+  if (rot) { const h = g.createRadialGradient(c, c, 0, c, c, s * .5); h.addColorStop(0, 'rgba(150,190,70,.45)'); h.addColorStop(1, 'rgba(150,190,70,0)'); g.fillStyle = h; g.fillRect(0, 0, s, s); }
+  g.fillStyle = 'rgba(0,0,0,.35)'; g.beginPath(); g.ellipse(c + 2, c + 3, s * .3, s * .2, 0, 0, TAU); g.fill();
+  const gr = g.createLinearGradient(0, c - s * .2, 0, c + s * .2); gr.addColorStop(0, rot ? '#9aa457' : '#c9715c'); gr.addColorStop(1, rot ? '#4f5a24' : '#6e2a22');
+  g.fillStyle = gr; g.beginPath(); g.ellipse(c, c, s * .3, s * .19, -.3, 0, TAU); g.fill();
+  g.strokeStyle = rot ? 'rgba(220,235,160,.6)' : 'rgba(255,220,200,.55)'; g.lineWidth = s * .035; g.beginPath(); for (let k = -1; k <= 1; k++) { g.moveTo(c + k * s * .08 - s * .05, c - s * .12); g.lineTo(c + k * s * .08 + s * .03, c + s * .1); } g.stroke();
+});
+const ISPR = [[sprFood, 2.6], [sprTree, 4.6], [sprStone, 3.2], [sprCarcass(false), 4.2], [sprCarcass(true), 4.6]];
 const sprGlow = col => sprite(128, (g, s) => { const gr = g.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2); gr.addColorStop(0, col); gr.addColorStop(.35, col.replace(/[\d.]+\)$/, '.35)')); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(0, 0, s, s); });
 const glowFire = sprGlow('rgba(255,150,70,1)'), glowHouse = sprGlow('rgba(255,210,140,1)');
 
@@ -541,13 +549,13 @@ function drawTile(ox, oy, z, now, dt, vx0, vx1, vy0, vy1, fast, sp) {
   // resources
   const I = F.I;
   if (z < .7) {
-    const s = 1.4 / Math.max(.25, z) * .9, cols = [C.food, C.tree, C.stone];
-    for (let ty = 0; ty < 3; ty++) { ctx.fillStyle = cols[ty]; for (let o = 0; o < I.length; o += 4) { if (I[o] !== ty) continue; const x = I[o + 1], y = I[o + 2]; if (inView(x, y)) ctx.fillRect(x - s / 2, y - s / 2, s, s); } }
+    const s = 1.4 / Math.max(.25, z) * .9, cols = [C.food, C.tree, C.stone, '#b8574a', '#98a64c'];
+    for (let ty = 0; ty < 5; ty++) { ctx.fillStyle = cols[ty]; for (let o = 0; o < I.length; o += 4) { if (I[o] !== ty) continue; const x = I[o + 1], y = I[o + 2]; if (inView(x, y)) ctx.fillRect(x - s / 2, y - s / 2, s, s); } }
   } else for (let o = 0; o < I.length; o += 4) {
     const x = I[o + 1], y = I[o + 2]; if (!inView(x, y)) continue;
     const [img, r0] = ISPR[I[o]], life = I[o + 3];
-    const r = fast ? r0 : r0 * (life > .985 ? .4 + (1 - life) / .015 * .6 : 1);
-    ctx.globalAlpha = life < .15 ? .25 + life / .15 * .75 : 1;
+    const carc = I[o] >= 3, r = carc ? r0 * (.55 + .6 * life) : fast ? r0 : r0 * (life > .985 ? .4 + (1 - life) / .015 * .6 : 1);
+    ctx.globalAlpha = !carc && life < .15 ? .25 + life / .15 * .75 : 1;
     ctx.drawImage(img, x - r, y - r, r * 2, r * 2);
   }
   ctx.globalAlpha = 1;
@@ -636,6 +644,12 @@ function drawTile(ox, oy, z, now, dt, vx0, vx1, vy0, vy1, fast, sp) {
   ctx.strokeStyle = 'rgba(170,215,255,.7)'; ctx.lineWidth = .6; ctx.beginPath();
   for (let i = 0; i < list.length; i += 2) { const o = list[i], p = list[i + 1]; if (!(A[o + 7] & 16)) continue; const rr = R + 2.5 + Math.sin(now * 5 + p.x) * .8; ctx.moveTo(p.x + rr, p.y); ctx.arc(p.x, p.y, rr, 0, TAU); }
   ctx.stroke();
+  ctx.strokeStyle = 'rgba(170,200,80,.85)'; ctx.lineWidth = .7; ctx.setLineDash([1.2, 1]); ctx.beginPath();
+  for (let i = 0; i < list.length; i += 2) { const o = list[i], p = list[i + 1]; if (!(A[o + 7] & 32)) continue; ctx.moveTo(p.x + R + 1.2, p.y); ctx.arc(p.x, p.y, R + 1.2, 0, TAU); }
+  ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle = 'rgba(255,214,150,.9)'; ctx.beginPath();
+  for (let i = 0; i < list.length; i += 2) { const o = list[i], p = list[i + 1]; if (!(A[o + 7] & 64)) continue; ctx.moveTo(p.x + .9, p.y + R * .2); ctx.arc(p.x, p.y + R * .2, .9, 0, TAU); }
+  ctx.fill();
   ctx.strokeStyle = 'rgba(255,143,200,.8)'; ctx.lineWidth = .8; ctx.beginPath();
   for (let i = 0; i < list.length; i += 2) { const o = list[i], p = list[i + 1]; if (!(A[o + 7] & 8)) continue; ctx.moveTo(p.x + R + 1.8, p.y); ctx.arc(p.x, p.y, R + 1.8, 0, TAU); }
   ctx.stroke();
@@ -1208,13 +1222,26 @@ function lineChart(c, series, { min = 0, decimals = 'auto' } = {}) {
 const smooth = (a, k = 4) => a.map((_, i) => { let s = 0, n = 0; for (let j = Math.max(0, i - k); j <= i; j++) { s += a[j]; n++; } return s / n; });
 
 /* ================= stats drawer ================= */
-const DEATHC = { thirst: '#6fb6e8', drowning: '#3f7fb5', age: C.muted, hunger: C.warn, storm: C.storm, fire: C.fire, beast: C.beast, attack: '#b04a8a' };
-const DEATHL = { thirst: 'Thirst', drowning: 'Drowning', age: 'Old age', hunger: 'Starvation', storm: 'Storms', fire: 'Burns', beast: 'Beasts', attack: 'Killed by yips' };
+const DEATHC = { disease: '#98a64c', thirst: '#6fb6e8', drowning: '#3f7fb5', age: C.muted, hunger: C.warn, storm: C.storm, fire: C.fire, beast: C.beast, attack: '#b04a8a' };
+const DEATHL = { disease: 'Disease', thirst: 'Thirst', drowning: 'Drowning', age: 'Old age', hunger: 'Starvation', storm: 'Storms', fire: 'Burns', beast: 'Beasts', attack: 'Killed by yips' };
+const LEDC = { reserve: '#3d4a5c', soil: '#7a5a3a', plants: '#8fd67a', meat: '#b8574a', beasts: '#e05a4e', yips: '#f3c96b', built: '#c9b3e6' };
+const LEDL = { reserve: 'Wild reserve', soil: 'Soil', plants: 'Plants', meat: 'Carcasses', beasts: 'Beasts', yips: 'Yips', built: 'Structures' };
+function renderLedger(s) {
+  const L = s.ledger; if (!L) return;
+  const keys = ['yips', 'plants', 'meat', 'beasts', 'built', 'soil', 'reserve'], tot = L.total || keys.reduce((x, k) => x + (L[k] || 0), 0) || 1;
+  $('ledStack').innerHTML = keys.map(k => `<i style="width:${(L[k] || 0) / tot * 100}%;background:${LEDC[k]}"></i>`).join('');
+  $('ledKey').innerHTML = keys.map(k => `<span><i style="background:${LEDC[k]}"></i>${LEDL[k]} <b class="num">${((L[k] || 0) / tot * 100).toFixed(1)}%</b></span>`).join('');
+  $('ledNote').textContent = `${fmt(tot)} energy in this world, fixed. It moves between these and is never made or destroyed${Math.abs(L.drift || 0) > 1 ? ` (last check corrected ${fmt(Math.abs(L.drift))} of rounding)` : ''}.`;
+  const b = s.bodies || {}, n = Math.max(1, s.pop);
+  $('bodyMix').innerHTML = [['Carry and sire', b.both], ['Carry only', b.carry], ['Sire only', b.sire], ['Neither', b.neither], ['Carrying young', b.preg], ['Sick', b.sick]].map(([k, v]) => `<div><span>${k}</span><b>${v || 0}${k === 'Sick' || k === 'Carrying young' ? '' : ` · ${Math.round((v || 0) / n * 100)}%`}</b></div>`).join('') +
+    `<div><span>Avg fat / mass</span><b>${fmt(s.avgFat || 0)} / ${(s.avgMass || 0).toFixed(2)}</b></div><div><span>Avg burn per tick</span><b>${(s.avgBurn || 0).toFixed(3)}</b></div><div><span>Gardens / carcasses</span><b>${s.gardens || 0} / ${s.carcasses || 0}</b></div>`;
+}
 function renderStats() {
   if (!stats) return;
   updateHud();
   if (!$('dStats').classList.contains('open')) return;
   const s = stats, ta = s.tally;
+  renderLedger(s);
   $('fPop').textContent = s.pop; $('fPeak').textContent = s.peakPop;
   $('fGen').innerHTML = `${s.maxGen}<em> avg ${s.avgGen.toFixed(1)}</em>`;
   $('fBD').innerHTML = `${fmt(s.births)}<em> / ${fmt(s.deaths)}</em>`;
@@ -1252,7 +1279,7 @@ function renderStats() {
 /* ================= inspector ================= */
 let pane = 'pMind'; const lastName = {};
 document.querySelectorAll('[data-pane]').forEach(b => b.onclick = () => { pane = b.dataset.pane; document.querySelectorAll('[data-pane]').forEach(x => x.classList.toggle('on', x === b)); document.querySelectorAll('.pane').forEach(p => p.hidden = p.id !== pane); renderInspector(); });
-const DIGITS = { lr: 4, sense: 0, budget: 1 };
+const DIGITS = { lr: 4, sense: 0, hearing: 0 };
 function traitRows(keys, vals, avg) {
   return keys.map(k => {
     const [label, info] = meta.traitInfo[k], [lo, hi] = meta.bounds[k], v = vals[k] ?? 0, d = DIGITS[k] ?? 2;
@@ -1262,11 +1289,11 @@ function traitRows(keys, vals, avg) {
 }
 // describe a gene by what it does to the body, using the simulation's own dial definitions
 function fxText(fx) {
-  return Object.entries(fx).map(([d, v]) => { const D = meta.dials[d]; if (!D) return ''; const good = v * D.good > 0, val = D.kind === 'mul' ? `${v > 0 ? '+' : '−'}${Math.abs(v * 100).toFixed(0)}%` : `${v > 0 ? '+' : '−'}${Math.abs(v) < 1 ? Math.abs(v).toFixed(3) : Math.abs(v).toFixed(0)}`; return `<span class="${good ? 'g' : 'x'}">${val} ${D.label}</span>`; }).join(' · ');
+  return Object.entries(fx).map(([d, v]) => { const D = meta.dials[d]; if (!D) return ''; const good = v * D.good > 0, val = D.kind === 'mul' ? `${v > 0 ? '+' : '−'}${Math.abs(v * 100).toFixed(0)}%` : `${v > 0 ? '+' : '−'}${Math.abs(v) < 1 ? Math.abs(v).toFixed(3) : Math.abs(v).toFixed(0)}`; return `<span class="${good ? 'g' : 'x'}">${val} ${D.label}</span>`; }).filter(Boolean).join(' · ');
 }
 const CONDL = { always: 'always', cold: 'when cold', hot: 'when hot', night: 'at night', day: 'by day', young: 'while young', old: 'when old', starving: 'when starving', fed: 'when well fed', swimming: 'while swimming', hurt: 'when badly hurt' };
 function renderGenes(genes) {
-  $('geneList').innerHTML = genes.length ? genes.map(g => `<div class="gene${g.on ? ' on' : ''}"><div><b>${esc(g.name)}</b><span class="badge${g.cond === 'always' ? '' : g.on ? ' good' : ''}">${CONDL[g.cond] || g.cond}${g.cond !== 'always' ? (g.on ? ' · on' : ' · off') : ''}</span><em class="num">${g.cost >= 0 ? 'costs ' + g.cost.toFixed(2) : 'frees ' + (-g.cost).toFixed(2)} budget</em></div><p>${fxText(g.fx)}</p></div>`).join('') : '<p class="note">No genes: this yip runs on its base traits alone.</p>';
+  $('geneList').innerHTML = genes.length ? genes.map(g => `<div class="gene${g.on ? ' on' : ''}"><div><b>${esc(g.name)}</b><span class="badge${g.cond === 'always' ? '' : g.on ? ' good' : ''}">${CONDL[g.cond] || g.cond}${g.cond !== 'always' ? (g.on ? ' · on' : ' · off') : ''}</span><em class="num">${(g.cost * 1000).toFixed(1)} mE/tick</em></div><p>${fxText(g.fx)}</p></div>`).join('') : '<p class="note">No genes: this yip runs on its base traits alone.</p>';
 }
 function renderInspector() {
   const m = insp; if (!m || !$('dInspect').classList.contains('open')) return;
@@ -1274,7 +1301,7 @@ function renderInspector() {
   $('iBody').hidden = dead; $('iEmpty').hidden = !dead;
   if (dead) {
     const g = m.grave, nm = (g && g.name) || lastName[m.id] || `Yip #${m.id}`;
-    const CAUSE = { age: 'of old age', hunger: 'of starvation', thirst: 'of thirst', drowning: 'by drowning', storm: 'in a storm', fire: 'in a fire', beast: 'to a beast', attack: 'at the hands of another yip' };
+    const CAUSE = { disease: 'of disease', age: 'of old age', hunger: 'of starvation', thirst: 'of thirst', drowning: 'by drowning', storm: 'in a storm', fire: 'in a fire', beast: 'to a beast', attack: 'at the hands of another yip' };
     $('iTitle').textContent = nm; $('iSub').textContent = g ? `Died ${CAUSE[g.cause] || ''} at age ${fmt(g.age)} · generation ${g.gen} · ${g.kids} offspring` : 'No longer alive'; $('iBadges').innerHTML = '<span class="badge bad">Dead</span>';
     $('iEmptyTitle').textContent = `${nm} has died`; return;
   }
@@ -1320,14 +1347,23 @@ function bodyPane(m) {
   const avg = stats ? stats.traits : null;
   $('physList').innerHTML = traitRows(meta.phys, m.traits, avg);
   $('mentList').innerHTML = traitRows(meta.ment, m.traits, avg);
-  const budget = m.traits.budget, cost = m.cost, over = cost > budget, pct = v => clamp(v / Math.max(budget, cost) * 100, 0, 100);
-  $('budgetBar').innerHTML = `<div class="row2"><span>Body budget used</span><b>${cost.toFixed(1)} / ${budget.toFixed(1)}${over ? ' · over budget' : ''}</b></div><div class="bb"><i style="width:${pct(cost)}%;background:${over ? 'var(--bad)' : 'var(--good)'};opacity:.7"></i><u style="left:${pct(budget)}%"></u></div><span>Going over the budget raises metabolism. Upgrades and strong physical traits use it up.</span>`;
+  const bd = m.body || {}, up = bd.upkeep || {}, ph0 = m.ph || {};
+  const UPL = { base: 'Resting body (mass)', brain: 'Brain', eyes: 'Eyes', ears: 'Ears', nose: 'Nose', immune: 'Immune system', healing: 'Healing', insulation: 'Insulation', repro: 'Reproductive organs', genes: 'Genes switched on' };
+  const ups = Object.entries(up).sort((x, y) => y[1] - x[1]), umax = Math.max(.0001, ...ups.map(u => u[1])), tot = ups.reduce((s0, u) => s0 + u[1], 0);
+  const sex = ph0.womb > .05 && ph0.seed > .05 ? 'Can carry and sire young' : ph0.womb > .05 ? 'Can only carry young' : ph0.seed > .05 ? 'Can only sire young' : 'Cannot reproduce';
+  $('budgetBar').innerHTML = `<div class="row2"><span>Energy held</span><b>${fmt(m.energy)} usable · ${fmt(bd.gut)} in stomach · ${fmt(bd.fat)} fat · ${fmt(bd.body)} body</b></div>
+    <div class="row2"><span>Burns per tick</span><b>${(bd.burn || 0).toFixed(3)} (at rest ${tot.toFixed(3)})</b></div>
+    <div class="bars">${ups.map(([k, v]) => `<div class="bar"><div class="bt"><i style="width:${v / umax * 100}%"></i><span>${UPL[k] || k}</span></div><b>${(v * 1000).toFixed(1)}</b></div>`).join('')}</div>
+    <span>Upkeep in thousandths of energy per tick, before movement, work, fighting, temperature and illness. Metabolism is just the sum.</span>
+    <div class="row2"><span>Body</span><b>mass ${(bd.mass || 0).toFixed(2)} · muscle ${Math.round((bd.muscle || 0) * 100)}% · strength ${(bd.str || 0).toFixed(2)}</b></div>
+    <div class="row2"><span>Reproduction</span><b>${sex}${bd.preg ? ` · carrying young ${Math.round(bd.preg.e / bd.preg.need * 100)}%` : ''}</b></div>
+    ${bd.sick > .02 ? `<div class="row2"><span>Illness</span><b style="color:var(--bad)">sick ${Math.round(bd.sick * 100)}%</b></div>` : ''}`;
   renderGenes(m.genes || []);
   const d = m.deeds;
   $('deedKV').innerHTML = [['Gifts given', d.shared], ['Food stolen', d.stolen], ['Attacks', d.attacks], ['Yips killed', d.kills], ['Beast hits', d.hunts], ['Beasts slain', d.beastKills], ['Tools made', d.crafts], ['Items stored', d.deposits], ['Built', d.builds], ['Harvested', m.success]]
     .map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join('');
   const ph = m.ph || {};
-  const kv = [['Wellbeing', m.wellbeing.toFixed(2)], ['Avg reward', (m.rewardAvg >= 0 ? '+' : '') + m.rewardAvg.toFixed(3)], ['Food carried', m.inv.food], ['Wood / stone', `${m.inv.wood} / ${m.inv.stone}`], ['Tool uses left', m.tool], ['Metabolism', m.metab.toFixed(2) + '×'], ['Brain upkeep', m.brainCost.toFixed(3)], ['Comfort range', `${ph.coldT}–${ph.hotT}°C`], ['Felt temp.', m.temp.toFixed(1) + '°C'], ['Max energy / health', `${ph.maxE} / ${ph.maxH}`], ['Lifespan', fmt(m.lifespan)], ['Last act', meta.short[m.lastChoice]]];
+  const kv = [['Wellbeing', m.wellbeing.toFixed(2)], ['Avg reward', (m.rewardAvg >= 0 ? '+' : '') + m.rewardAvg.toFixed(3)], ['Food carried', m.inv.food], ['Meat carried', m.inv.meat ? `${m.inv.meat}${m.inv.mR ? ` (${m.inv.mR} rotten)` : ''}` : 0], ['Seeds', m.inv.seeds || 0], ['Wood / stone', `${m.inv.wood} / ${m.inv.stone}`], ['Tool uses left', m.tool], ['Stomach', `${fmt((m.body || {}).gut || 0)} / ${fmt((m.body || {}).gutCap || 0)}`], ['Digestion', `${Math.round(Math.min(95, 85 * (ph.food || 1)))}% kept`], ['Comfort range', `${ph.coldT}–${ph.hotT}°C`], ['Felt temp.', m.temp.toFixed(1) + '°C'], ['Max energy / health', `${ph.maxE} / ${ph.maxH}`], ['Lifespan', fmt(m.lifespan)], ['Last act', meta.short[m.lastChoice]]];
   $('bodyKV').innerHTML = kv.map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join('');
 }
 function socialPane(m) {
