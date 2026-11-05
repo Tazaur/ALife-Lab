@@ -287,7 +287,7 @@ function syncIslands() {
 }
 
 /* ================= app state ================= */
-let F = null, stats = null, insp = null, names = {};
+let soilAt = 0, F = null, stats = null, insp = null, names = {};
 const nameOf = id => names[id] || `#${id}`;
 let selected = 0, follow = false, running = true, tool = 'select', maxMode = false;
 const SPEEDS = [1, 2, 4, 8, 16, 32, 64, 128, 256];
@@ -321,7 +321,7 @@ function onSim(m, isl = 0) {
       break;
     }
     case 'frame': ingestFrame(m); if (m.P) paintPher(m.P); break;
-    case 'stats': stats = m; if (m.names) names = m.names; renderStats(); break;
+    case 'stats': stats = m; if (m.names) names = m.names; if (m.soil && meta && performance.now() - soilAt > 8000) { soilAt = performance.now(); meta.fert = Float32Array.from(m.soil, v => v / 255); buildTerrain(meta); } renderStats(); break;
     case 'inspect': insp = m; if (m.name) names[m.id] = m.name; renderInspector(); break;
     case 'selected': setSelected(m.id, { fromSim: true }); break;
     case 'toast': if (ui.notify === 'all' || (ui.notify === 'important' && m.important)) toast(m.s, m.kind); break;
@@ -421,40 +421,25 @@ function clampCam() { cam.x = clamp(cam.x, 0, W); cam.y = clamp(cam.y, 0, H); }
 /* ================= sprites ================= */
 function sprite(size, draw) { const c = document.createElement('canvas'); c.width = c.height = size; draw(c.getContext('2d'), size); return c; }
 const SP = 64;
-const sprFood = sprite(SP, (g, s) => {
-  const r = s * .34, c = s / 2;
-  const gr = g.createRadialGradient(c - r * .35, c - r * .4, r * .1, c, c, r);
-  gr.addColorStop(0, '#d8f7c8'); gr.addColorStop(.45, C.food); gr.addColorStop(1, '#3f8a3a');
-  g.fillStyle = gr; g.beginPath(); g.arc(c, c + 2, r, 0, TAU); g.fill();
-  g.fillStyle = '#5fae4c'; g.beginPath(); g.ellipse(c + r * .45, c - r * .85, r * .45, r * .2, -.6, 0, TAU); g.fill();
-});
-const sprTree = sprite(SP, (g, s) => {
-  const c = s / 2;
-  g.fillStyle = 'rgba(0,0,0,.35)'; g.beginPath(); g.arc(c + 3, c + 4, s * .4, 0, TAU); g.fill();
-  for (const [dx, dy, rr] of [[0, 0, .3], [-.14, -.1, .2], [.15, -.08, .21], [.02, .15, .2], [-.12, .12, .17], [.14, .13, .16]]) {
-    const x = c + dx * s, y = c + dy * s, r = rr * s;
-    const gr = g.createRadialGradient(x - r * .4, y - r * .4, r * .1, x, y, r);
-    gr.addColorStop(0, '#e9c79b'); gr.addColorStop(.6, C.tree); gr.addColorStop(1, '#7a5a37');
-    g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill();
+// Everything that isn't a yip is a simple, single-colour icon.
+const ICOL = { bush: '#62b85a', wheat: '#d9b54a', tree: '#2f7f52', stone: '#9ca2ae', meat: '#b9513f', rot: '#8f9c3b' };
+const solid = (col, draw) => sprite(SP, (g, s) => { g.fillStyle = col; g.strokeStyle = col; draw(g, s, s / 2); });
+const sprBush = solid(ICOL.bush, (g, s, c) => { for (const [dx, dy, r] of [[-.14, .06, .2], [.14, .06, .2], [0, -.1, .22], [0, .12, .2]]) { g.beginPath(); g.arc(c + dx * s, c + dy * s, r * s, 0, TAU); g.fill(); } });
+const sprWheat = solid(ICOL.wheat, (g, s, c) => {
+  g.lineWidth = s * .045; g.lineCap = 'round';
+  for (const dx of [-.14, 0, .14]) {
+    const x = c + dx * s; g.beginPath(); g.moveTo(x, c + .36 * s); g.lineTo(x, c - .08 * s); g.stroke();
+    for (let k = 0; k < 4; k++) { const y = c - .1 * s - k * .07 * s; g.beginPath(); g.ellipse(x - .035 * s, y, .035 * s, .05 * s, -.5, 0, TAU); g.ellipse(x + .035 * s, y, .035 * s, .05 * s, .5, 0, TAU); g.fill(); }
   }
-  g.fillStyle = '#5b3f22'; g.beginPath(); g.arc(c, c, s * .05, 0, TAU); g.fill();
 });
-const sprStone = sprite(SP, (g, s) => {
-  const c = s / 2, pts = [[-.34, .08], [-.2, -.26], [.12, -.33], [.34, -.08], [.28, .24], [-.04, .33], [-.28, .26]];
-  g.fillStyle = 'rgba(0,0,0,.35)'; g.beginPath(); pts.forEach(([x, y], i) => g[i ? 'lineTo' : 'moveTo'](c + x * s + 2, c + y * s + 3)); g.fill();
-  const gr = g.createLinearGradient(0, 0, s, s); gr.addColorStop(0, '#e4e7ef'); gr.addColorStop(.5, C.stone); gr.addColorStop(1, '#5d6372');
-  g.fillStyle = gr; g.beginPath(); pts.forEach(([x, y], i) => g[i ? 'lineTo' : 'moveTo'](c + x * s, c + y * s)); g.closePath(); g.fill();
-  g.strokeStyle = 'rgba(255,255,255,.35)'; g.lineWidth = s * .03; g.beginPath(); g.moveTo(c - .2 * s, c - .26 * s); g.lineTo(c + .12 * s, c - .33 * s); g.stroke();
+const sprTree = solid(ICOL.tree, (g, s, c) => {
+  g.fillRect(c - .05 * s, c + .12 * s, .1 * s, .3 * s);
+  for (const [y0, w] of [[.2, .38], [.02, .3], [-.16, .22]]) { g.beginPath(); g.moveTo(c - w * s, c + y0 * s); g.lineTo(c + w * s, c + y0 * s); g.lineTo(c, c + (y0 - .3) * s); g.closePath(); g.fill(); }
 });
-const sprCarcass = rot => sprite(SP, (g, s) => {
-  const c = s / 2;
-  if (rot) { const h = g.createRadialGradient(c, c, 0, c, c, s * .5); h.addColorStop(0, 'rgba(150,190,70,.45)'); h.addColorStop(1, 'rgba(150,190,70,0)'); g.fillStyle = h; g.fillRect(0, 0, s, s); }
-  g.fillStyle = 'rgba(0,0,0,.35)'; g.beginPath(); g.ellipse(c + 2, c + 3, s * .3, s * .2, 0, 0, TAU); g.fill();
-  const gr = g.createLinearGradient(0, c - s * .2, 0, c + s * .2); gr.addColorStop(0, rot ? '#9aa457' : '#c9715c'); gr.addColorStop(1, rot ? '#4f5a24' : '#6e2a22');
-  g.fillStyle = gr; g.beginPath(); g.ellipse(c, c, s * .3, s * .19, -.3, 0, TAU); g.fill();
-  g.strokeStyle = rot ? 'rgba(220,235,160,.6)' : 'rgba(255,220,200,.55)'; g.lineWidth = s * .035; g.beginPath(); for (let k = -1; k <= 1; k++) { g.moveTo(c + k * s * .08 - s * .05, c - s * .12); g.lineTo(c + k * s * .08 + s * .03, c + s * .1); } g.stroke();
-});
-const ISPR = [[sprFood, 2.6], [sprTree, 4.6], [sprStone, 3.2], [sprCarcass(false), 4.2], [sprCarcass(true), 4.6]];
+const sprStone = solid(ICOL.stone, (g, s, c) => { const pts = [[-.32, .1], [-.2, -.22], [.1, -.28], [.32, -.06], [.26, .22], [-.04, .3], [-.26, .25]]; g.beginPath(); pts.forEach(([x, y], i) => g[i ? 'lineTo' : 'moveTo'](c + x * s, c + y * s)); g.closePath(); g.fill(); });
+const sprMeat = col => solid(col, (g, s, c) => { g.beginPath(); g.ellipse(c - .05 * s, c, .26 * s, .19 * s, -.5, 0, TAU); g.fill(); g.lineWidth = s * .08; g.lineCap = 'round'; g.beginPath(); g.moveTo(c + .12 * s, c - .1 * s); g.lineTo(c + .3 * s, c - .28 * s); g.stroke(); g.beginPath(); g.arc(c + .32 * s, c - .3 * s, .06 * s, 0, TAU); g.fill(); });
+// index = item code from the sim: 0 bush, 1 tree, 2 stone, 3 meat, 4 rotting meat, 5 wheat
+const ISPR = [[sprBush, 2.8], [sprTree, 5.2], [sprStone, 2.8], [sprMeat(ICOL.meat), 4], [sprMeat(ICOL.rot), 4.2], [sprWheat, 3.8]];
 const sprGlow = col => sprite(128, (g, s) => { const gr = g.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2); gr.addColorStop(0, col); gr.addColorStop(.35, col.replace(/[\d.]+\)$/, '.35)')); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(0, 0, s, s); });
 const glowFire = sprGlow('rgba(255,150,70,1)'), glowHouse = sprGlow('rgba(255,210,140,1)');
 
@@ -550,12 +535,13 @@ function drawTile(ox, oy, z, now, dt, vx0, vx1, vy0, vy1, fast, sp) {
   // resources
   const I = F.I;
   if (z < .7) {
-    const s = 1.4 / Math.max(.25, z) * .9, cols = [C.food, C.tree, C.stone, '#b8574a', '#98a64c'];
-    for (let ty = 0; ty < 5; ty++) { ctx.fillStyle = cols[ty]; for (let o = 0; o < I.length; o += 4) { if (I[o] !== ty) continue; const x = I[o + 1], y = I[o + 2]; if (inView(x, y)) ctx.fillRect(x - s / 2, y - s / 2, s, s); } }
+    const s = 1.4 / Math.max(.25, z) * .9, cols = [ICOL.bush, ICOL.tree, ICOL.stone, ICOL.meat, ICOL.rot, ICOL.wheat];
+    for (let ty = 0; ty < 6; ty++) { if (ty === 1) continue; ctx.fillStyle = cols[ty]; for (let o = 0; o < I.length; o += 4) { if (I[o] !== ty) continue; const x = I[o + 1], y = I[o + 2]; if (inView(x, y)) ctx.fillRect(x - s / 2, y - s / 2, s, s); } }
   } else for (let o = 0; o < I.length; o += 4) {
+    if (I[o] === 1) continue;
     const x = I[o + 1], y = I[o + 2]; if (!inView(x, y)) continue;
     const [img, r0] = ISPR[I[o]], life = I[o + 3];
-    const carc = I[o] >= 3, r = carc ? r0 * (.55 + .6 * life) : fast ? r0 : r0 * (life > .985 ? .4 + (1 - life) / .015 * .6 : 1);
+    const carc = I[o] === 3 || I[o] === 4, r = carc ? r0 * (.55 + .6 * life) : fast ? r0 : r0 * (life > .985 ? .4 + (1 - life) / .015 * .6 : 1);
     ctx.globalAlpha = !carc && life < .15 ? .25 + life / .15 * .75 : 1;
     ctx.drawImage(img, x - r, y - r, r * 2, r * 2);
   }
@@ -582,11 +568,10 @@ function drawTile(ox, oy, z, now, dt, vx0, vx1, vy0, vy1, fast, sp) {
       ctx.moveTo(-r, -.2); ctx.lineTo(r, -.2); ctx.stroke();
       ctx.restore();
     } else {
-      ctx.fillStyle = 'rgba(0,0,0,.35)'; roundRect(x - r + 1.5, y - r + 2, r * 2, r * 2, 3); ctx.fill();
-      ctx.fillStyle = ty === 0 ? 'rgba(240,200,126,.2)' : 'rgba(127,216,234,.16)'; roundRect(x - r, y - r, r * 2, r * 2, 3); ctx.fill();
-      ctx.strokeStyle = col; ctx.lineWidth = 1.3; roundRect(x - r, y - r, r * 2, r * 2, 3); ctx.stroke();
+      const wt = Math.max(2.2, r * .22), h = r - wt / 2;
+      ctx.strokeStyle = col; ctx.lineWidth = wt; ctx.lineJoin = 'miter'; ctx.strokeRect(x - h, y - h, h * 2, h * 2);
       ctx.lineWidth = .8; ctx.beginPath();
-      if (ty === 0) { ctx.moveTo(x - r * .6, y - r * .05); ctx.lineTo(x, y - r * .6); ctx.lineTo(x + r * .6, y - r * .05); ctx.moveTo(x - r * .15, y + r); ctx.lineTo(x - r * .15, y + r * .45); ctx.lineTo(x + r * .15, y + r * .45); ctx.lineTo(x + r * .15, y + r); }
+      if (ty === 0) { /* a house is just its walls */ } else if (false) { ctx.moveTo(x - r * .6, y - r * .05); ctx.lineTo(x, y - r * .6); ctx.lineTo(x + r * .6, y - r * .05); ctx.moveTo(x - r * .15, y + r); ctx.lineTo(x - r * .15, y + r * .45); ctx.lineTo(x + r * .15, y + r * .45); ctx.lineTo(x + r * .15, y + r); }
       else { ctx.moveTo(x - r, y); ctx.lineTo(x + r, y); ctx.moveTo(x, y - r); ctx.lineTo(x, y + r); }
       ctx.stroke();
       const stock = B[o + 6];
@@ -692,6 +677,20 @@ function drawTile(ox, oy, z, now, dt, vx0, vx1, vy0, vy1, fast, sp) {
     ctx.fillStyle = p.hunt ? '#ffe08a' : '#ffb59a'; ctx.globalAlpha = .7 + dark; ctx.beginPath(); ctx.arc(5.6, -1.4, .8, 0, TAU); ctx.arc(5.6, 1.4, .8, 0, TAU); ctx.fill(); ctx.globalAlpha = 1;
     ctx.restore();
     if (p.hp < .98) { ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillRect(p.x - 7, p.y - 9, 14, 2); ctx.fillStyle = C.beast; ctx.fillRect(p.x - 7, p.y - 9, 14 * p.hp, 2); }
+  }
+
+  // trees stand over everything on the ground, yips included (dimmed at night like the ground)
+  {
+    const zo = z < .7, s2 = 2.2 / Math.max(.25, z);
+    if (dark > .01) ctx.filter = `brightness(${1 - dark})`;
+    if (zo) ctx.fillStyle = ICOL.tree;
+    for (let o = 0; o < I.length; o += 4) {
+      if (I[o] !== 1) continue; const x = I[o + 1], y = I[o + 2]; if (!inView(x, y)) continue;
+      if (zo) { ctx.fillRect(x - s2 / 2, y - s2 / 2, s2, s2); continue; }
+      const life = I[o + 3], r = 5.2 * (life > .985 && !fast ? .4 + (1 - life) / .015 * .6 : 1);
+      ctx.globalAlpha = life < .15 ? .25 + life / .15 * .75 : .95; ctx.drawImage(sprTree, x - r, y - r * 1.15, r * 2, r * 2);
+    }
+    ctx.globalAlpha = 1; ctx.filter = 'none';
   }
 
   // action effects

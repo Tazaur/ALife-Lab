@@ -79,6 +79,13 @@ For runs that should keep going with no browser open, the same thing works from 
 - **Saves** hold every island (yips, brains, genes, resources, settings), gzipped into the browser's IndexedDB. Autosave runs every 2 minutes; Settings has save, load, download and import. Old single-world files still load.
 - **Yip library** (Settings): keep the top yips from an island, from every island, or one yip from the inspector (Keep). A library entry stores genes, traits and the brain with everything it learned. *New world from library* starts fresh islands with one exact copy of each checked yip and fills the 300 founders with their mutated offspring. Libraries download and import as files.
 
+## Soil and looks (1.9)
+
+- **Soil fertility is used up.** Every plant that grows takes some fertility from the ground it grows on. Fertility recovers slowly toward what the ground naturally holds, faster where the soil has nutrients (waste, rot, compost), and nutrients can lift it above its natural level. The map's soil colour follows it.
+- **Composting** is an action: bury carried meat (rotten is fine; buried, it no longer spreads disease) to put its energy into the soil and restore fertility on the spot. Yips can sense how fertile the ground is and how worn out it is compared with its natural state.
+- **Plant food** grows as bushes on wooded ground and wheat on open ground and in gardens. Meat comes from carcasses of beasts and yips (eating yip meat risks disease).
+- **Icons** are simple single colours. Wheat, bushes, stones and meat lie under the yips; trees stand over them. Houses are plain squares with thick walls.
+
 ## Soft limits (1.8)
 
 Nothing we don't want is forbidden outright; it is made costly instead.
