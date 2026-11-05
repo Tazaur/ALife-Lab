@@ -42,14 +42,14 @@
         <div class="relbars" id="relBars"></div>
         <div class="key"><span><i style="background:#7ed6b0"></i>Kin</span><span><i style="background:#f3c96b"></i>Friends</span><span><i style="background:#93a8a0"></i>Strangers</span><span><i style="background:#f2836f"></i>Enemies</span></div>
         <canvas class="chart" id="cRel"></canvas>
-        <div class="key"><span><i style="background:#f2836f"></i>Attacks on kin &amp; friends</span><span><i style="background:#7ed6b0"></i>Thanks to kin &amp; friends</span><span><i style="background:#c9b3e6"></i>Gifts to kin &amp; friends</span></div>
-        <p class="note">If yips are learning to tell affection from violence, attacks on kin and friends fall while thanks and gifts to them rise. Shares are of each act's targets per interval.</p>
+        <div class="key"><span><i style="background:#f2836f"></i>Attacks on kin &amp; friends</span><span><i style="background:#7ed6b0"></i>Affection to kin &amp; friends</span><span><i style="background:#c9b3e6"></i>Gifts to kin &amp; friends</span></div>
+        <p class="note">If yips are learning to tell affection from violence, attacks on kin and friends fall while affection and gifts to them rise. Shares are of each act's targets per interval.</p>
       </section>
       <section class="sec"><h3>Families <span>largest lines alive</span></h3><div class="fams" id="fams"></div></section>
       <section class="sec"><h3>Population &amp; structures <span id="hSpan"></span></h3><canvas class="chart tall" id="cPop"></canvas><div class="key"><span><i style="background:#7ed6b0"></i>Population</span><span><i style="background:#f0c87e"></i>Structures</span><span><i style="background:#e26d5a"></i>Beasts × 10</span></div></section>
       <section class="sec"><h3>Behavior <span>events per 100 ticks</span></h3>
         <canvas class="chart tall" id="cBeh"></canvas>
-        <div class="key"><span><i style="background:#7ed6b0"></i>Gifts</span><span><i style="background:#f2836f"></i>Thefts</span><span><i style="background:#e26d5a;opacity:.55"></i>Attacks ÷ 10</span><span><i style="background:#f0b35a"></i>Hunts</span><span><i style="background:#c9b3e6"></i>Tools made</span><span><i style="background:#f3c96b"></i>Thanks</span><span><i style="background:#ff8fc8"></i>Loving thanks ×5</span></div>
+        <div class="key"><span><i style="background:#7ed6b0"></i>Gifts</span><span><i style="background:#f2836f"></i>Thefts</span><span><i style="background:#e26d5a;opacity:.55"></i>Attacks ÷ 10</span><span><i style="background:#f0b35a"></i>Hunts</span><span><i style="background:#c9b3e6"></i>Tools made</span><span><i style="background:#ff8fc8"></i>Affection</span><span><i style="background:#f3c96b"></i>Words ÷ 5</span></div>
         <div class="figs" id="behFigs"></div>
       </section>
       <section class="sec"><h3>Average generation</h3><canvas class="chart" id="cGen"></canvas></section>
@@ -57,6 +57,12 @@
       <section class="sec"><h3>Social life</h3><canvas class="chart" id="cSocial"></canvas><div class="key"><span><i style="background:#ff8fc8"></i>Avg popularity</span><span><i style="background:#9cb6ff"></i>Avg loneliness × 5</span></div></section>
       <section class="sec"><h3>Most common genes <span>share of yips carrying each</span></h3><div class="genes" id="perkBars"></div></section>
       <section class="sec"><h3>Temperament <span>population average</span></h3><div class="sec" id="mentAvg" style="gap:7px"></div></section>
+      <section class="sec"><h3>Language <span>symbols and words in use</span></h3>
+        <div class="lsyms" id="langSyms"></div>
+        <div class="lwords" id="langWords"></div>
+        <p class="note" id="langNote"></p>
+        <p class="note">Speaking is an ordinary action and nothing gives a symbol meaning. Symbols said in quick succession chain into words of up to four. A shout (!) costs more energy and carries much farther. Listeners only pick it up within their own hearing range.</p>
+      </section>
       <section class="sec"><h3>World energy <span>where the fixed total sits right now</span></h3><div class="stack" id="ledStack"></div><div class="key" id="ledKey"></div><p class="note" id="ledNote"></p></section>
       <section class="sec"><h3>Bodies <span>reproduction, health and build</span></h3><div class="kv" id="bodyMix"></div><p class="note">Every founder can both carry and sire young. Separate sexes appear only if genes shrink one ability away.</p></section>
       <section class="sec"><h3>How they died</h3><div class="stack" id="deathStack"></div><div class="key" id="deathKey"></div></section>

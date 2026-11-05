@@ -17,12 +17,17 @@ const wdist = (a,b) => Math.hypot(ddx(a,b),ddy(a,b));
 const wdistXY = (x1,y1,x2,y2) => Math.hypot(wd(x2-x1,W),wd(y2-y1,H));
 
 // ---------- actions ----------
-const ACTIONS = ['Move north','Move east','Move south','Move west','Harvest','Eat','Deposit in store','Withdraw from store','Build house','Build storehouse','Build wall','Build fire','Repair','Share food','Attack yip','Fight beast','Craft tool','Rest','Drink','Thank nearest yip','Befriend nearest yip','Eat meat','Plant seeds'];
-const SHORT   = ['N','E','S','W','Harvest','Eat','Deposit','Withdraw','House','Store','Wall','Fire','Repair','Share','Attack','Hunt','Craft','Rest','Drink','Thank','Befriend','Meat','Plant'];
+const ACTIONS = ['Move north','Move east','Move south','Move west','Harvest','Eat','Deposit in store','Withdraw from store','Build house','Build storehouse','Build wall','Build fire','Repair','Share food','Attack yip','Fight beast','Craft tool','Rest','Drink','Show affection','Befriend nearest yip','Eat meat','Plant seeds','Speak'];
+const SHORT   = ['N','E','S','W','Harvest','Eat','Deposit','Withdraw','House','Store','Wall','Fire','Repair','Share','Attack','Hunt','Craft','Rest','Drink','Affection','Befriend','Meat','Plant','Speak'];
 const O = ACTIONS.length;            // discrete, softmax-sampled
 const CONT = ['Voice','Memory A','Memory B','Scent'];   // continuous tanh outputs
-const NOUT = O + CONT.length;
-const A_ = Object.fromEntries(['N','E','S','W','HARVEST','EAT','DEPOSIT','WITHDRAW','HOUSE','STORE','WALL','FIRE','REPAIR','SHARE','ATTACK','HUNT','CRAFT','REST','DRINK','THANK','BEFRIEND','EATMEAT','PLANT'].map((k,i)=>[k,i]));
+// A small alphabet of vocal symbols. Nothing gives them meaning: a yip that speaks picks one (its brain's choice), and
+// symbols spoken in quick succession chain into a word of up to four. Loud enough and it's a shout (!), heard much farther.
+const SYMS = ['ᛝ','ᛟ','ᚷ','Ϟ','Ϡ','Ѫ','Ҩ','ᘛ','ᖶ','ᔑ','ᓬ'], NSYM = SYMS.length;
+const SYM0 = O + CONT.length, VOL = SYM0 + NSYM;     // output rows: which symbol, then how loud
+const NOUT = VOL + 1;
+const SPEAK_R = 45, SHOUT_R = 170;
+const A_ = Object.fromEntries(['N','E','S','W','HARVEST','EAT','DEPOSIT','WITHDRAW','HOUSE','STORE','WALL','FIRE','REPAIR','SHARE','ATTACK','HUNT','CRAFT','REST','DRINK','THANK','BEFRIEND','EATMEAT','PLANT','SPEAK'].map((k,i)=>[k,i]));
 const ITYPES = ['food','tree','stone','carcass'];
 const BTYPES = ['house','store','wall','fire'];
 const SPECS = {house:{wood:3,stone:1,hp:450,r:16},store:{wood:5,stone:4,hp:720,r:23},wall:{wood:2,stone:1,hp:420,r:15},fire:{wood:2,stone:0,hp:180,r:12}};
@@ -31,12 +36,12 @@ const DX = [0,1,0,-1], DY = [-1,0,1,0];
 const settings = {worldEnergy:450000,disease:1,food:7.5,trees:.3,stone:.2,drain:1,decay:1,storm:1,temperature:19,day:500,season:2600,beasts:6,beastPower:1,popCap:450,migrateEvery:3000,migrants:4,mutation:1,learning:true,autoReseed:true};
 
 // ---------- query masks ----------
-const Q = {FRIEND:1024,FOOD:1,TREE:2,STONE:4,SHELTER:8,FIRE:16,STORM:32,OTHER:64,PRED:128,CROWD:256,WALL:512,MEAT:2048,SOUND:4096};
+const Q = {FRIEND:1024,FOOD:1,TREE:2,STONE:4,SHELTER:8,FIRE:16,STORM:32,OTHER:64,PRED:128,CROWD:256,WALL:512,MEAT:2048,SOUND:4096,VOICE:8192};
 
 let agents=[], items=[], buildings=[], storms=[], beasts=[], events=[], history=[], elite=[];
 let ticks=0, nextId=1, nextBid=1, births=0, deaths=0, maxGen=0, peakPop=0, selected=0, lastMilestone=0, seed=1;
 let deathsBy = {age:0,hunger:0,thirst:0,drowning:0,storm:0,fire:0,beast:0,attack:0,disease:0};
-let tally = {conceptions:0,miscarriages:0,infections:0,plantings:0,meals:0,cannibal:0,loveBirths:0,befriends:0,gifts:0,thanks:0,loves:0,pairings:0,shares:0,thefts:0,attacks:0,hunts:0,beastKills:0,crafts:0,deposits:0,withdraws:0,builds:0};
+let tally = {words:0,shouts:0,affection:0,conceptions:0,miscarriages:0,infections:0,plantings:0,meals:0,cannibal:0,loveBirths:0,befriends:0,gifts:0,thanks:0,loves:0,pairings:0,shares:0,thefts:0,attacks:0,hunts:0,beastKills:0,crafts:0,deposits:0,withdraws:0,builds:0};
 let baseTemp = 19, dayS = 0, seasonS = 0;
 let fires=[], shelters=[], walls=[];
 let fert = new Float32Array(FW*FH), forest = new Float32Array(FW*FH), rock = new Float32Array(FW*FH);
@@ -279,6 +284,12 @@ const SENSOR_DEFS = [
   ['heardBeast','Beast heard',Q.SOUND,(a,e)=>Math.min(1,e.hear.k[2]/2)],
   ['heardCry','Death cry heard',Q.SOUND,(a,e)=>Math.min(1,e.hear.k[3])],
   ['heardWork','Work heard',Q.SOUND,(a,e)=>Math.min(1,e.hear.k[4]/4)],
+  ...SYMS.map((c,i)=>['hear'+i,'Heard '+c,Q.VOICE,a=>a.heard[i]]),
+  ['heardShout','Heard a shout',Q.VOICE,a=>a.heardShout],
+  ['voiceX','Last voice direction X',Q.VOICE,a=>a.voiceDx*Math.max(...a.heard)],
+  ['voiceY','Last voice direction Y',Q.VOICE,a=>a.voiceDy*Math.max(...a.heard)],
+  ['voiceTrust','Trust in last speaker',Q.VOICE,a=>a.voiceTrust*Math.max(...a.heard)],
+  ['ownWord','Symbols said in current word',0,a=>a.utter.length/4],
   ['random','Noise',0,()=>rnd(-1,1)],
 ];
 // which way a smell is stronger: a keener nose compares points farther apart, so it can follow fainter, wider trails
@@ -333,14 +344,14 @@ function compileBrain(a){
 
 // rational tanh approximation (max error ~2%), several times cheaper than Math.tanh
 const ftanh = x => x<-3?-1:x>3?1:x*(27+x*x)/(27+9*x*x);
-const ex = new Float64Array(O), gradA = new Float64Array(64), gradB = new Float64Array(64);
+const ex = new Float64Array(O), gradA = new Float64Array(96), gradB = new Float64Array(96);
 function forward(a){
   const b=a.brain, acts=a.acts, L=b.w.length;
   for (let l=0;l<L;l++){
     const p=acts[l], out=acts[l+1], w=a.eff[l], cols=b.sizes[l], rows=b.sizes[l+1];
     const last=l===L-1;
     // hidden layers and continuous outputs use tanh; action preferences are linear so a brain can become decisive
-    for (let j=0;j<rows;j++){ let s=0, base=j*cols; for (let i=0;i<cols;i++) s+=w[base+i]*p[i]; out[j]=last&&j<O?(s>8?8:s<-8?-8:s):ftanh(s); }
+    for (let j=0;j<rows;j++){ let s=0, base=j*cols; for (let i=0;i<cols;i++) s+=w[base+i]*p[i]; out[j]=last&&(j<O||(j>=SYM0&&j<VOL))?(s>8?8:s<-8?-8:s):ftanh(s); }
   }
   const z=acts[L], temp=.22+a.traits.explore; let m=-1e9;
   for (let i=0;i<O;i++) if (z[i]>m) m=z[i];
@@ -348,6 +359,12 @@ function forward(a){
   let r=Math.random(), choice=O-1;
   for (let i=0;i<O;i++) a.probs[i]=ex[i]/sum;
   for (let i=0;i<O;i++){ if ((r-=a.probs[i])<=0){ choice=i; break; } }
+  // which symbol it would say, if it speaks this tick
+  let sm=-1e9; for (let i=0;i<NSYM;i++) if (z[SYM0+i]>sm) sm=z[SYM0+i];
+  let ss=0; for (let i=0;i<NSYM;i++){ const e=Math.exp((z[SYM0+i]-sm)/temp); a.sprobs[i]=e; ss+=e; }
+  let rs=Math.random()*ss, sym=NSYM-1; for (let i=0;i<NSYM;i++){ if ((rs-=a.sprobs[i])<=0){ sym=i; break; } }
+  for (let i=0;i<NSYM;i++) a.sprobs[i]/=ss;
+  a.lastSym=sym; a.volume=z[VOL];
   a.signal=z[O]; a.memA=.7*a.memA+.3*z[O+1]; a.memB=.7*a.memB+.3*z[O+2]; if (z[O+3]>0) pher[cellIdx(a.x,a.y)]+=z[O+3]*.5;
   a.lastChoice=choice; return temp;
 }
@@ -360,6 +377,7 @@ function learn(a, reward, temp){
   const b=a.brain, acts=a.acts, step=a.traits.lr*adv, L=b.w.length; let grad=gradA, back=gradB;
   for (let i=0;i<O;i++) grad[i]=((i===a.lastChoice?1:0)-a.probs[i])/temp;
   for (let i=O;i<NOUT;i++) grad[i]=0;
+  if (a.lastChoice===A_.SPEAK) for (let i=0;i<NSYM;i++) grad[SYM0+i]=((i===a.lastSym?1:0)-a.sprobs[i])/temp;   // learn which symbol, when speaking paid off
   // the first layer (sensory wiring) is left to evolution; lifetime learning adjusts the deeper layers
   const stop=L>1?1:0;
   for (let l=L-1;l>=stop;l--){
@@ -519,11 +537,67 @@ function sicknessTick(a){
 // Kinds: 0 talk, 1 fight, 2 beast, 3 death cry, 4 work.
 let sounds=[], soundsPrev=[];
 function noise(x,y,k){ if (sounds.length<1500) sounds.push({x,y,k}); }
-const _hear={n:0,dx:0,dy:0,d:0,k:[0,0,0,0,0]};
+const _hear={n:0,dx:0,dy:0,d:0,k:[0,0,0,0,0,0]};
 function hear(a){
-  const r=a.ph.hearing, r2=r*r, h=_hear; h.n=0; h.d=r; h.dx=h.dy=0; h.k[0]=h.k[1]=h.k[2]=h.k[3]=h.k[4]=0; let bd=r2;
+  const r=a.ph.hearing, r2=r*r, h=_hear; h.n=0; h.d=r; h.dx=h.dy=0; h.k[0]=h.k[1]=h.k[2]=h.k[3]=h.k[4]=h.k[5]=0; let bd=r2;
   forBins(gSound,a.x,a.y,r,s=>{ const dx=wd(s.x-a.x,W), dy=wd(s.y-a.y,H), dd=dx*dx+dy*dy; if (dd>r2||dd<1) return; h.n++; h.k[s.k]++; if (dd<bd){ bd=dd; h.dx=dx; h.dy=dy; } });
   h.d=Math.sqrt(bd); return h;
+}
+
+// ---------- voices ----------
+// What a yip hears of others' speech: each symbol leaves a fading trace (so the order of a word survives as how faded
+// each part is), plus whether it was shouted, where it came from and how much it trusts the speaker.
+// Speech carries SPEAK_R, a shout SHOUT_R, and either only as far as the listener can hear.
+function listen(a){
+  const f=Math.pow(.8,ticks-a.heardAt); a.heardAt=ticks;
+  for (let i=0;i<NSYM;i++) a.heard[i]*=f; a.heardShout*=f;
+  const R=Math.min(a.ph.hearing,SHOUT_R); if (R<=0) return;
+  let bd=1e9;
+  forBins(gSound,a.x,a.y,R,s=>{
+    if (s.k!==5||s.id===a.id) return;
+    const dx=wd(s.x-a.x,W), dy=wd(s.y-a.y,H), d=Math.sqrt(dx*dx+dy*dy);
+    if (d>Math.min(a.ph.hearing,s.shout?SHOUT_R:SPEAK_R)) return;
+    a.heard[s.sym]=1; if (s.shout) a.heardShout=1;
+    if (d<bd){ bd=d; a.voiceDx=dx/Math.max(1,d); a.voiceDy=dy/Math.max(1,d); a.voiceTrust=a.trust.get(s.id)||0; }
+  });
+}
+// The dictionary: nobody tells us what a symbol means, so we record the situation each time one is used
+// and compare it with how often that situation happens anyway. A symbol used 8x more often than chance when
+// a beast is in sight is probably about beasts, whatever the yips "intend".
+const CTX = ['beast','food','hungry','hurt','kin','stranger','mate','fight','alone','young','sick'];
+const NCTX = CTX.length;
+let symStats=[], wordStats=new Map(), ctxBase=new Float64Array(NCTX), ctxBaseN=0;
+function resetLang(){ symStats=SYMS.map(()=>({n:0,shout:0,ctx:new Float64Array(NCTX)})); wordStats=new Map(); ctxBase=new Float64Array(NCTX); ctxBaseN=0; }
+resetLang();
+const _ctx=new Uint8Array(NCTX);
+function contextOf(a,e){
+  const o=e.other.obj, near=o&&e.other.dist<40;
+  _ctx[0]=e.pred&&e.pred.obj?1:0; _ctx[1]=e.food&&e.food.obj&&e.food.dist<40?1:0; _ctx[2]=a.drv.hunger>.5?1:0; _ctx[3]=a.drv.injury>.35?1:0;
+  _ctx[4]=near&&kinship(a,o)>.4?1:0; _ctx[5]=near&&(a.trust.get(o.id)||0)<.1&&kinship(a,o)<.2?1:0; _ctx[6]=ready(a)?1:0;
+  _ctx[7]=ticks-a.lastHurtAt<30||a.lastChoice===A_.ATTACK||a.lastChoice===A_.HUNT?1:0; _ctx[8]=!o||e.other.dist>=a._r?1:0; _ctx[9]=a.preg?1:0; _ctx[10]=a.sick>.05?1:0;
+  return _ctx;
+}
+function noteSymbol(a,sym,shout){ const c=contextOf(a,env), st=symStats[sym]; st.n++; if (shout) st.shout++; for (let i=0;i<NCTX;i++) st.ctx[i]+=c[i]; }
+function sampleContext(a){ const c=contextOf(a,env); for (let i=0;i<NCTX;i++) ctxBase[i]+=c[i]; ctxBaseN++; }
+// a word is finished when the speaker pauses or reaches four symbols
+function endWord(a){
+  if (!a.utter.length) return;
+  const w=(a.utterShout?'!':'')+a.utter.map(i=>SYMS[i]).join('');
+  a.saidLog.push([ticks,w]); if (a.saidLog.length>10) a.saidLog.shift();
+  const key=a.utter.join(','); let ws=wordStats.get(key);
+  if (!ws){ if (wordStats.size>=400){ let mk=null, mn=1e9; for (const [k,v] of wordStats) if (v.n<mn){ mn=v.n; mk=k; } wordStats.delete(mk); } ws={n:0,shout:0,ctx:new Float64Array(NCTX),speakers:new Set()}; wordStats.set(key,ws); }
+  ws.n++; if (a.utterShout) ws.shout++; const c=contextOf(a,env); for (let i=0;i<NCTX;i++) ws.ctx[i]+=c[i]; if (ws.speakers.size<50) ws.speakers.add(a.id);
+  tally.words++; a.utter=[]; a.utterShout=false;
+}
+// what each symbol or word seems to be about: situations it shows up in far more often than chance
+function meaning(st){
+  if (st.n<15||!ctxBaseN) return [];
+  const out=[]; for (let i=0;i<NCTX;i++){ const base=(ctxBase[i]+1)/(ctxBaseN+2), p=st.ctx[i]/st.n, lift=p/base; if (p>.25&&lift>1.6) out.push([CTX[i],+lift.toFixed(1),+p.toFixed(2)]); }
+  return out.sort((x,y)=>y[1]-x[1]).slice(0,3);
+}
+function langReport(){
+  const words=[...wordStats.entries()].sort((x,y)=>y[1].n-x[1].n).slice(0,16).map(([k,v])=>({w:k.split(',').map(i=>SYMS[+i]).join(''),n:v.n,shout:v.shout/v.n,speakers:v.speakers.size,means:meaning(v)}));
+  return {syms:SYMS,symbols:symStats.map((v,i)=>({s:SYMS[i],n:v.n,shout:v.n?v.shout/v.n:0,means:meaning(v)})),words,vocab:wordStats.size};
 }
 
 // ---------- agents ----------
@@ -685,7 +759,7 @@ function makeAgent(x,y,brain=freshBrain(),gen=0,parent=null,traits=freshTraits()
     inv:{food:0,wood:0,stone:0,meat:0,meatE:0,mY:0,mR:0,seeds:0},tool:0,gut:0,fat:0,body:40,muscle:1,muscleUse:0,mass:1.5,preg:null,sick:0,spent:0,memory:0,memA:0,memB:0,signal:0,pain:0,trust:new Map(),lastChoice:O-1,probs:new Float32Array(O),
     builds:0,success:0,kids:0,shared:0,stolen:0,attacks:0,kills:0,hunts:0,beastKills:0,crafts:0,deposits:0,
     genes:[],condGenes:[],actionCounts:new Uint32Array(O),okCounts:new Uint32Array(O),stash:0,shareHeat:0,phi:0,baseline:0,
-    geneUpkeep:0,baseUpkeep:0,drv:{urge:0,grief:0,hunger:0,thirst:.2,cold:0,injury:0,fatigue:.1,lonely:.2,insecure:.8},owed:new Map(),inWater:false,thanked:new Map(),thanksGot:0,lovesGot:0,coparent:null,partners:0,sheltered:false,harm:'hunger',fx:0,_t:20};
+    geneUpkeep:0,baseUpkeep:0,drv:{urge:0,grief:0,hunger:0,thirst:.2,cold:0,injury:0,fatigue:.1,lonely:.2,insecure:.8},owed:new Map(),utter:[],utterAt:-1e9,utterShout:false,saidLog:[],heard:new Float32Array(NSYM),heardShout:0,heardAt:0,voiceDx:0,voiceDy:0,voiceTrust:0,sprobs:new Float32Array(NSYM),lastSym:0,volume:0,affectionGot:0,inWater:false,thanked:new Map(),coparent:null,partners:0,sheltered:false,harm:'hunger',fx:0,_t:20};
   for (const k of [...PHYS,...MENT]) if (a.traits[k]==null) a.traits[k]=freshTraits()[k];
   a.genes=genes||founderGenes(); derive(a); a.lifespan*=a.phBase.lifespan; updateDrives(a,20,false,0,0); a.phi=wellbeing(a);
   compileBrain(a); if (gen>maxGen) maxGen=gen; return a;
@@ -790,8 +864,8 @@ function forgetAll(a){ for (const [k,w] of a.trust) repMap.set(k,repOf(k)-w); a.
 // Receiving help is remembered as gratitude owed to the helper. Nothing forces a yip to act on it:
 // it can sense what it owes the yip nearest to it, and Thank is an ordinary action it may or may not choose.
 function owe(g,b,amount){ if (!b||b.dead||b===g) return; g.owed.set(b.id,Math.min(2,(g.owed.get(b.id)||0)+amount)); if (g.owed.size>16){ let mk=null, mv=1e9; for (const [k,v] of g.owed) if (v<mv){ mv=v; mk=k; } g.owed.delete(mk); } }
-// What thanking does: the thanked yip feels appreciated (loneliness eases, scaled by its altruism) and trusts the thanker a little.
-// Thanking the same yip again soon means less. A thank-you from a yip that trusts you a lot lands harder (shown as 😍).
+// What affection does: the other yip feels cared for (loneliness eases, scaled by its altruism) and trusts the giver a little.
+// Repeating it to the same yip soon means less; from a yip that trusts it a lot it lands harder. It also settles gratitude owed.
 function thank(g,b){
   const last=g.thanked.get(b.id), fresh=last===undefined?1:Math.min(1,(ticks-last)/300);
   g.thanked.set(b.id,ticks); if (g.thanked.size>24) g.thanked.delete(g.thanked.keys().next().value);
@@ -799,13 +873,11 @@ function thank(g,b){
   b.drv.lonely=Math.max(0,b.drv.lonely-.08*warmth*(.5+b.traits.altruism));
   gainTrust(b,g.id,.05*warmth);
   g.owed.set(b.id,Math.max(0,(g.owed.get(b.id)||0)-1));
-  if (tr>.55){
-    b.lovesGot++; tally.loves++; g.fx|=256;
-    // a loving thank-you between two yips ready to breed can lead to a child
-    if (ready(g)&&ready(b)&&kinship(g,b)<1&&(b.trust.get(g.id)||0)>standard(b)&&Math.random()<.25&&agents.length<settings.popCap){
-      if (conceive(g,b)) tally.loveBirths++;
-    }
-  } else { b.thanksGot++; tally.thanks++; g.fx|=128; }
+  b.affectionGot++; tally.affection++; g.fx|=128;
+  // affection between two trusting yips who are both ready to breed can lead to mating
+  if (tr>.4&&ready(g)&&ready(b)&&kinship(g,b)<1&&(b.trust.get(g.id)||0)>standard(b)&&Math.random()<.25&&agents.length<settings.popCap){
+    if (conceive(g,b)) tally.loveBirths++;
+  }
 }
 // A death is felt by those who see it: grief rises with fear of death, more for kin and trusted yips,
 // and only a little for strangers. Then the dead are forgotten: every memory of them (trust, gratitude) is dropped.
@@ -967,6 +1039,7 @@ function sense(a){
   if (m&Q.STONE) nearestIn(gStone,a,r,env.stone);
   if (m&Q.MEAT) nearestIn(gMeat,a,r,env.meat);
   if (m&Q.SOUND) env.hear=hear(a);
+  if (m&Q.VOICE) listen(a);
   if (m&Q.SHELTER) nearestList(shelters,a,r,env.shelter,isShelter);
   if (m&Q.FIRE) nearestList(fires,a,r,env.fire);
   if (m&Q.STORM) nearestList(storms,a,r,env.storm);
@@ -1099,6 +1172,16 @@ function act(a,choice,e){
     case A_.THANK:
       if (o&&od<22){ thank(a,o); ok=true; spend(a,.03); noise(a.x,a.y,0); }
       break;
+    case A_.SPEAK: {
+      // a symbol said soon after the last one continues the same word (up to four); a pause starts a new one
+      const shout=a.volume>.5;
+      if (a.utter.length>=4||ticks-a.utterAt>8) endWord(a);
+      a.utter.push(a.lastSym); a.utterAt=ticks; if (shout) a.utterShout=true;
+      spend(a,shout?.05:.012); if (shout) tally.shouts++;
+      if (sounds.length<1500) sounds.push({x:a.x,y:a.y,k:5,sym:a.lastSym,shout,id:a.id});
+      noteSymbol(a,a.lastSym,shout);
+      ok=true; break;
+    }
     case A_.BEFRIEND:
       // a deliberate choice to trust the nearest yip a little more; steps shrink as trust grows
       if (o&&od<30){ gainTrust(a,o.id,.06); ok=true; tally.befriends++; spend(a,.03); noise(a.x,a.y,0); }
@@ -1209,6 +1292,8 @@ function tick(){
     a.memory=clamp(.96*a.memory+.04*(a.energy/100-1),-1,1);
     a.prevHealth=a.health; a.shareHeat*=.99;
     const exert=(choice===A_.ATTACK||choice===A_.HUNT)?.003:0;
+    if (a.utter.length&&ticks-a.utterAt>8) endWord(a);
+    if ((a.id+ticks)%10===0) sampleContext(a);
     updateDrives(a,lt,choice<4,exert,resting?(sheltered&&sheltered.type==='house'?.014:.006)*a.traits.rest:0);
     if (a.drv.fatigue>.8) a.vx*=.8, a.vy*=.8;
     // gratitude for warmth and shelter that someone else provided
@@ -1282,7 +1367,7 @@ function reset(newShape,seeds){
   seed=(Math.random()*2**31)|0; makeFields(seed);
   agents=[]; items=[]; buildings=[]; storms=[]; beasts=[]; events=[]; history=[]; elite=[]; repMap.clear();
   ticks=0; nextId=1; nextBid=1; births=0; deaths=0; maxGen=0; peakPop=0; lastMilestone=0;
-  deathsBy={age:0,hunger:0,thirst:0,drowning:0,storm:0,fire:0,beast:0,attack:0,disease:0}; for (const k in tally) tally[k]=0; nut.fill(0); miasma.fill(0); gardens=[]; sounds=[]; soundsPrev=[]; lastTally={...tally}; for (const k in relTally) relTally[k]=[0,0,0,0];
+  deathsBy={age:0,hunger:0,thirst:0,drowning:0,storm:0,fire:0,beast:0,attack:0,disease:0}; for (const k in tally) tally[k]=0; nut.fill(0); miasma.fill(0); gardens=[]; sounds=[]; soundsPrev=[]; resetLang(); lastTally={...tally}; for (const k in relTally) relTally[k]=[0,0,0,0];
   // founders arrive in bands of five who already trust each other a little
   // with library seeds: one exact copy of each, the rest are mutated offspring of them
   const lib=(seeds||[]).map(g=>({...g,genes:cleanGenes(g.genes),brain:deBrain(g.brain)})); let k=0;
@@ -1310,7 +1395,7 @@ function reset(newShape,seeds){
 // ---------- serialization ----------
 const r4 = v => Math.round(v*1e4)/1e4, r2 = v => Math.round(v*100)/100;
 const serBrain = b => ({inputs:b.inputs,sizes:b.sizes,w:b.w.map(f=>Array.from(f,r4))});
-const AGENT_KEYS=['gut','fat','body','muscle','sick','clan','history','lastHurtBy','lastHurtAt','name','gen','parent','lineage','traits','genes','stash','thanksGot','lovesGot','coparent','partners','age','lifespan','inv','tool','builds','success','kids','shared','stolen','attacks','kills','hunts','beastKills','crafts','deposits'];
+const AGENT_KEYS=['affectionGot','saidLog','gut','fat','body','muscle','sick','clan','history','lastHurtBy','lastHurtAt','name','gen','parent','lineage','traits','genes','stash','thanksGot','lovesGot','coparent','partners','age','lifespan','inv','tool','builds','success','kids','shared','stolen','attacks','kills','hunts','beastKills','crafts','deposits'];
 function serAgent(a){
   const o={drv:a.drv,owed:[...a.owed],id:a.id,x:r2(a.x),y:r2(a.y),hd:r2(a.hd),energy:r2(a.energy),health:r2(a.health),memory:r4(a.memory),memA:r4(a.memA),memB:r4(a.memB),baseline:r4(a.baseline),
     trust:[...a.trust].map(([k,v])=>[k,r4(v)]),actionCounts:Array.from(a.actionCounts),brain:serBrain(a.brain),learned:a.learned.map(f=>Array.from(f,r4)),
@@ -1324,7 +1409,7 @@ function serialize(){
     buildings:buildings.map(b=>({...b,hp:r2(b.hp)})),storms,beasts:beasts.map(z=>({...z,target:null})),events,history,elite:elite.map(e=>({...e,brain:serBrain(e.brain)}))};
 }
 // Older brains had fewer outputs. Map each old discrete action and continuous output onto its new row; new rows start small.
-const OLD_LAYOUTS={14:{disc:[0,1,2,3,4,5,6,8,9,10,11,12,13,17],cont:0},21:{disc:[...Array(18).keys()],cont:3},24:{disc:[...Array(20).keys()],cont:4},25:{disc:[...Array(21).keys()],cont:4}};
+const OLD_LAYOUTS={27:{disc:[...Array(23).keys()],cont:4},14:{disc:[0,1,2,3,4,5,6,8,9,10,11,12,13,17],cont:0},21:{disc:[...Array(18).keys()],cont:3},24:{disc:[...Array(20).keys()],cont:4},25:{disc:[...Array(21).keys()],cont:4}};
 function upgradeBrain(b){
   const L=b.sizes.length-1, cols=b.sizes[L-1], old=b.w[L-1], rowsOld=b.sizes[L];
   b.inputs=b.inputs.map(k=>k==='memory'?'trend':k);
@@ -1354,6 +1439,7 @@ function deAgent(o,sx=1,sy=1,old=false,reg={}){
     Object.assign(a,{health:o.health,prevHealth:o.health,memory:o.memory||0,memA:o.memA||0,memB:o.memB||0,baseline:o.baseline||0,hd:o.hd||0,lifespan:o.lifespan||rnd(3600,5100),inv:{food:0,wood:0,stone:0,meat:0,meatE:0,mY:0,mR:0,...(o.inv||{})}});
     if (o.body===undefined){ a.body=40; const old=a.lifespan; a.lifespan=Math.min(old,rnd(3600,5100)*a.phBase.lifespan); a.age=Math.round(a.age*a.lifespan/old); }   // bodies from before the energy physics keep their relative age
     delete a.traits.budget;
+    if (o.affectionGot===undefined) a.affectionGot=(o.thanksGot||0)+(o.lovesGot||0);
     a.gut=a.gut||0; a.fat=a.fat||0; a.muscle=a.muscle||1; a.sick=a.sick||0;
     if (o.preg&&o.preg.child){ a.preg={...o.preg,child:deAgent(o.preg.child,sx,sy,old,reg)}; }
     a.trust=new Map(Array.isArray(o.trust)?o.trust:Object.entries(o.trust||{}).map(([k,v])=>[+k,v])); a.owed=new Map(o.owed||[]);
@@ -1386,11 +1472,11 @@ function restOfDeserialize(s,A,sx,sy,old){
 
 // ---------- reporting ----------
 let lastPulse=0, sendPher=false, started=false, running=true, speed=3, maxMode=false, last=performance.now(), acc=0, stepsWin=0, tps=0, lastMetrics=last, lastFrame=0, lastStats=0, lastInspect=0, inspecting=false;
-function postMeta(){ self.postMessage({type:'meta',water,drives:DRIVES,bounds:TB,dials:DIALS,conds:CONDS,phys:PHYS,ment:MENT,traitInfo:TRAIT_INFO,senses:SENSES,actions:ACTIONS,short:SHORT,cont:CONT,W,H,FW,FH,FC,shape,settings,fert,forest,rock,seed}); }
+function postMeta(){ self.postMessage({type:'meta',syms:SYMS,ctx:CTX,water,drives:DRIVES,bounds:TB,dials:DIALS,conds:CONDS,phys:PHYS,ment:MENT,traitInfo:TRAIT_INFO,senses:SENSES,actions:ACTIONS,short:SHORT,cont:CONT,W,H,FW,FH,FC,shape,settings,fert,forest,rock,seed}); }
 function postFrame(){
   const na=agents.length, A=new Float32Array(na*10);
   for (let i=0,o=0;i<na;i++,o+=10){ const a=agents[i]; A[o]=a.id; A[o+1]=a.x; A[o+2]=a.y; A[o+3]=a.traits.hue; A[o+4]=a.hd; A[o+5]=a.energy/200; A[o+6]=a.health/100;
-    A[o+7]=(a.sheltered?1:0)|(a.inv.food+a.inv.wood+a.inv.stone+a.inv.meat>0?2:0)|(a.tool>0?4:0)|(repOf(a.id)>3?8:0)|(a.inWater?16:0)|(a.sick>.05?32:0)|(a.preg?64:0); A[o+8]=a._r||a.ph.sense; A[o+9]=a.fx; }
+    A[o+7]=(a.sheltered?1:0)|(a.inv.food+a.inv.wood+a.inv.stone+a.inv.meat>0?2:0)|(a.tool>0?4:0)|(repOf(a.id)>3?8:0)|(a.inWater?16:0)|(a.sick>.05?32:0)|(a.preg?64:0); A[o+8]=a._r||a.ph.sense; let wc=0; if (a.utter.length&&ticks-a.utterAt<40){ for (const q of a.utter) wc=wc*12+q+1; wc=wc*2+(a.utterShout?1:0); } A[o+9]=(a.fx&255)+256*wc; }
   let ni=0; for (const it of items) if (!it.dead) ni++;
   const I=new Float32Array(ni*4); let o=0;
   for (const it of items){ if (it.dead) continue; I[o]=it.t===3&&it.age>ROT_AT?4:it.t; I[o+1]=it.x; I[o+2]=it.y; I[o+3]=it.t===3?Math.min(1,it.e/150):it.life/it.max; o+=4; }
@@ -1421,7 +1507,7 @@ function postStats(withHistory){
   for (const a of agents){ const k=a.clan||a.name; let f=fam.get(k); if (!f){ f={clan:k,n:0,gen:0,act:new Float64Array(O),hue:0}; fam.set(k,f); } f.n++; f.gen=Math.max(f.gen,a.gen); f.hue+=a.traits.hue; let tot=0; for (let i=0;i<O;i++) tot+=a.actionCounts[i]; if (tot) for (let i=0;i<O;i++) f.act[i]+=a.actionCounts[i]/tot; }
   const families=[...fam.values()].sort((x,y)=>y.n-x.n).slice(0,10).map(f=>({clan:f.clan,n:f.n,gen:f.gen,hue:f.hue/f.n,mix:Array.from(f.act,v=>v/f.n)}));
   self.postMessage({type:'stats',families,relTally,names,ticks,pop:agents.length,peakPop,births,deaths,deathsBy,tally,maxGen,avgGen:avg(a=>a.gen),byType,counts,temp:baseTemp,beasts:beasts.length,tools,stocked,
-    traits:Object.fromEntries([...PHYS,...MENT].map(k=>[k,t(k)])),geneUse:topGenes(),ledger:{...ledger(),total:worldE,drift:auditDrift},gardens:gardens.length,carcasses:counts[3],bodies:{both,carry:sexC,sire:sexS,neither:agents.length-both-sexC-sexS,sick,preg},avgFat:avg(a=>a.fat),avgMass:avg(a=>a.mass),avgBurn:avg(a=>a.burn||0),
+    traits:Object.fromEntries([...PHYS,...MENT].map(k=>[k,t(k)])),lang:langReport(),geneUse:topGenes(),ledger:{...ledger(),total:worldE,drift:auditDrift},gardens:gardens.length,carcasses:counts[3],bodies:{both,carry:sexC,sire:sexS,neither:agents.length-both-sexC-sexS,sick,preg},avgFat:avg(a=>a.fat),avgMass:avg(a=>a.mass),avgBurn:avg(a=>a.burn||0),
     brain:{layers:layers/n,neurons:neurons/n,inputs:inputs/n},sensUse:Object.entries(sensUse).sort((a,b)=>b[1]-a[1]).map(([k,v])=>[k,v/n]),
     actMix:Array.from(act,v=>v/n),events,eliteTop:elite.slice(0,6).map(e=>({id:e.id,name:e.name||('#'+e.id),gen:e.gen,score:e.score|0,hue:e.traits.hue})),history:withHistory?history:null,settings});
 }
@@ -1441,7 +1527,7 @@ function postInspect(){
     body:{gut:a.gut,gutCap:gutCap(a),fat:a.fat,body:a.body,muscle:a.muscle,mass:a.mass,sick:a.sick,str:effStr(a),preg:a.preg?{e:a.preg.e,need:a.preg.need,t:a.preg.t}:null,burn:a.burn||0,
       upkeep:{base:.035*Math.pow(a.mass,.75),eyes:.00022*a.ph.sense,nose:.006*a.ph.smell,ears:.0001*a.ph.hearing,immune:.008*a.ph.immune,healing:.006*a.traits.regen,insulation:.004*a.traits.thermal,repro:.005*a.ph.womb+.0025*a.ph.seed,brain:.4*a.brainCost,genes:a.geneUpkeep}},
     deeds:{shared:a.shared,stolen:a.stolen,attacks:a.attacks,kills:a.kills,hunts:a.hunts,beastKills:a.beastKills,crafts:a.crafts,deposits:a.deposits,builds:a.builds},
-    actionCounts:Array.from(a.actionCounts),owed:[...a.owed].sort((x,y)=>y[1]-x[1]).slice(0,6).map(([id,v])=>[nm(id)||('#'+id),v]),inWater:a.inWater,drv:a.drv,rep:repOf(a.id),admirers:agents.filter(x=>(x.trust.get(a.id)||0)>.5).length,thanksGot:a.thanksGot,lovesGot:a.lovesGot,coparent:a.coparent,partners:a.partners,wellbeing:a.phi,rewardAvg:a.lastReward||0,curiosityGain:a.lastBonus||0,memory:a.memory,memA:a.memA,memB:a.memB,signal:a.signal,pain:a.pain});
+    actionCounts:Array.from(a.actionCounts),owed:[...a.owed].sort((x,y)=>y[1]-x[1]).slice(0,6).map(([id,v])=>[nm(id)||('#'+id),v]),inWater:a.inWater,drv:a.drv,rep:repOf(a.id),admirers:agents.filter(x=>(x.trust.get(a.id)||0)>.5).length,affectionGot:a.affectionGot,said:a.saidLog.slice().reverse(),speaking:a.utter.length?(a.utterShout?'!':'')+a.utter.map(i=>SYMS[i]).join(''):'',heardNow:SYMS.filter((c,i)=>a.heard[i]>.3).join(''),coparent:a.coparent,partners:a.partners,wellbeing:a.phi,rewardAvg:a.lastReward||0,curiosityGain:a.lastBonus||0,memory:a.memory,memA:a.memA,memB:a.memB,signal:a.signal,pain:a.pain});
 }
 // yield through a MessageChannel: unlike setTimeout(0) it is not clamped to 4 ms, so hyperspeed keeps the CPU busy
 const chan=new MessageChannel(); let pending=false;

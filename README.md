@@ -79,6 +79,14 @@ For runs that should keep going with no browser open, the same thing works from 
 - **Saves** hold every island (yips, brains, genes, resources, settings), gzipped into the browser's IndexedDB. Autosave runs every 2 minutes; Settings has save, load, download and import. Old single-world files still load.
 - **Yip library** (Settings): keep the top yips from an island, from every island, or one yip from the inspector (Keep). A library entry stores genes, traits and the brain with everything it learned. *New world from library* starts fresh islands with one exact copy of each checked yip and fills the 300 founders with their mutated offspring. Libraries download and import as files.
 
+## Language (1.7)
+
+- **Eleven symbols**: ᛝ ᛟ ᚷ Ϟ Ϡ Ѫ Ҩ ᘛ ᖶ ᔑ ᓬ. Speaking is an ordinary action; a separate part of the brain picks which symbol, and another output sets how loud. Nothing gives a symbol a meaning.
+- **Words and shouts**: symbols said in quick succession chain into a word of up to four (shown above the yip, e.g. `! ᛝᛟϞѪ`). A shout costs more energy and carries much farther (170 vs 45), but only as far as each listener can hear.
+- **Listening**: each heard symbol leaves a fading trace a brain can wire to, so the order of a word survives as how faded each part is. Listeners can also sense whether it was a shout, where it came from and how much they trust the speaker.
+- **The dictionary** (Stats → Language): every use is logged with the speaker's situation (beast in sight, food nearby, hungry, hurt, kin or stranger nearest, ready to mate, fighting, alone, carrying young, sick) and compared with how often that situation happens anyway. A word used far more often than chance in one situation is listed with it. Meanings are inferred from use, never assigned.
+- **Affection** replaces thank-yous and loving thank-yous: one act that eases the other's loneliness, builds its trust, settles gratitude owed, and between trusting yips ready to breed can lead to mating.
+
 ## Energy physics (1.6)
 
 - **A closed ledger.** Each island holds a fixed amount of energy (450k by default). It sits in the wild reserve, the soil, plants and wood, carcasses, beasts, yips (usable energy, stomach, fat, body tissue, unborn young) and structures. It is moved, never made or destroyed. Every 200 ticks everything is added up and the reserve absorbs any rounding. Stats → World energy shows the split.

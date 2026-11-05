@@ -349,7 +349,7 @@ function ingestFrame(m) {
     p.tx = A[o + 1]; p.ty = A[o + 2]; p.thd = A[o + 4]; p.i = o;
     if (snap) { p.x = p.tx; p.y = p.ty; p.hd = p.thd; }
     const f = A[o + 9];
-    if (doFx && f) { for (const bit of [1, 2, 4, 8, 32, 64, 128, 256]) if (f & bit) fx.push({ x: p.tx, y: p.ty, k: bit, t: now }); }
+    if (doFx && (f & 255)) { for (const bit of [1, 2, 4, 8, 32, 64, 128]) if (f & bit) fx.push({ x: p.tx, y: p.ty, k: bit, t: now }); }
   }
   for (const id of rpos.keys()) if (!seen.has(id)) rpos.delete(id);
   const Z = m.Z, bseen = new Set();
@@ -501,7 +501,8 @@ function buildTerrain(m) {
 /* ================= world rendering ================= */
 let lastT = performance.now(), fpsFrames = 0, fpsT = lastT, hoverId = 0, pointerWorld = null, flash = 0;
 const phaseOf = (ticks, len) => len ? (ticks % len) / len : 0;
-const FXC = { 1: [126, 214, 176], 2: [242, 100, 90], 4: [240, 179, 90], 8: [201, 179, 230], 32: [255, 80, 70], 64: [127, 216, 234], 128: [243, 201, 107], 256: [255, 143, 200] };
+const SYMFONT = '"Noto Sans Runic","Noto Sans Canadian Aboriginal","Instrument Sans",system-ui,sans-serif';
+const FXC = { 1: [126, 214, 176], 2: [242, 100, 90], 4: [240, 179, 90], 8: [201, 179, 230], 32: [255, 80, 70], 64: [127, 216, 234], 128: [255, 143, 200] };
 function render(t) {
   if (REMOTE) { drainFrames(t); if (cw) sendCam(t); }
   const dt = Math.min(.1, (t - lastT) / 1000); lastT = t;
@@ -653,6 +654,20 @@ function drawTile(ox, oy, z, now, dt, vx0, vx1, vy0, vy1, fast, sp) {
   ctx.strokeStyle = 'rgba(255,143,200,.8)'; ctx.lineWidth = .8; ctx.beginPath();
   for (let i = 0; i < list.length; i += 2) { const o = list[i], p = list[i + 1]; if (!(A[o + 7] & 8)) continue; ctx.moveTo(p.x + R + 1.8, p.y); ctx.arc(p.x, p.y, R + 1.8, 0, TAU); }
   ctx.stroke();
+  // what they are saying: the current word (up to four symbols), with ! when shouted
+  if (meta && meta.syms && z > .45 && !fast) {
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (let i = 0; i < list.length; i += 2) {
+      const o = list[i], p = list[i + 1], code = Math.floor(A[o + 9] / 256); if (!code) continue;
+      const shout = code & 1; let u = code >> 1, w = ''; while (u > 0) { w = meta.syms[(u % 12) - 1] + w; u = Math.floor(u / 12); }
+      if (!w || (!shout && z < .9)) continue;
+      const fs = shout ? 7 : 5.5, txt = (shout ? '! ' : '') + w;
+      ctx.font = `${shout ? 700 : 500} ${fs}px ${SYMFONT}`;
+      const tw = ctx.measureText(txt).width + 5, yy = p.y - R - 6.5 - (shout ? 1 : 0);
+      ctx.fillStyle = shout ? 'rgba(60,22,14,.88)' : 'rgba(10,18,17,.82)'; roundRect(p.x - tw / 2, yy - fs * .75, tw, fs * 1.5, 3); ctx.fill();
+      ctx.fillStyle = shout ? '#ffb38a' : '#e9efe9'; ctx.fillText(txt, p.x, yy + .3);
+    }
+  }
   if (z > .6) {
     ctx.strokeStyle = 'rgba(8,14,13,.85)'; ctx.lineWidth = 1.1; ctx.lineCap = 'round'; ctx.beginPath();
     for (let i = 0; i < list.length; i += 2) { const p = list[i + 1], c = Math.cos(p.hd), s = Math.sin(p.hd); ctx.moveTo(p.x + c * .6, p.y + s * .6); ctx.lineTo(p.x + c * R * 1.05, p.y + s * R * 1.05); }
@@ -688,7 +703,7 @@ function drawTile(ox, oy, z, now, dt, vx0, vx1, vy0, vy1, fast, sp) {
       const [r, g, b] = FXC[e.k], a = (1 - age) * .9;
       ctx.strokeStyle = `rgba(${r},${g},${b},${a})`; ctx.beginPath();
       if (e.k === 2 || e.k === 4) { const s = 3 + age * 6; ctx.moveTo(e.x - s, e.y - s); ctx.lineTo(e.x + s, e.y + s); ctx.moveTo(e.x + s, e.y - s); ctx.lineTo(e.x - s, e.y + s); }
-      else if (e.k === 128 || e.k === 256) { const love = e.k === 256, yy = e.y - 7 - age * 6; ctx.globalAlpha = 1 - age; ctx.fillStyle = 'rgba(12,20,19,.8)'; roundRect(e.x - (love ? 6 : 5.5), yy - 4.5, love ? 12 : 11, 9, 4); ctx.fill(); ctx.fillStyle = `rgb(${r},${g},${b})`; ctx.font = love ? '7px sans-serif' : 'bold 5px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(love ? '😍' : 'ty', e.x, yy + .3); ctx.globalAlpha = 1; continue; }
+      else if (e.k === 128) { const yy = e.y - 7 - age * 6; ctx.globalAlpha = 1 - age; ctx.fillStyle = 'rgba(12,20,19,.8)'; roundRect(e.x - 5, yy - 4.5, 10, 9, 4); ctx.fill(); ctx.fillStyle = 'rgb(255,143,200)'; ctx.font = '7px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('♡', e.x, yy + .5); ctx.globalAlpha = 1; continue; }
       else if (e.k === 32) { ctx.fillStyle = `rgba(${r},${g},${b},${a * .5})`; ctx.arc(e.x, e.y, 4.5, 0, TAU); ctx.fill(); continue; }
       else if (e.k === 8) { for (let q = 0; q < 4; q++) { const ang = q * Math.PI / 2 + age * 2, d = 3 + age * 7; ctx.moveTo(e.x + Math.cos(ang) * d, e.y + Math.sin(ang) * d); ctx.arc(e.x + Math.cos(ang) * d, e.y + Math.sin(ang) * d, .7, 0, TAU); } }
       else ctx.arc(e.x, e.y, 4 + age * 9, 0, TAU);
@@ -1226,6 +1241,15 @@ const DEATHC = { disease: '#98a64c', thirst: '#6fb6e8', drowning: '#3f7fb5', age
 const DEATHL = { disease: 'Disease', thirst: 'Thirst', drowning: 'Drowning', age: 'Old age', hunger: 'Starvation', storm: 'Storms', fire: 'Burns', beast: 'Beasts', attack: 'Killed by yips' };
 const LEDC = { reserve: '#3d4a5c', soil: '#7a5a3a', plants: '#8fd67a', meat: '#b8574a', beasts: '#e05a4e', yips: '#f3c96b', built: '#c9b3e6' };
 const LEDL = { reserve: 'Wild reserve', soil: 'Soil', plants: 'Plants', meat: 'Carcasses', beasts: 'Beasts', yips: 'Yips', built: 'Structures' };
+const CTXL = { beast: 'a beast in sight', food: 'food nearby', hungry: 'hungry', hurt: 'hurt', kin: 'kin nearest', stranger: 'a stranger nearest', mate: 'ready to mate', fight: 'fighting', alone: 'alone', young: 'carrying young', sick: 'sick' };
+const meansText = m => m && m.length ? m.map(([k, lift]) => `${CTXL[k] || k} ×${lift}`).join(', ') : '';
+function renderLang(s) {
+  const L = s.lang; if (!L) return;
+  const smax = Math.max(1, ...L.symbols.map(x => x.n));
+  $('langSyms').innerHTML = L.symbols.map(x => `<div class="lsym" title="${x.n} uses"><b class="sym">${x.s}</b><i style="height:${Math.max(2, x.n / smax * 26)}px"></i><small>${fmt(x.n)}</small>${x.means.length ? `<em>${esc(CTXL[x.means[0][0]] || x.means[0][0])}</em>` : ''}</div>`).join('');
+  $('langWords').innerHTML = L.words.length ? L.words.map(w => `<div class="lword"><b class="sym">${w.shout > .5 ? '! ' : ''}${w.w}</b><span>${fmt(w.n)} × · ${w.speakers} speaker${w.speakers === 1 ? '' : 's'}${w.shout > .05 && w.shout <= .5 ? ` · ${Math.round(w.shout * 100)}% shouted` : ''}</span><em>${meansText(w.means) || 'no clear pattern yet'}</em></div>`).join('') : '<p class="note">Nobody has said anything yet.</p>';
+  $('langNote').textContent = `${fmt(L.vocab)} distinct words in use. Meanings are inferred: a word is listed with situations it is used in far more often than chance (×2 = twice as often).`;
+}
 function renderLedger(s) {
   const L = s.ledger; if (!L) return;
   const keys = ['yips', 'plants', 'meat', 'beasts', 'built', 'soil', 'reserve'], tot = L.total || keys.reduce((x, k) => x + (L[k] || 0), 0) || 1;
@@ -1241,7 +1265,7 @@ function renderStats() {
   updateHud();
   if (!$('dStats').classList.contains('open')) return;
   const s = stats, ta = s.tally;
-  renderLedger(s);
+  renderLedger(s); renderLang(s);
   $('fPop').textContent = s.pop; $('fPeak').textContent = s.peakPop;
   $('fGen').innerHTML = `${s.maxGen}<em> avg ${s.avgGen.toFixed(1)}</em>`;
   $('fBD').innerHTML = `${fmt(s.births)}<em> / ${fmt(s.deaths)}</em>`;
@@ -1252,16 +1276,16 @@ function renderStats() {
   if (h.length) $('hSpan').textContent = `last ${fmt(h[h.length - 1].t - h[0].t)} ticks`;
   const per100 = k => smooth(h.map((x, i) => i ? (x[k] || 0) * 100 / Math.max(1, x.t - h[i - 1].t) : 0));
   lineChart($('cPop'), [{ values: h.map(x => x.pop), color: C.good }, { values: h.map(x => x.build), color: C.house }, { values: h.map(x => (x.beasts || 0) * 10), color: C.beast }]);
-  lineChart($('cBeh'), [{ values: per100('shares'), color: C.good }, { values: per100('thefts'), color: C.bad }, { values: per100('attacks').map(v => v / 10), color: C.beast + '99' }, { values: per100('hunts'), color: C.warn }, { values: per100('crafts'), color: C.wall }, { values: per100('thanks'), color: C.accent }, { values: per100('loves').map(v => v * 5), color: '#ff8fc8' }]);
+  lineChart($('cBeh'), [{ values: per100('shares'), color: C.good }, { values: per100('thefts'), color: C.bad }, { values: per100('attacks').map(v => v / 10), color: C.beast + '99' }, { values: per100('hunts'), color: C.warn }, { values: per100('crafts'), color: C.wall }, { values: per100('affection'), color: '#ff8fc8' }, { values: per100('words').map(v => v / 5), color: C.accent }]);
   lineChart($('cSocial'), [{ values: h.map(x => x.rep || 0), color: '#ff8fc8' }, { values: h.map(x => (x.lonely || 0) * 5), color: '#9cb6ff' }], { decimals: 1 });
-  $('behFigs').innerHTML = [['Gifts given', ta.shares], ['Food stolen', ta.thefts], ['Thank-yous', ta.thanks], ['Loving thanks', ta.loves], ['Births', ta.pairings], ['From loving thanks', ta.loveBirths || 0], ['Befriendings', ta.befriends], ['Beasts slain', ta.beastKills], ['Tools made', ta.crafts], ['Holding tools', Math.round(s.tools / Math.max(1, s.pop) * 100) + '%']]
+  $('behFigs').innerHTML = [['Gifts given', ta.shares], ['Food stolen', ta.thefts], ['Affection shown', ta.affection || 0], ['Words spoken', ta.words || 0], ['Shouts', ta.shouts || 0], ['Births', ta.pairings], ['After affection', ta.loveBirths || 0], ['Befriendings', ta.befriends], ['Beasts slain', ta.beastKills], ['Tools made', ta.crafts], ['Holding tools', Math.round(s.tools / Math.max(1, s.pop) * 100) + '%']]
     .map(([k, v]) => `<div class="fig"><b>${typeof v === 'number' ? fmt(v) : v}</b><small>${k}</small></div>`).join('');
   lineChart($('cGen'), [{ values: h.map(x => x.gen), color: C.accent }]);
   lineChart($('cBody'), [{ values: h.map(x => x.str), color: C.bad, area: false }, { values: h.map(x => x.spd), color: C.store }, { values: h.map(x => x.sense / 100), color: C.wall }, { values: h.map(x => x.agg || 0), color: C.beast }, { values: h.map(x => (x.neurons || 0) / 50), color: C.accent }], { decimals: 1 });
   if (s.geneUse) $('perkBars').innerHTML = s.geneUse.length ? s.geneUse.map(g => `<div class="generow"><div class="bar"><div class="bt"><i style="width:${g.share * 100}%"></i><span>${esc(g.name)} · ${CONDL[g.cond] || g.cond}</span></div><b>${Math.round(g.share * 100)}%</b></div><p>${fxText(g.fx)}</p></div>`).join('') : '<p class="note">No genes in the population yet.</p>';
   $('mentAvg').innerHTML = traitRows(meta.ment, s.traits, null);
   // who each social act is aimed at
-  const RELC = ['#7ed6b0', '#f3c96b', '#93a8a0', '#f2836f'], RELN = { attack: 'Attacks', share: 'Gifts', thank: 'Thanks', befriend: 'Befriends' };
+  const RELC = ['#7ed6b0', '#f3c96b', '#93a8a0', '#f2836f'], RELN = { attack: 'Attacks', share: 'Gifts', thank: 'Affection', befriend: 'Befriends' };
   if (s.relTally) $('relBars').innerHTML = ['attack', 'share', 'thank', 'befriend'].map(k => { const v = s.relTally[k], sm = v.reduce((x, y) => x + y, 0) || 1; return `<div class="relrow"><span>${RELN[k]}</span><div class="stack">${v.map((x, i) => `<i style="width:${x / sm * 100}%;background:${RELC[i]}"></i>`).join('')}</div><b>${fmt(v.reduce((x, y) => x + y, 0))}</b></div>`; }).join('');
   const relSeries = k => smooth(h.map(x => x.rel && x.rel[k] ? (x.rel[k][0] + x.rel[k][1]) * 100 : null).map((v, i, arr) => v ?? (i ? arr[i - 1] ?? 0 : 0)), 8);
   lineChart($('cRel'), [{ values: relSeries('attack'), color: C.bad, area: false }, { values: relSeries('thank'), color: C.good }, { values: relSeries('share'), color: C.wall }], { decimals: 0 });
@@ -1367,7 +1391,7 @@ function bodyPane(m) {
   $('bodyKV').innerHTML = kv.map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join('');
 }
 function socialPane(m) {
-  $('socialKV').innerHTML = [['Popularity', m.rep.toFixed(2)], ['Admirers', m.admirers], ['Thanks received', m.thanksGot], ['Loving thanks', m.lovesGot], ['Children had', m.partners], ['Co-parent', m.coparent ? `${esc(m.coparentName || '#' + m.coparent)}${m.coparentAlive ? '' : ' (gone)'}` : 'none'], ['Owes thanks to', m.owed && m.owed.length ? m.owed.filter(o => o[1] > .05).slice(0, 3).map(o => esc(o[0])).join(', ') || 'nobody' : 'nobody']].map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join('');
+  $('socialKV').innerHTML = [['Popularity', m.rep.toFixed(2)], ['Admirers', m.admirers], ['Affection received', m.affectionGot || 0], ['Saying', m.speaking ? `<span class="sym">${esc(m.speaking)}</span>` : '—'], ['Hears', m.heardNow ? `<span class="sym">${esc(m.heardNow)}</span>` : '—'], ['Recently said', m.said && m.said.length ? `<span class="sym">${m.said.slice(0, 5).map(x => esc(x[1])).join(' · ')}</span>` : 'nothing'], ['Children had', m.partners], ['Co-parent', m.coparent ? `${esc(m.coparentName || '#' + m.coparent)}${m.coparentAlive ? '' : ' (gone)'}` : 'none'], ['Owes thanks to', m.owed && m.owed.length ? m.owed.filter(o => o[1] > .05).slice(0, 3).map(o => esc(o[0])).join(', ') || 'nobody' : 'nobody']].map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join('');
   $('trustedBy').innerHTML = m.trustedBy.length ? m.trustedBy.map(t => `<button class="chip" data-goto="${t.id}"><i style="background:${hueFill[t.hue | 0]}"></i>${esc(t.name || '#' + t.id)} · ${t.v.toFixed(2)}</button>`).join('') : '<p class="note">Nobody yet. Trust is earned slowly by sharing food or materials, warmth, shelter, repairs and defending others from beasts, and lost fast by attacks and theft.</p>';
   $('trustBars').innerHTML = m.trust.length ? m.trust.map(t => {
     const w = Math.abs(t.v) * 50, left = t.v < 0 ? 50 - w : 50;

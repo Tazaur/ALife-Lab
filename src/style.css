@@ -355,6 +355,19 @@ button.chip:hover{border-color:var(--line-hi);background:rgba(255,255,255,.05)}
 .inp{flex:1;min-width:0;height:36px;border-radius:9px;border:1px solid var(--line-hi);background:rgba(255,255,255,.04);color:var(--fg);padding:0 12px;font:600 14px var(--f-mono, monospace);letter-spacing:.1em;text-transform:uppercase}
 .inp::placeholder{letter-spacing:normal;text-transform:none;font-weight:500;color:var(--dim)}
 
+.sym{font-family:"Noto Sans Runic","Noto Sans Canadian Aboriginal","Instrument Sans",system-ui,sans-serif;letter-spacing:.06em}
+.lsyms{display:grid;grid-template-columns:repeat(auto-fill,minmax(52px,1fr));gap:6px}
+.lsym{display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 2px;border:1px solid var(--line);border-radius:var(--r-sm);min-width:0}
+.lsym b{font-size:20px;line-height:1.1}
+.lsym i{display:block;width:18px;background:var(--accent);opacity:.7;border-radius:2px}
+.lsym small{font-size:10px;color:var(--dim)}
+.lsym em{font-style:normal;font-size:9.5px;color:var(--muted);text-align:center;line-height:1.2}
+.lwords{display:flex;flex-direction:column;gap:4px;margin-top:8px}
+.lword{display:grid;grid-template-columns:auto 1fr;column-gap:10px;align-items:baseline;padding:5px 8px;border:1px solid var(--line);border-radius:var(--r-sm);font-size:12px}
+.lword b{font-size:16px;grid-row:span 2}
+.lword span{color:var(--muted);font-size:11px}
+.lword em{font-style:normal;font-size:11px;color:var(--fg)}
+
 /* ---------- overlays ---------- */
 .legend{position:absolute;right:var(--gut);top:72px;display:flex;gap:10px;padding:7px 11px;font-size:11px;color:var(--muted);z-index:4;pointer-events:none;transition:opacity .2s}
 .legend span{display:flex;align-items:center;gap:5px;white-space:nowrap}

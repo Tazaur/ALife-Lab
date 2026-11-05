@@ -17,7 +17,7 @@ body = body.replace('__VERSION_SHORT__', f'build {count}').replace('__VERSION_LO
 head = '''<title>ALife Lab</title>
 <meta name="theme-color" content="#0a1110">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+Runic&family=Noto+Sans+Canadian+Aboriginal:wght@400;700&display=swap">
 <style>
 ''' + css + '\n</style>\n'
 content = body + '\n<script id="simSource" type="text/plain">\n' + sim.replace('</script', '<\\/script') + '\n</script>\n<script>\n' + app + '\n</script>\n'
